@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Asset Tracker · Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              ink: "#0a0d14",
+              panel: "#11151f",
+              dblue: "#1d4ed8",
+              damber: "#f59e0b",
+              dgreen: "#10b981",
+              dred: "#ef4444",
+              dviolet: "#8b5cf6",
+              dcyan: "#06b6d4",
+            },
+            fontFamily: {
+              display: ["Space Grotesk", "sans-serif"],
+              body: ["IBM Plex Sans", "sans-serif"],
+              mono: ["JetBrains Mono", "monospace"],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        font-family: "IBM Plex Sans", sans-serif;
+        background: radial-gradient(
+            circle at 0% 0%,
+            rgba(139, 92, 246, 0.08),
+            transparent 40%
+          ),
+          radial-gradient(
+            circle at 100% 100%,
+            rgba(6, 182, 212, 0.08),
+            transparent 40%
+          ),
+          #0a0d14;
+      }
+      .dot {
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.4;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1.4);
+        }
+      }
+      details[open] > summary .chev {
+        transform: rotate(90deg);
+      }
+      .chev {
+        transition: transform 150ms ease;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen text-slate-100 font-body">
+    <div class="max-w-5xl mx-auto px-6 py-10">
+      <!-- HEADER -->
+      <header class="flex items-center justify-between mb-10">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-10 h-10 rounded-xl bg-gradient-to-br from-dviolet to-dcyan flex items-center justify-center"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              class="w-5 h-5 text-ink"
+            >
+              <path d="M12 2L3 7l9 5 9-5-9-5z" />
+              <path d="M3 12l9 5 9-5" />
+              <path d="M3 17l9 5 9-5" />
+            </svg>
+          </div>
+          <div>
+            <h1 class="font-display text-2xl tracking-tight">
+              Asset Tracker · Admin
+            </h1>
+            <div class="text-xs text-slate-400 font-mono">
+              Drive sync control panel
+            </div>
+          </div>
+        </div>
+        <span
+          class="text-[10px] font-mono px-2 py-1 rounded-full bg-dviolet/20 text-dviolet border border-dviolet/30"
+        >
+          ADMIN
+        </span>
+      </header>
+
+      <!-- KEY -->
+      <section
+        class="bg-panel border border-slate-800 rounded-2xl p-6 mb-6 shadow-lg"
+      >
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-display text-lg">Admin API key</h2>
+          <span
+            id="keyStatus"
+            class="text-[10px] font-mono uppercase tracking-wider text-slate-500"
+            >not set</span
+          >
+        </div>
+        <p class="text-sm text-slate-400 mb-4">
+          Stored in <code class="font-mono text-dcyan">sessionStorage</code>;
+          cleared when you close the tab.
+        </p>
+        <div class="flex gap-2">
+          <input
+            id="apiKey"
+            type="password"
+            placeholder="paste your ADMIN_API_KEY"
+            class="flex-1 bg-ink/50 border border-slate-700 rounded-lg px-3 py-2 font-mono text-sm focus:outline-none focus:border-dviolet"
+          />
+          <button
+            onclick="saveKey()"
+            class="px-4 py-2 rounded-lg bg-dviolet hover:bg-dviolet/80 font-medium text-sm transition"
+          >
+            Save
+          </button>
+          <button
+            onclick="clearKey()"
+            class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 font-medium text-sm transition"
+          >
+            Clear
+          </button>
+        </div>
+      </section>
+
+      <!-- STATUS -->
+      <section
+        class="bg-panel border border-slate-800 rounded-2xl p-6 mb-6 shadow-lg"
+      >
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-display text-lg">Scheduler status</h2>
+          <button
+            onclick="refreshStatus()"
+            class="text-xs px-3 py-1 rounded-md bg-slate-800 hover:bg-slate-700"
+          >
+            Refresh
+          </button>
+        </div>
+        <div id="statusCard" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div
+            class="bg-ink/50 border border-slate-800 rounded-xl p-4 text-center"
+          >
+            <div class="text-[10px] uppercase text-slate-500 tracking-wider">
+              Enabled
+            </div>
+            <div
+              id="enabled"
+              class="font-display text-2xl mt-1 text-slate-300"
+            >
+              …
+            </div>
+          </div>
+          <div
+            class="bg-ink/50 border border-slate-800 rounded-xl p-4 text-center"
+          >
+            <div class="text-[10px] uppercase text-slate-500 tracking-wider">
+              Upserted
+            </div>
+            <div
+              id="lastUpserted"
+              class="font-display text-2xl mt-1 text-dgreen"
+            >
+              —
+            </div>
+          </div>
+          <div
+            class="bg-ink/50 border border-slate-800 rounded-xl p-4 text-center"
+          >
+            <div class="text-[10px] uppercase text-slate-500 tracking-wider">
+              Deleted
+            </div>
+            <div
+              id="lastDeleted"
+              class="font-display text-2xl mt-1 text-dred"
+            >
+              —
+            </div>
+          </div>
+          <div
+            class="bg-ink/50 border border-slate-800 rounded-xl p-4 text-center"
+          >
+            <div class="text-[10px] uppercase text-slate-500 tracking-wider">
+              Failed
+            </div>
+            <div
+              id="lastFailed"
+              class="font-display text-2xl mt-1 text-damber"
+            >
+              —
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ACTIONS -->
+      <section
+        class="bg-panel border border-slate-800 rounded-2xl p-6 mb-6 shadow-lg"
+      >
+        <h2 class="font-display text-lg mb-4">Actions</h2>
+        <div class="grid sm:grid-cols-2 gap-4">
+          <button
+            onclick="triggerSync()"
+            class="group bg-ink/50 border border-slate-800 hover:border-dblue rounded-xl p-5 text-left transition"
+          >
+            <div class="flex items-center justify-between mb-2">
+              <div class="font-display">Run sync now</div>
+              <div
+                class="w-2 h-2 rounded-full bg-dblue dot"
+                aria-hidden="true"
+              ></div>
+            </div>
+            <div class="text-xs text-slate-400">
+              POST /admin/sync — one full reconcile tick.
+            </div>
+          </button>
+
+          <details
+            class="group bg-ink/50 border border-slate-800 hover:border-damber rounded-xl transition"
+          >
+            <summary class="cursor-pointer p-5 flex items-center justify-between">
+              <div>
+                <div class="font-display">Reindex one Drive file</div>
+                <div class="text-xs text-slate-400">
+                  POST /admin/sync/reindex/{id}
+                </div>
+              </div>
+              <span class="chev text-damber">›</span>
+            </summary>
+            <div class="px-5 pb-5">
+              <div class="flex gap-2">
+                <input
+                  id="driveId"
+                  placeholder="drive file id"
+                  class="flex-1 bg-ink border border-slate-700 rounded-lg px-3 py-2 font-mono text-sm focus:outline-none focus:border-damber"
+                />
+                <button
+                  onclick="reindex()"
+                  class="px-4 py-2 rounded-lg bg-damber/20 border border-damber text-damber hover:bg-damber/30 text-sm font-medium transition"
+                >
+                  Reindex
+                </button>
+              </div>
+              <div
+                id="reindexResult"
+                class="text-xs font-mono mt-3 text-slate-400"
+              ></div>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- OUTPUT -->
+      <section
+        class="bg-panel border border-slate-800 rounded-2xl p-6 shadow-lg"
+      >
+        <h2 class="font-display text-lg mb-3">Output</h2>
+        <pre
+          id="output"
+          class="font-mono text-xs bg-ink/60 border border-slate-800 rounded-lg p-4 min-h-[8rem] whitespace-pre-wrap text-slate-300"
+        >awaiting first action…</pre>
+      </section>
+    </div>
+
+    <script>
+      const KEY = () => sessionStorage.getItem("adminKey") || "";
+      const OUT = document.getElementById("output");
+      const KEY_STATUS = document.getElementById("keyStatus");
+
+      function saveKey() {
+        const v = document.getElementById("apiKey").value.trim();
+        if (!v) return;
+        sessionStorage.setItem("adminKey", v);
+        KEY_STATUS.textContent = "set";
+        KEY_STATUS.classList.replace("text-slate-500", "text-dgreen");
+        log("admin key saved to sessionStorage");
+      }
+      function clearKey() {
+        sessionStorage.removeItem("adminKey");
+        document.getElementById("apiKey").value = "";
+        KEY_STATUS.textContent = "not set";
+        KEY_STATUS.classList.replace("text-dgreen", "text-slate-500");
+        log("admin key cleared");
+      }
+      function log(obj) {
+        OUT.textContent =
+          typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+      }
+      async function api(path, opts = {}) {
+        const key = KEY();
+        if (!key) throw new Error("Set ADMIN_API_KEY first.");
+        const res = await fetch(path, {
+          ...opts,
+          headers: {
+            ...(opts.headers || {}),
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+          },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(`${res.status} ${JSON.stringify(body)}`);
+        }
+        return body;
+      }
+      async function refreshStatus() {
+        try {
+          const s = await api("/admin/sync/status");
+          document.getElementById("enabled").textContent = s.enabled
+            ? "yes"
+            : "no";
+          document.getElementById("lastUpserted").textContent =
+            s.last_upserted ?? "—";
+          document.getElementById("lastDeleted").textContent =
+            s.last_deleted ?? "—";
+          document.getElementById("lastFailed").textContent =
+            s.last_failed ?? "—";
+          log(s);
+        } catch (e) {
+          log(`status: ${e.message}`);
+        }
+      }
+      async function triggerSync() {
+        try {
+          const r = await api("/admin/sync", { method: "POST" });
+          log({ sync: r });
+          refreshStatus();
+        } catch (e) {
+          log(`sync: ${e.message}`);
+        }
+      }
+      async function reindex() {
+        const id = document.getElementById("driveId").value.trim();
+        if (!id) return;
+        try {
+          const r = await api(`/admin/sync/reindex/${encodeURIComponent(id)}`, {
+            method: "POST",
+          });
+          document.getElementById("reindexResult").textContent =
+            `deleted ${r.deleted} point(s)`;
+          log({ reindex: r });
+        } catch (e) {
+          document.getElementById("reindexResult").textContent = e.message;
+        }
+      }
+
+      // auto-refresh status every 10s when a key is set
+      setInterval(() => {
+        if (KEY()) refreshStatus();
+      }, 10_000);
+      if (KEY()) {
+        KEY_STATUS.textContent = "set";
+        KEY_STATUS.classList.replace("text-slate-500", "text-dgreen");
+        refreshStatus();
+      }
+    </script>
+  </body>
+</html>

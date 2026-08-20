@@ -55,6 +55,13 @@ def test_error_detail_requires_message_and_type() -> None:
 
 @pytest.mark.unit
 def test_health_response_contains_dependency_statuses() -> None:
-    response = HealthResponse(status="ok", qdrant="ok", model="ok")
+    response = HealthResponse(status="ok", qdrant="ok", model="ok", drive="disabled")
 
     assert response.model == "ok"
+    assert response.drive == "disabled"
+
+
+@pytest.mark.unit
+def test_health_response_requires_drive_field() -> None:
+    with pytest.raises(ValidationError):
+        HealthResponse(status="ok", qdrant="ok", model="ok")

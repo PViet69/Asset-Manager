@@ -1,8 +1,5 @@
 import { config } from "../config";
-import type {
-  FileEmbeddingResponse,
-  VectorSearchResponse,
-} from "../types";
+import type { VectorSearchResponse } from "../types";
 
 export class ApiError extends Error {
   public readonly status: number;
@@ -54,29 +51,4 @@ export function searchVectors(
   limit: number = 10
 ): Promise<VectorSearchResponse> {
   return postJson<VectorSearchResponse>("/v1/search", { query, limit });
-}
-
-export async function uploadFiles(
-  files: File[],
-  filePaths: string[] = []
-): Promise<FileEmbeddingResponse> {
-  const form = new FormData();
-  for (const file of files) {
-    form.append("files", file, file.name);
-  }
-  // Backend route accepts repeating `file_path` form fields aligned with
-  // `files`. Pad with empty strings so the count matches.
-  const padded = filePaths.slice(0, files.length);
-  while (padded.length < files.length) padded.push("");
-  for (const filePath of padded) {
-    form.append("file_path", filePath);
-  }
-  // NOTE: do NOT set Content-Type — browser must add the multipart boundary.
-  const res = await fetch(`${config.apiBase}/v1/file-embeddings`, {
-    method: "POST",
-    headers: buildHeaders(),
-    body: form,
-  });
-  if (!res.ok) await parseError(res);
-  return (await res.json()) as FileEmbeddingResponse;
 }

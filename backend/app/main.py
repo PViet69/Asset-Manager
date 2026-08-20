@@ -4,10 +4,12 @@ from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
 from backend.app.api.dependencies import get_file_ingestion_service
+from backend.app.api.routes.admin.sync import router as admin_sync_router
 from backend.app.api.routes.file_embeddings import router as file_embeddings_router
 from backend.app.api.routes.health import (
     HealthDependencies,
@@ -20,6 +22,8 @@ from backend.app.api.routes.vector_search import (
     router as vector_search_router,
 )
 from backend.app.config import Settings
+from backend.app.drive.client import DriveClient, build_drive_client
+from backend.app.drive.scheduler import SyncScheduler, build_sync_scheduler
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.integrations.model_client import OpenAICompatibleModelClient
 from backend.app.integrations.qdrant_store import QdrantEmbeddingStore
@@ -40,6 +44,9 @@ def create_app(
     service: FileIngestionService | None = None,
     health_dependencies: HealthDependencies | None = None,
     upload_api_key: str | None = None,
+    admin_api_key: str | None = None,
+    drive_client: DriveClient | None = None,
+    sync_scheduler: SyncScheduler | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
@@ -48,11 +55,18 @@ def create_app(
         effective_service = service
         effective_health_dependencies = health_dependencies
         effective_upload_api_key = upload_api_key
+        effective_admin_api_key = admin_api_key
+        effective_drive_client = drive_client
+        effective_sync_scheduler = sync_scheduler
 
         if effective_service is None:
             settings = Settings()
             if effective_upload_api_key is None:
                 effective_upload_api_key = settings.UPLOAD_API_KEY or None
+            if effective_admin_api_key is None:
+                effective_admin_api_key = settings.ADMIN_API_KEY or None
+            if effective_drive_client is None:
+                effective_drive_client = build_drive_client(settings)
 
             description_client = InstructorImageDescriptionClient(
                 endpoint_url=settings.DESCRIPTION_ENDPOINT_URL or "",
@@ -73,6 +87,14 @@ def create_app(
                     description_client=description_client,
                     model_client=model_client,
                     qdrant_store=qdrant_store,
+                    drive=effective_drive_client,
+                )
+            if effective_sync_scheduler is None:
+                effective_sync_scheduler = build_sync_scheduler(
+                    settings=settings,
+                    drive_client=effective_drive_client,
+                    ingestion_service=effective_service,
+                    qdrant_store=qdrant_store,
                 )
         elif effective_health_dependencies is None:
             unavailable = _UnavailableHealthDependency()
@@ -88,14 +110,27 @@ def create_app(
         application.state.file_ingestion_service = effective_service
         application.state.health_dependencies = effective_health_dependencies
         application.state.upload_api_key = effective_upload_api_key
+        application.state.admin_api_key = effective_admin_api_key
         application.state.upload_rate_limiter = InMemoryRateLimiter()
+        application.state.drive_client = effective_drive_client
+        application.state.sync_scheduler = effective_sync_scheduler
+        if effective_sync_scheduler is not None:
+            await effective_sync_scheduler.start()
         try:
             yield
         finally:
-            application.state._state.pop("file_ingestion_service", None)
-            application.state._state.pop("health_dependencies", None)
-            application.state._state.pop("upload_api_key", None)
-            application.state._state.pop("upload_rate_limiter", None)
+            if effective_sync_scheduler is not None:
+                await effective_sync_scheduler.stop()
+            for key in (
+                "file_ingestion_service",
+                "health_dependencies",
+                "upload_api_key",
+                "admin_api_key",
+                "upload_rate_limiter",
+                "drive_client",
+                "sync_scheduler",
+            ):
+                application.state._state.pop(key, None)
 
     app = FastAPI(
         title="OpenAI File Embeddings",
@@ -105,6 +140,16 @@ def create_app(
     app.include_router(file_embeddings_router)
     app.include_router(vector_search_router)
     app.include_router(health_router)
+    app.include_router(admin_sync_router)
+    app.mount(
+        "/admin/static",
+        StaticFiles(directory="backend/app/static"),
+        name="admin-static",
+    )
+
+    @app.get("/admin", include_in_schema=False)
+    async def admin_index() -> FileResponse:
+        return FileResponse("backend/app/static/admin.html")
 
     @app.middleware("http")
     async def protect_uploads(

@@ -62,6 +62,7 @@ def test_search_returns_hits(app: FastAPI) -> None:
                 "file_path": "photos/photo.png",
                 "file_type": "image/png",
                 "content": "description text",
+                "source_url": None,
             }
         ],
     }

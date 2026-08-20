@@ -1,12 +1,6 @@
-import { useState } from "react";
-import { UploadPanel } from "./components/UploadPanel";
 import { SearchPanel } from "./components/SearchPanel";
 
-type Tab = "upload" | "search";
-
 export function App(): JSX.Element {
-  const [tab, setTab] = useState<Tab>("upload");
-
   return (
     <div className="app">
       <header className="bar">
@@ -32,28 +26,7 @@ export function App(): JSX.Element {
         </div>
       </header>
 
-      <div className="tabs" role="tablist">
-        <button
-          className="tab"
-          role="tab"
-          aria-selected={tab === "upload"}
-          onClick={() => setTab("upload")}
-          type="button"
-        >
-          Upload
-        </button>
-        <button
-          className="tab"
-          role="tab"
-          aria-selected={tab === "search"}
-          onClick={() => setTab("search")}
-          type="button"
-        >
-          Search
-        </button>
-      </div>
-
-      {tab === "upload" ? <UploadPanel /> : <SearchPanel />}
+      <SearchPanel />
     </div>
   );
 }

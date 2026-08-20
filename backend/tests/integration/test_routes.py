@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from inspect import iscoroutinefunction
 from io import BytesIO
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -55,6 +55,11 @@ def override_ingestion_service(app: FastAPI, service: Mock) -> None:  # noqa: AR
     app.dependency_overrides[get_file_ingestion_service] = lambda: service
 
 
+def _drive_id_fields(file_count: int) -> dict[str, list[str]]:
+    """Build repeating drive_id form fields, one per uploaded file."""
+    return {"drive_id": [f"drive-{i}" for i in range(file_count)]}
+
+
 @pytest.mark.integration
 def test_create_file_embeddings_is_sync_function() -> None:
     """Route handler must be synchronous for sync SDK/Qdrant operations."""
@@ -81,6 +86,7 @@ def test_upload_uses_configured_ingestion_service_without_model_field(
         response = client.post(
             "/v1/file-embeddings",
             files=[("files", ("note.txt", b"hello", "text/plain"))],
+            data=_drive_id_fields(1),
         )
 
     assert response.status_code == 200
@@ -89,6 +95,7 @@ def test_upload_uses_configured_ingestion_service_without_model_field(
     assert uploads[0].filename == "note.txt"
     assert uploads[0].file_path == ""
     assert uploads[0].content == b"hello"
+    assert uploads[0].drive_id == "drive-0"
     assert service.process_files.call_args.kwargs == {}
 
 
@@ -122,6 +129,7 @@ def test_uploads_files_in_order_and_returns_public_response(
                 ("files", ("first.txt", b"first content", "text/plain")),
                 ("files", ("second.txt", b"second content", "text/plain")),
             ],
+            data=_drive_id_fields(2),
         )
 
     assert response.status_code == 200
@@ -144,8 +152,10 @@ def test_uploads_files_in_order_and_returns_public_response(
     }
     service.process_files.assert_called_once_with(
         (
-            FileUpload("first.txt", "text/plain", b"first content", ""),
-            FileUpload("second.txt", "text/plain", b"second content", ""),
+            FileUpload("first.txt", "text/plain", b"first content", "", "drive-0", ANY),
+            FileUpload(
+                "second.txt", "text/plain", b"second content", "", "drive-1", ANY
+            ),
         ),
     )
     assert "point_id" not in response.json()
@@ -159,7 +169,7 @@ def test_openapi_has_no_request_level_model_fields(app: FastAPI) -> None:
         "Body_create_file_embeddings_v1_file_embeddings_post"
     ]["properties"]
 
-    assert set(upload_parameters) == {"files", "file_path"}
+    assert set(upload_parameters) == {"files", "file_path", "drive_id", "modified_time"}
 
 
 @pytest.mark.integration
@@ -179,6 +189,7 @@ def test_upload_requires_configured_api_key(
         response = client.post(
             "/v1/file-embeddings",
             files=[("files", ("file.txt", b"content", "text/plain"))],
+            data=_drive_id_fields(1),
             headers=headers,
         )
 
@@ -197,12 +208,13 @@ def test_upload_with_correct_api_key_reaches_service(app: FastAPI) -> None:
         response = client.post(
             "/v1/file-embeddings",
             files=[("files", ("file.txt", b"content", "text/plain"))],
+            data=_drive_id_fields(1),
             headers={"Authorization": "Bearer secret"},
         )
 
     assert response.status_code == 200
     service.process_files.assert_called_once_with(
-        (FileUpload("file.txt", "text/plain", b"content", ""),),
+        (FileUpload("file.txt", "text/plain", b"content", "", "drive-0", ANY),),
     )
 
 
@@ -249,6 +261,7 @@ def test_uploading_more_than_ten_files_returns_bad_request(app: FastAPI) -> None
         response = client.post(
             "/v1/file-embeddings",
             files=files,
+            data=_drive_id_fields(len(files)),
         )
 
     assert response.status_code == 400
@@ -272,6 +285,7 @@ def test_route_closes_all_uploads_before_rejecting_more_than_ten(
         create_file_embeddings(
             files=uploads,
             file_path=None,
+            drive_id=[f"drive-{index}" for index in range(len(uploads))],
             service=service,
         )
 
@@ -298,6 +312,7 @@ def test_route_bounds_oversized_upload_read_and_returns_file_error(
     response = create_file_embeddings(
         files=[upload],
         file_path=None,
+        drive_id=["drive-0"],
         service=service,
     )
 
@@ -325,6 +340,7 @@ def test_real_service_reports_empty_file_without_embedding_or_storage(
         response = client.post(
             "/v1/file-embeddings",
             files=[("files", ("empty.txt", b"", "text/plain"))],
+            data=_drive_id_fields(1),
         )
 
     assert response.status_code == 200
@@ -361,6 +377,7 @@ def test_real_service_preserves_order_for_oversized_and_valid_files(
                 ("files", ("oversized.txt", oversized, "text/plain")),
                 ("files", ("valid.txt", b"valid text", "text/plain")),
             ],
+            data=_drive_id_fields(2),
         )
 
     assert response.status_code == 200
@@ -414,6 +431,7 @@ def test_real_service_returns_safe_model_error_per_file(
         response = client.post(
             "/v1/file-embeddings",
             files=[("files", ("file.txt", b"valid text", "text/plain"))],
+            data=_drive_id_fields(1),
         )
 
     assert response.status_code == 200
@@ -445,6 +463,7 @@ def test_real_service_returns_200_when_all_files_fail_processing(
                     ),
                 )
             ],
+            data=_drive_id_fields(1),
         )
 
     assert response.status_code == 200
@@ -482,6 +501,7 @@ def test_real_service_returns_safe_qdrant_error_per_file(
         response = client.post(
             "/v1/file-embeddings",
             files=[("files", ("file.txt", b"valid text", "text/plain"))],
+            data=_drive_id_fields(1),
         )
 
     assert response.status_code == 200
@@ -511,6 +531,7 @@ def test_health_is_ok_when_both_models_and_qdrant_are_available(
         "status": "ok",
         "qdrant": "ok",
         "model": "ok",
+        "drive": "disabled",
     }
 
 
@@ -548,6 +569,57 @@ def test_health_is_degraded_when_any_dependency_is_unavailable(
         "model": "unavailable"
         if "unavailable" in (description_status, embedding_status)
         else "ok",
+        "drive": "disabled",
+    }
+
+
+@pytest.mark.integration
+def test_health_reports_drive_ok_when_drive_dependency_is_ok(
+    app: FastAPI,
+) -> None:
+    service = Mock(spec=FileIngestionService)
+    dependencies = HealthDependencies(
+        description_client=_HealthDependency("ok"),
+        model_client=_HealthDependency("ok"),
+        qdrant_store=_HealthDependency("ok"),
+        drive=_HealthDependency("ok"),
+    )
+    app_with_deps = create_app(service=service, health_dependencies=dependencies)
+
+    with TestClient(app_with_deps) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "qdrant": "ok",
+        "model": "ok",
+        "drive": "ok",
+    }
+
+
+@pytest.mark.integration
+def test_health_is_degraded_when_drive_dependency_is_unavailable(
+    app: FastAPI,
+) -> None:
+    service = Mock(spec=FileIngestionService)
+    dependencies = HealthDependencies(
+        description_client=_HealthDependency("ok"),
+        model_client=_HealthDependency("ok"),
+        qdrant_store=_HealthDependency("ok"),
+        drive=_HealthDependency("unavailable"),
+    )
+    app_with_deps = create_app(service=service, health_dependencies=dependencies)
+
+    with TestClient(app_with_deps) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "degraded",
+        "qdrant": "ok",
+        "model": "ok",
+        "drive": "unavailable",
     }
 
 
@@ -589,6 +661,7 @@ def test_file_upload_returns_503_when_model_not_found(
         response = client.post(
             "/v1/file-embeddings",
             files=[("files", ("file.txt", b"content", "text/plain"))],
+            data=_drive_id_fields(1),
         )
 
     assert response.status_code == 503

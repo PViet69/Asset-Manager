@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     QDRANT_DISTANCE: str = "Cosine"
     SEARCH_THRESHOLD: OptionalFloatSetting = Field(default=None, ge=0, le=1)
 
+    # Google Drive sync (optional). When both DRIVE_SERVICE_ACCOUNT_JSON and
+    # DRIVE_FOLDER_ID are set, the scheduler starts; otherwise sync is disabled.
+    DRIVE_SERVICE_ACCOUNT_JSON: str | None = None
+    DRIVE_FOLDER_ID: str | None = None
+    DRIVE_SYNC_INTERVAL_SECONDS: int = Field(default=2_592_000, gt=0)
+
+    # Admin endpoints (optional). Separate from UPLOAD_API_KEY.
+    ADMIN_API_KEY: str | None = None
+
     @model_validator(mode="after")
     def _validate_description_endpoint(self) -> "Settings":
         missing = [

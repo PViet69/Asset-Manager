@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from logging import ERROR
 from unittest.mock import Mock, patch
 
@@ -46,9 +47,30 @@ def make_service() -> tuple[FileIngestionService, Mock, Mock, Mock]:
     return service, description_client, model_client, qdrant_store
 
 
+TEST_MODIFIED_TIME = datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+
+def make_upload(
+    filename: str,
+    content_type: str,
+    content: bytes,
+    file_path: str,
+    drive_id: str = "drive-id-1",
+    modified_time: datetime = TEST_MODIFIED_TIME,
+) -> FileUpload:
+    return FileUpload(
+        filename=filename,
+        content_type=content_type,
+        content=content,
+        file_path=file_path,
+        drive_id=drive_id,
+        modified_time=modified_time,
+    )
+
+
 @pytest.mark.unit
 def test_file_upload_is_immutable() -> None:
-    upload = FileUpload("note.txt", "text/plain", b"hello", "note.txt")
+    upload = make_upload("note.txt", "text/plain", b"hello", "note.txt")
 
     with pytest.raises((AttributeError, TypeError)):
         upload.filename = "changed.txt"
@@ -65,7 +87,7 @@ def test_image_description_text_is_embedded_and_only_vector_is_stored() -> None:
     description_client.describe.return_value = description
     model_client.embed_text.return_value = [0.3]
     image_bytes = b"validated-image-bytes"
-    upload = FileUpload("photo.png", "image/png", image_bytes, "photos/photo.png")
+    upload = make_upload("photo.png", "image/png", image_bytes, "photos/photo.png")
 
     with patch(
         "backend.app.file_embeddings.ingestion_service.process_file",
@@ -82,6 +104,8 @@ def test_image_description_text_is_embedded_and_only_vector_is_stored() -> None:
             "file_path": "photos/photo.png",
             "file_type": "image/png",
             "content": description.to_embedding_text(),
+            "drive_id": "drive-id-1",
+            "modified_time": TEST_MODIFIED_TIME.isoformat(),
         },
     )
     assert response.data[0].model_dump() == {
@@ -96,7 +120,7 @@ def test_image_description_text_is_embedded_and_only_vector_is_stored() -> None:
 def test_text_bypasses_description_and_embeds_extracted_text() -> None:
     service, description_client, model_client, qdrant_store = make_service()
     model_client.embed_text.return_value = [0.1, 0.2]
-    upload = FileUpload("note.txt", "text/plain", b"source-bytes", "note.txt")
+    upload = make_upload("note.txt", "text/plain", b"source-bytes", "note.txt")
 
     with patch(
         "backend.app.file_embeddings.ingestion_service.process_file",
@@ -131,8 +155,8 @@ def test_description_error_is_safe_and_later_files_continue_in_order() -> None:
     )
     model_client.embed_text.return_value = [0.4]
     uploads = (
-        FileUpload("bad.png", "image/png", b"image", "bad.png"),
-        FileUpload("good.txt", "text/plain", b"text", "good.txt"),
+        make_upload("bad.png", "image/png", b"image", "bad.png"),
+        make_upload("good.txt", "text/plain", b"text", "good.txt"),
     )
 
     with patch(
@@ -159,8 +183,11 @@ def test_real_processing_returns_normal_response_when_all_files_fail() -> None:
 
     response = service.process_files(
         (
-            FileUpload(
-                "bad.bin", "application/octet-stream", b"\x1f\x8b\x08\x00", "bad.bin"
+            make_upload(
+                "bad.bin",
+                "application/octet-stream",
+                b"\x1f\x8b\x08\x00",
+                "bad.bin",
             ),
         ),
     )
@@ -188,7 +215,7 @@ def test_file_processing_error_returns_safe_message() -> None:
         side_effect=FileProcessingError("Unsupported file type"),
     ):
         response = service.process_files(
-            (FileUpload("bad.bin", "application/octet-stream", b"bytes", "bad.bin"),),
+            (make_upload("bad.bin", "application/octet-stream", b"bytes", "bad.bin"),),
         )
 
     assert response.data[0].status == "failed"
@@ -209,7 +236,7 @@ def test_qdrant_storage_error_returns_safe_message() -> None:
         return_value=ProcessedInput("text", "hello"),
     ):
         response = service.process_files(
-            (FileUpload("note.txt", "text/plain", b"bytes", "note.txt"),),
+            (make_upload("note.txt", "text/plain", b"bytes", "note.txt"),),
         )
 
     assert response.data[0].status == "failed"
@@ -230,7 +257,7 @@ def test_unexpected_error_logs_context_without_sensitive_content(
         side_effect=RuntimeError("secret provider response"),
     ):
         response = service.process_files(
-            (FileUpload(filename, "text/plain", file_content, filename),),
+            (make_upload(filename, "text/plain", file_content, filename),),
         )
 
     assert response.data[0].reason == "Processing failed"
@@ -284,7 +311,7 @@ def make_settings(search_threshold: float | None = 0.2) -> Settings:
 def test_text_ingestion_stores_vector_without_payload() -> None:
     service, _, model_client, qdrant_store = make_service()
     model_client.embed_text.return_value = [0.5]
-    upload = FileUpload("note.txt", "text/plain", b"hello world", "note.txt")
+    upload = make_upload("note.txt", "text/plain", b"hello world", "note.txt")
 
     with patch(
         "backend.app.file_embeddings.ingestion_service.process_file",
@@ -293,6 +320,37 @@ def test_text_ingestion_stores_vector_without_payload() -> None:
         service.process_files((upload,))
 
     qdrant_store.store_embedding.assert_called_once_with([0.5], payload=None)
+
+
+@pytest.mark.unit
+def test_search_populates_source_url_when_drive_id_present() -> None:
+    service, _, model_client, qdrant_store = make_service()
+    service_with_settings = FileIngestionService(
+        service._description_client,
+        model_client,
+        qdrant_store,
+        settings=make_settings(0.2),
+    )
+    model_client.embed_text.return_value = [0.7]
+    qdrant_store.search.return_value = [
+        SearchHit(
+            point_id="point-1",
+            score=0.9,
+            payload={
+                "filename": "photo.png",
+                "file_path": "photo.png",
+                "file_type": "image/png",
+                "content": "description text",
+                "drive_id": "abc123",
+            },
+        )
+    ]
+
+    response = service_with_settings.search("red car", limit=5)
+
+    assert response.data[0].source_url == (
+        "https://drive.google.com/file/d/abc123/view"
+    )
 
 
 @pytest.mark.unit
@@ -333,6 +391,7 @@ def test_search_embeds_query_and_maps_hits() -> None:
                 "file_path": "photo.png",
                 "file_type": "image/png",
                 "content": "description text",
+                "source_url": None,
             }
         ],
     }
@@ -385,4 +444,5 @@ def test_search_drops_hits_without_complete_payload() -> None:
         "file_path": "photo.png",
         "file_type": "image/png",
         "content": "description text",
+        "source_url": None,
     }

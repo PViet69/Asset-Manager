@@ -79,7 +79,7 @@ def test_end_to_end_image_pipeline_embeds_description_and_stores_vector() -> Non
                     ),
                 )
             ],
-            data={"file_path": ["small.png"]},
+            data={"file_path": ["small.png"], "drive_id": ["e2e-drive-1"]},
         )
 
     assert response.status_code == 200
@@ -104,12 +104,16 @@ def test_end_to_end_image_pipeline_embeds_description_and_stores_vector() -> Non
     assert _normalize(points[0].vector) == pytest.approx(
         _normalize([0.11, 0.22, 0.33]), rel=1e-3
     )
-    assert points[0].payload == {
+    payload = points[0].payload
+    assert payload == {
         "filename": "small.png",
         "file_path": "small.png",
         "file_type": "image/png",
         "content": expected_text,
+        "drive_id": "e2e-drive-1",
+        "modified_time": payload["modified_time"],
     }
+    assert isinstance(payload["modified_time"], str)
 
 
 @pytest.mark.integration
@@ -155,6 +159,7 @@ def test_end_to_end_text_and_image_files_share_embedding_space() -> None:
                     ),
                 ),
             ],
+            data={"drive_id": ["e2e-text", "e2e-image"]},
         )
 
     assert response.status_code == 200

@@ -1,5 +1,7 @@
 """File embedding API routes."""
 
+from datetime import datetime, timezone
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -10,6 +12,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.params import Param
 
 from backend.app.api.dependencies import get_file_ingestion_service
 from backend.app.api.schemas.file_embeddings import FileEmbeddingResponse
@@ -37,6 +40,39 @@ def authorize_upload(request: Request) -> None:
     require_upload_access(request)
 
 
+def _is_field_info(value: object) -> bool:
+    """Detect FastAPI's placeholder when a Form param isn't supplied."""
+    return isinstance(value, Param)
+
+
+def _parse_modified_time(raw: object) -> datetime:
+    """Parse ISO-8601 modified_time; fall back to now() when absent or invalid.
+
+    Direct (non-HTTP) callers may pass a Form ``Param`` placeholder instead of
+    a real string. Treat anything that isn't a real string as missing.
+    """
+    if _is_field_info(raw) or not isinstance(raw, str) or not raw:
+        return datetime.now(timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Invalid modified_time: {raw}"
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _as_list(value: object) -> list[object]:
+    """Coerce a repeated form value to a list. None / FieldInfo → []."""
+    if value is None or _is_field_info(value):
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
 @router.post(
     "/v1/file-embeddings",
     response_model=FileEmbeddingResponse,
@@ -46,9 +82,11 @@ def authorize_upload(request: Request) -> None:
 def create_file_embeddings(
     files: list[UploadFile] | None = File(default=None),
     file_path: list[str] | None = Form(default=None),
+    drive_id: list[str] | None = Form(default=None),
+    modified_time: list[str] | None = Form(default=None),
     service: FileIngestionService = Depends(get_file_ingestion_service),
 ) -> FileEmbeddingResponse:
-    """Create embeddings for uploaded files."""
+    """Create embeddings for uploaded files. Each file must carry a drive_id."""
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
@@ -59,7 +97,9 @@ def create_file_embeddings(
                 detail=f"A maximum of {MAX_FILES} files is allowed",
             )
 
-        paths: list[str] = list(file_path) if file_path else []
+        paths: list[str] = [
+            str(p) for p in _as_list(file_path) if not _is_field_info(p)
+        ]
         if len(paths) > len(files):
             raise HTTPException(
                 status_code=400,
@@ -70,6 +110,24 @@ def create_file_embeddings(
             )
         while len(paths) < len(files):
             paths.append("")
+
+        ids: list[str] = [str(d) for d in _as_list(drive_id) if not _is_field_info(d)]
+        if len(ids) < len(files):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"`drive_id` is required for every file "
+                    f"(got {len(ids)} ids for {len(files)} files)"
+                ),
+            )
+        while len(ids) > len(files):
+            ids.pop()
+
+        times: list[object] = [
+            t for t in _as_list(modified_time) if not _is_field_info(t)
+        ]
+        while len(times) < len(files):
+            times.append(None)
 
         uploads: list[FileUpload] = []
         aggregate_size = 0
@@ -83,6 +141,8 @@ def create_file_embeddings(
                     content_type=file.content_type or "",
                     content=content,
                     file_path=paths[index],
+                    drive_id=ids[index],
+                    modified_time=_parse_modified_time(times[index]),
                 )
             )
             if aggregate_size > MAX_AGGREGATE_UPLOAD_SIZE:

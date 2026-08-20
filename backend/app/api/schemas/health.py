@@ -7,3 +7,4 @@ class HealthResponse(BaseModel):
     status: str
     qdrant: str
     model: str
+    drive: str

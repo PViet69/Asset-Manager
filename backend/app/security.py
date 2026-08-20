@@ -75,3 +75,25 @@ def require_upload_access(request: Request) -> None:
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Upload rate limit exceeded",
         )
+
+
+def require_admin_access(request: Request) -> None:
+    """Require a valid admin bearer token."""
+    expected_key: str | None = request.app.state.admin_api_key
+    if not expected_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin API not configured",
+        )
+    scheme, _, supplied_key = request.headers.get("authorization", "").partition(" ")
+    is_valid = (
+        scheme.lower() == "bearer"
+        and bool(supplied_key)
+        and hmac.compare_digest(supplied_key, expected_key)
+    )
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

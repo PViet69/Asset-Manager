@@ -3,6 +3,7 @@
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
 from backend.app.api.schemas.file_embeddings import (
     FileEmbeddingItem,
@@ -37,6 +38,8 @@ class FileUpload:
     content_type: str
     content: bytes
     file_path: str
+    drive_id: str
+    modified_time: datetime
 
 
 class FileIngestionService:
@@ -98,6 +101,12 @@ class FileIngestionService:
     @staticmethod
     def _to_search_item(hit: SearchHit) -> VectorSearchItem:
         payload = hit.payload
+        drive_id = payload.get("drive_id")
+        source_url = (
+            f"https://drive.google.com/file/d/{drive_id}/view"
+            if isinstance(drive_id, str) and drive_id
+            else None
+        )
         return VectorSearchItem(
             point_id=hit.point_id,
             score=hit.score,
@@ -105,6 +114,7 @@ class FileIngestionService:
             file_path=str(payload["file_path"]),
             file_type=str(payload["file_type"]),
             content=str(payload["content"]),
+            source_url=source_url,
         )
 
     def _process_one(self, file: FileUpload) -> FileEmbeddingItem:
@@ -123,6 +133,8 @@ class FileIngestionService:
                     "file_path": file.file_path,
                     "file_type": file.content_type,
                     "content": embedding_text,
+                    "drive_id": file.drive_id,
+                    "modified_time": file.modified_time.isoformat(),
                 }
             self._qdrant_store.store_embedding(vector, payload=payload)
         except ModelNotFoundError:

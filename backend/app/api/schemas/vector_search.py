@@ -41,6 +41,7 @@ class VectorSearchItem(BaseModel):
     file_path: str
     file_type: str
     content: str
+    source_url: str | None = None
 
 
 class VectorSearchResponse(BaseModel):
