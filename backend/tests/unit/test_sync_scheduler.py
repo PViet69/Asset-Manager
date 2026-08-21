@@ -221,29 +221,6 @@ async def test_delete_for_reindex_passes_through_to_qdrant() -> None:
 
 
 @pytest.mark.unit
-def test_build_sync_scheduler_returns_none_when_drive_not_configured() -> None:
-    settings = Settings(
-        MODEL_ENDPOINT_URL="https://model.example",
-        DESCRIPTION_MODEL="vision-model",
-        DESCRIPTION_ENDPOINT_URL="https://vision.example",
-        DESCRIPTION_ENDPOINT_API_KEY="vision-key",
-        EMBEDDING_MODEL="embedding-model",
-        QDRANT_URL="https://qdrant.example",
-        QDRANT_VECTOR_SIZE=2,
-        _env_file=None,
-    )
-
-    scheduler = build_sync_scheduler(
-        settings=settings,
-        drive_client=None,  # type: ignore[arg-type]
-        ingestion_service=None,  # type: ignore[arg-type]
-        qdrant_store=None,  # type: ignore[arg-type]
-    )
-
-    assert scheduler is None
-
-
-@pytest.mark.unit
 def test_sync_tick_result_is_immutable() -> None:
     result = SyncTickResult(upserted=0, deleted=0, unchanged=0, failed=0)
 

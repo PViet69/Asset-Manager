@@ -40,6 +40,7 @@ async def trigger_sync(
         deleted=result.deleted,
         unchanged=result.unchanged,
         failed=result.failed,
+        traces=list(result.traces),
     )
 
 
@@ -59,6 +60,7 @@ async def sync_status(request: Request) -> AdminSyncStatusResponse:
             last_deleted=None,
             last_unchanged=None,
             last_failed=None,
+            last_traces=[],
         )
     last = scheduler.last_result
     return AdminSyncStatusResponse(
@@ -67,6 +69,7 @@ async def sync_status(request: Request) -> AdminSyncStatusResponse:
         last_deleted=last.deleted if last else None,
         last_unchanged=last.unchanged if last else None,
         last_failed=last.failed if last else None,
+        last_traces=list(last.traces) if last else [],
     )
 
 

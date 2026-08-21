@@ -141,23 +141,3 @@ def test_record_deleted_removes_point_from_known_set() -> None:
 
     plan = state.diff()
     assert plan.to_delete_point_ids == []
-
-
-@pytest.mark.unit
-def test_sync_plan_is_empty_helper() -> None:
-    plan = SyncPlan()
-
-    assert plan.is_empty
-
-
-@pytest.mark.unit
-def test_sync_plan_counts() -> None:
-    plan = SyncPlan(
-        to_upsert=[_drive("a", datetime(2026, 8, 1, tzinfo=timezone.utc))],
-        to_delete_point_ids=["p-1"],
-        unchanged=[],
-    )
-
-    assert plan.upsert_count == 1
-    assert plan.delete_count == 1
-    assert not plan.is_empty

@@ -115,6 +115,7 @@ class FileIngestionService:
             file_type=str(payload["file_type"]),
             content=str(payload["content"]),
             source_url=source_url,
+            drive_id=str(drive_id) if isinstance(drive_id, str) and drive_id else None,
         )
 
     def _process_one(self, file: FileUpload) -> FileEmbeddingItem:

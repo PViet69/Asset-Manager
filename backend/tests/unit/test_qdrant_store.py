@@ -80,7 +80,6 @@ def test_settings_require_description_endpoint_when_description_model_set(
 def test_constructs_client_once_from_settings() -> None:
     settings = Settings(
         MODEL_ENDPOINT_URL="https://model.example",
-        UPLOAD_API_KEY="upload-secret",
         DESCRIPTION_MODEL="vision-model",
         DESCRIPTION_ENDPOINT_URL="https://vision.example",
         DESCRIPTION_ENDPOINT_API_KEY="vision-key",
@@ -125,7 +124,6 @@ def test_ensure_collection_creates_missing_configured_collection() -> None:
 def test_ensure_collection_uses_configured_distance() -> None:
     settings = Settings(
         MODEL_ENDPOINT_URL="https://model.example",
-        UPLOAD_API_KEY="upload-secret",
         DESCRIPTION_MODEL="vision-model",
         DESCRIPTION_ENDPOINT_URL="https://vision.example",
         DESCRIPTION_ENDPOINT_API_KEY="vision-key",

@@ -98,15 +98,43 @@ export function SearchPanel(): JSX.Element {
         <div className="results">
           <h3>Hits</h3>
           <ul className="list">
-            {state.items.map((item) => (
-              <li key={item.point_id}>
-                <div className="row-line">
-                  <span className="fname">{item.filename}</span>
-                  <span className="score">{formatScore(item.score)}</span>
-                </div>
-                <div className="snippet">{item.content}</div>
-              </li>
-            ))}
+            {state.items.map((item) => {
+              const driveUrl =
+                item.source_url ||
+                (item.drive_id
+                  ? `https://drive.google.com/file/d/${item.drive_id}/view`
+                  : null);
+              return (
+                <li key={item.point_id}>
+                  <div className="row-line">
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      {driveUrl ? (
+                        <a
+                          href={driveUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="fname"
+                          style={{
+                            color: "var(--accent-2)",
+                            textDecoration: "none",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                          title="Open file directly on Google Drive"
+                        >
+                          📄 {item.filename} <span style={{ fontSize: "11px" }}>↗</span>
+                        </a>
+                      ) : (
+                        <span className="fname">📄 {item.filename}</span>
+                      )}
+                    </div>
+                    <span className="score">{formatScore(item.score)}</span>
+                  </div>
+                  <div className="snippet">{item.content}</div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

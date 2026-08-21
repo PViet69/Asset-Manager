@@ -392,6 +392,7 @@ def test_search_embeds_query_and_maps_hits() -> None:
                 "file_type": "image/png",
                 "content": "description text",
                 "source_url": None,
+                "drive_id": None,
             }
         ],
     }
@@ -445,4 +446,5 @@ def test_search_drops_hits_without_complete_payload() -> None:
         "file_type": "image/png",
         "content": "description text",
         "source_url": None,
+        "drive_id": None,
     }

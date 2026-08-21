@@ -29,7 +29,6 @@ class Settings(BaseSettings):
     MODEL_ENDPOINT_URL: str
     MODEL_ENDPOINT_API_KEY: str | None = None
     MODEL_REQUEST_TIMEOUT: float = Field(default=30, gt=0)
-    UPLOAD_API_KEY: str | None = None
     DESCRIPTION_MODEL: NonBlankSetting
     DESCRIPTION_ENDPOINT_URL: str | None = None
     DESCRIPTION_ENDPOINT_API_KEY: str | None = None

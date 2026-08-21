@@ -1,6 +1,7 @@
 server {
     listen 80;
     server_name _;
+    absolute_redirect off;
 
     # Match the backend's MAX_REQUEST_SIZE (250 MB) so nginx does not
     # truncate multipart uploads before the app applies its own limit.
@@ -15,19 +16,25 @@ server {
     }
 
     # Proxy API routes to the backend service (same-origin for the browser,
-    # so no CORS configuration is needed on the backend). When
-    # UPLOAD_API_KEY is set, the bearer header is injected here — the key
-    # never reaches the browser bundle.
+    # so no CORS configuration is needed on the backend).
     location /v1/ {
         proxy_pass http://app:8000;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header Authorization "Bearer ${UPLOAD_API_KEY}";
     }
 
     location = /health {
         proxy_pass http://app:8000;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # Admin UI + sync API. Authorization header is injected by the browser
+    # from sessionStorage (no server-side key needed for the static page);
+    # API calls carry the user-supplied bearer header through unchanged.
+    location /admin {
+        proxy_pass http://app:8000;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }

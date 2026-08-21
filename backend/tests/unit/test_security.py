@@ -63,9 +63,8 @@ def test_rate_limiter_allows_and_blocks_requests() -> None:
     assert limiter.allow("client-ip-2") is True
 
 
-def test_require_upload_access_passes_when_no_api_key_configured() -> None:
+def test_require_upload_access_allows_request_when_rate_limit_not_exceeded() -> None:
     request = Mock()
-    request.app.state.upload_api_key = None
     request.app.state.upload_rate_limiter.allow.return_value = True
     request.client.host = "203.0.113.7"
 
@@ -74,27 +73,8 @@ def test_require_upload_access_passes_when_no_api_key_configured() -> None:
     request.app.state.upload_rate_limiter.allow.assert_called_once_with("203.0.113.7")
 
 
-@pytest.mark.parametrize(
-    "authorization",
-    [None, "", "Basic secret-key", "Bearer", "Bearer wrong-key"],
-)
-def test_require_upload_access_rejects_missing_or_invalid_bearer(
-    authorization: str | None,
-) -> None:
-    request = Mock()
-    request.app.state.upload_api_key = "secret-key"
-    request.headers = {} if authorization is None else {"authorization": authorization}
-
-    with pytest.raises(HTTPException) as exc_info:
-        require_upload_access(request)
-
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.headers == {"WWW-Authenticate": "Bearer"}
-
-
 def test_require_upload_access_rate_limits_client() -> None:
     request = Mock()
-    request.app.state.upload_api_key = None
     request.app.state.upload_rate_limiter.allow.return_value = False
     request.client.host = "203.0.113.7"
 

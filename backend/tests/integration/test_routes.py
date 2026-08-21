@@ -173,52 +173,6 @@ def test_openapi_has_no_request_level_model_fields(app: FastAPI) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "headers",
-    [{}, {"Authorization": "Bearer wrong"}],
-)
-def test_upload_requires_configured_api_key(
-    headers: dict[str, str],
-    app: FastAPI,
-) -> None:
-    service = Mock(spec=FileIngestionService)
-    override_ingestion_service(app, service)
-    app_with_key = create_app(service=service, upload_api_key="secret")
-
-    with TestClient(app_with_key) as client:
-        response = client.post(
-            "/v1/file-embeddings",
-            files=[("files", ("file.txt", b"content", "text/plain"))],
-            data=_drive_id_fields(1),
-            headers=headers,
-        )
-
-    assert response.status_code == 401
-    service.process_files.assert_not_called()
-
-
-@pytest.mark.integration
-def test_upload_with_correct_api_key_reaches_service(app: FastAPI) -> None:
-    service = Mock(spec=FileIngestionService)
-    service.process_files.return_value = FileEmbeddingResponse(data=[])
-    override_ingestion_service(app, service)
-    app_with_key = create_app(service=service, upload_api_key="secret")
-
-    with TestClient(app_with_key) as client:
-        response = client.post(
-            "/v1/file-embeddings",
-            files=[("files", ("file.txt", b"content", "text/plain"))],
-            data=_drive_id_fields(1),
-            headers={"Authorization": "Bearer secret"},
-        )
-
-    assert response.status_code == 200
-    service.process_files.assert_called_once_with(
-        (FileUpload("file.txt", "text/plain", b"content", "", "drive-0", ANY),),
-    )
-
-
-@pytest.mark.integration
 def test_declared_oversized_content_length_returns_payload_too_large(
     app: FastAPI,
 ) -> None:

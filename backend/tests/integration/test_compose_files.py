@@ -25,7 +25,7 @@ def test_compose_defines_frontend_service() -> None:
 
     assert frontend["build"] == "./frontend"
     assert frontend["ports"] == ["127.0.0.1:${FRONTEND_PORT:-5173}:80"]
-    assert frontend["environment"]["UPLOAD_API_KEY"] == "${UPLOAD_API_KEY:-}"
+    assert frontend["environment"]["ADMIN_API_KEY"] == "${ADMIN_API_KEY:-}"
     assert frontend["depends_on"] == ["app"]
     nginx_template = (
         ROOT / "frontend" / "nginx-templates" / "default.conf.template"

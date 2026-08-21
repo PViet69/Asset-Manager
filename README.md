@@ -48,7 +48,7 @@ uv run uvicorn backend.app.main:create_app --factory --reload
 | `DESCRIPTION_ENDPOINT_URL` | Yes | None | OpenAI-compatible base URL for the description model. May differ from `MODEL_ENDPOINT_URL`. |
 | `DESCRIPTION_ENDPOINT_API_KEY` | No | Empty | Description endpoint API key. |
 | `EMBEDDING_MODEL` | Yes | None | Text-embedding model used for description text, raw text, and PDF text. |
-| `UPLOAD_API_KEY` | No | Empty | Bearer key required for file uploads. When unset, uploads are accepted from loopback clients only. |
+| `ADMIN_API_KEY` | No | Empty | Bearer key required for administrative sync management (`/admin`). |
 | `QDRANT_URL` | Yes | None | Qdrant URL. |
 | `QDRANT_API_KEY` | No | Empty | Qdrant API key. |
 | `QDRANT_COLLECTION` | No | `file_embeddings` | Qdrant collection name. |
@@ -67,7 +67,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The UI is served at `http://localhost:${FRONTEND_PORT:-5173}/`; its nginx reverse-proxies `/v1` and `/health` to the app container, so the browser stays same-origin and no CORS configuration is needed. When `UPLOAD_API_KEY` is set, the frontend container injects the bearer header at the proxy — the key never reaches the browser bundle.
+The UI is served at `http://localhost:${FRONTEND_PORT:-5173}/`; its nginx reverse-proxies `/v1` and `/health` to the app container, so the browser stays same-origin and no CORS configuration is needed.
 
 When the model API runs on the Docker Desktop host, set `MODEL_ENDPOINT_URL=http://host.docker.internal:8001/v1`. In other environments, use a URL reachable from the app container. Compose connects the app to Qdrant using service DNS.
 
@@ -79,7 +79,6 @@ When the model API runs on the Docker Desktop host, set `MODEL_ENDPOINT_URL=http
 
 ```bash
 curl -X POST http://localhost:8000/v1/file-embeddings \
-  -H "Authorization: Bearer $UPLOAD_API_KEY" \
   -F files=@README.md \
   -F files=@photo.png
 ```
@@ -124,7 +123,7 @@ Scanned PDFs are unsupported because OCR is out of scope.
 - Maximum 25 MB per file
 - Maximum 250 MB aggregate request body
 - Images exceeding 100 million pixels are rejected
-- Uploads require `Authorization: Bearer $UPLOAD_API_KEY` when configured, and are rate-limited to 60 requests per minute per client address
+- Requests are rate-limited to 60 requests per minute per client address
 - Missing files or more than 10 files return HTTP 400
 - Empty, oversized, unsupported, invalid, model-failed, or storage-failed files return per-file errors with HTTP 200 when the request itself is valid
 
@@ -134,7 +133,6 @@ Scanned PDFs are unsupported because OCR is out of scope.
 
 ```bash
 curl -X POST http://localhost:8000/v1/search \
-  -H "Authorization: Bearer $UPLOAD_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"query":"a red sports car","limit":10}'
 ```
@@ -185,7 +183,7 @@ The `model` field reports `ok` only when both `DESCRIPTION_MODEL` and `EMBEDDING
 
 ## Security
 
-File uploads require `UPLOAD_API_KEY` bearer authentication (when configured) and use in-memory per-client rate limiting (60 requests/min). Aggregate request bodies are bounded at 250 MB. Compose publishes app and Qdrant ports on loopback by default. Keep services behind trusted/private networks or an authenticated gateway in production.
+File uploads and vector search use in-memory per-client rate limiting (60 requests/min). Aggregate request bodies are bounded at 250 MB. Administrative management endpoints (`/admin`) are protected by `ADMIN_API_KEY`. Compose publishes app and Qdrant ports on loopback by default. Keep services behind trusted/private networks or an authenticated gateway in production.
 
 For production deployments behind a reverse proxy (e.g. Nginx, Traefik, Caddy, or AWS ALB), enforce ingress request body limits (such as Nginx `client_max_body_size 250m;`) to bound chunked uploads before body spooling occurs at the ASGI application server level.
 

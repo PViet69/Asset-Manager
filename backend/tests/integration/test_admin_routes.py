@@ -145,6 +145,7 @@ def test_admin_sync_runs_tick_when_authorized(app: FastAPI) -> None:
         "deleted": 1,
         "unchanged": 3,
         "failed": 0,
+        "traces": [],
     }
     assert stub.trigger_count == 1
 
@@ -172,6 +173,7 @@ def test_admin_sync_status_reports_disabled_when_no_scheduler(
         "last_deleted": None,
         "last_unchanged": None,
         "last_failed": None,
+        "last_traces": [],
     }
 
 
@@ -199,6 +201,7 @@ def test_admin_sync_status_reports_last_result(app: FastAPI) -> None:
         "last_deleted": 0,
         "last_unchanged": 10,
         "last_failed": 0,
+        "last_traces": [],
     }
 
 

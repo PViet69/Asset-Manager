@@ -3,6 +3,19 @@
 from pydantic import BaseModel, ConfigDict
 
 
+class SyncTraceItem(BaseModel):
+    """Step-by-step execution trace log item."""
+
+    model_config = ConfigDict(frozen=True)
+
+    timestamp: str
+    step: str
+    status: str  # "success", "failed", "info"
+    detail: str
+    filename: str | None = None
+    drive_id: str | None = None
+
+
 class AdminSyncResponse(BaseModel):
     """Result of triggering a Drive sync tick."""
 
@@ -12,6 +25,7 @@ class AdminSyncResponse(BaseModel):
     deleted: int
     unchanged: int
     failed: int
+    traces: list[SyncTraceItem] = []
 
 
 class AdminSyncStatusResponse(BaseModel):
@@ -24,6 +38,7 @@ class AdminSyncStatusResponse(BaseModel):
     last_deleted: int | None
     last_unchanged: int | None
     last_failed: int | None
+    last_traces: list[SyncTraceItem] = []
 
 
 class AdminReindexResponse(BaseModel):

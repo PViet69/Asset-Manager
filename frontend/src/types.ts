@@ -21,6 +21,8 @@ export type VectorSearchItem = {
   file_path: string;
   file_type: string;
   content: string;
+  source_url?: string | null;
+  drive_id?: string | null;
 };
 
 export type VectorSearchResponse = {

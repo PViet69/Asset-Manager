@@ -51,24 +51,7 @@ def reject_oversized_request(request: Request) -> None:
 
 
 def require_upload_access(request: Request) -> None:
-    """Require upload access and enforce per-client request rate."""
-    expected_key: str | None = request.app.state.upload_api_key
-    if expected_key is not None:
-        scheme, _, supplied_key = request.headers.get("authorization", "").partition(
-            " "
-        )
-        is_valid = (
-            scheme.lower() == "bearer"
-            and bool(supplied_key)
-            and hmac.compare_digest(supplied_key, expected_key)
-        )
-        if not is_valid:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or missing bearer token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
+    """Enforce per-client request rate limit."""
     client_key = request.client.host if request.client is not None else "unknown"
     if not request.app.state.upload_rate_limiter.allow(client_key):
         raise HTTPException(

@@ -4,8 +4,7 @@ from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from backend.app.api.dependencies import get_file_ingestion_service
@@ -43,7 +42,6 @@ class _UnavailableHealthDependency:
 def create_app(
     service: FileIngestionService | None = None,
     health_dependencies: HealthDependencies | None = None,
-    upload_api_key: str | None = None,
     admin_api_key: str | None = None,
     drive_client: DriveClient | None = None,
     sync_scheduler: SyncScheduler | None = None,
@@ -54,15 +52,12 @@ def create_app(
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         effective_service = service
         effective_health_dependencies = health_dependencies
-        effective_upload_api_key = upload_api_key
         effective_admin_api_key = admin_api_key
         effective_drive_client = drive_client
         effective_sync_scheduler = sync_scheduler
 
         if effective_service is None:
             settings = Settings()
-            if effective_upload_api_key is None:
-                effective_upload_api_key = settings.UPLOAD_API_KEY or None
             if effective_admin_api_key is None:
                 effective_admin_api_key = settings.ADMIN_API_KEY or None
             if effective_drive_client is None:
@@ -109,7 +104,6 @@ def create_app(
         effective_service.startup()
         application.state.file_ingestion_service = effective_service
         application.state.health_dependencies = effective_health_dependencies
-        application.state.upload_api_key = effective_upload_api_key
         application.state.admin_api_key = effective_admin_api_key
         application.state.upload_rate_limiter = InMemoryRateLimiter()
         application.state.drive_client = effective_drive_client
@@ -124,7 +118,6 @@ def create_app(
             for key in (
                 "file_ingestion_service",
                 "health_dependencies",
-                "upload_api_key",
                 "admin_api_key",
                 "upload_rate_limiter",
                 "drive_client",
@@ -141,15 +134,6 @@ def create_app(
     app.include_router(vector_search_router)
     app.include_router(health_router)
     app.include_router(admin_sync_router)
-    app.mount(
-        "/admin/static",
-        StaticFiles(directory="backend/app/static"),
-        name="admin-static",
-    )
-
-    @app.get("/admin", include_in_schema=False)
-    async def admin_index() -> FileResponse:
-        return FileResponse("backend/app/static/admin.html")
 
     @app.middleware("http")
     async def protect_uploads(
