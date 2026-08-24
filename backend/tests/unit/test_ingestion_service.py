@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from logging import ERROR
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 
@@ -55,7 +55,6 @@ def make_upload(
     content_type: str,
     content: bytes,
     file_path: str,
-    drive_id: str = "drive-id-1",
     modified_time: datetime = TEST_MODIFIED_TIME,
 ) -> FileUpload:
     return FileUpload(
@@ -63,8 +62,27 @@ def make_upload(
         content_type=content_type,
         content=content,
         file_path=file_path,
-        drive_id=drive_id,
         modified_time=modified_time,
+    )
+
+
+def make_storage_upload(
+    filename: str,
+    content_type: str,
+    content: bytes,
+    file_path: str,
+    storage_file_id: str = "drive-id-1",
+    modified_time: datetime = TEST_MODIFIED_TIME,
+) -> FileUpload:
+    return FileUpload(
+        filename=filename,
+        content_type=content_type,
+        content=content,
+        file_path=file_path,
+        modified_time=modified_time,
+        provider="google_drive",
+        storage_file_id=storage_file_id,
+        source_url=f"https://drive.google.com/file/d/{storage_file_id}/view",
     )
 
 
@@ -81,13 +99,36 @@ def test_file_upload_is_immutable() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("provider", "storage_file_id"),
+    [("dropbox", None), (None, "id:example")],
+)
+def test_file_upload_requires_complete_provider_identity(
+    provider: str | None,
+    storage_file_id: str | None,
+) -> None:
+    with pytest.raises(ValueError, match="provided together"):
+        FileUpload(
+            filename="note.txt",
+            content_type="text/plain",
+            content=b"hello",
+            file_path="note.txt",
+            modified_time=TEST_MODIFIED_TIME,
+            provider=provider,
+            storage_file_id=storage_file_id,
+        )
+
+
+@pytest.mark.unit
 def test_image_description_text_is_embedded_and_only_vector_is_stored() -> None:
     service, description_client, model_client, qdrant_store = make_service()
     description = make_description()
     description_client.describe.return_value = description
     model_client.embed_text.return_value = [0.3]
     image_bytes = b"validated-image-bytes"
-    upload = make_upload("photo.png", "image/png", image_bytes, "photos/photo.png")
+    upload = make_storage_upload(
+        "photo.png", "image/png", image_bytes, "photos/photo.png"
+    )
 
     with patch(
         "backend.app.file_embeddings.ingestion_service.process_file",
@@ -104,9 +145,12 @@ def test_image_description_text_is_embedded_and_only_vector_is_stored() -> None:
             "file_path": "photos/photo.png",
             "file_type": "image/png",
             "content": description.to_embedding_text(),
-            "drive_id": "drive-id-1",
             "modified_time": TEST_MODIFIED_TIME.isoformat(),
+            "provider": "google_drive",
+            "storage_file_id": "drive-id-1",
+            "source_url": "https://drive.google.com/file/d/drive-id-1/view",
         },
+        point_id=ANY,
     )
     assert response.data[0].model_dump() == {
         "filename": "photo.png",
@@ -323,7 +367,7 @@ def test_text_ingestion_stores_vector_without_payload() -> None:
 
 
 @pytest.mark.unit
-def test_search_populates_source_url_when_drive_id_present() -> None:
+def test_search_returns_stored_source_metadata() -> None:
     service, _, model_client, qdrant_store = make_service()
     service_with_settings = FileIngestionService(
         service._description_client,
@@ -341,16 +385,18 @@ def test_search_populates_source_url_when_drive_id_present() -> None:
                 "file_path": "photo.png",
                 "file_type": "image/png",
                 "content": "description text",
-                "drive_id": "abc123",
+                "provider": "dropbox",
+                "storage_file_id": "id:abc123",
+                "source_url": "https://www.dropbox.com/home/team/photo.png",
             },
         )
     ]
 
     response = service_with_settings.search("red car", limit=5)
 
-    assert response.data[0].source_url == (
-        "https://drive.google.com/file/d/abc123/view"
-    )
+    assert response.data[0].source_url == "https://www.dropbox.com/home/team/photo.png"
+    assert response.data[0].provider == "dropbox"
+    assert response.data[0].storage_file_id == "id:abc123"
 
 
 @pytest.mark.unit
@@ -392,7 +438,8 @@ def test_search_embeds_query_and_maps_hits() -> None:
                 "file_type": "image/png",
                 "content": "description text",
                 "source_url": None,
-                "drive_id": None,
+                "provider": None,
+                "storage_file_id": None,
             }
         ],
     }
@@ -446,5 +493,6 @@ def test_search_drops_hits_without_complete_payload() -> None:
         "file_type": "image/png",
         "content": "description text",
         "source_url": None,
-        "drive_id": None,
+        "provider": None,
+        "storage_file_id": None,
     }

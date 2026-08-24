@@ -55,6 +55,14 @@ uv run uvicorn backend.app.main:create_app --factory --reload
 | `QDRANT_VECTOR_SIZE` | Yes | None | Vector size; must match `EMBEDDING_MODEL` output. |
 | `QDRANT_DISTANCE` | No | `Cosine` | Qdrant distance metric used when creating the collection. |
 | `SEARCH_THRESHOLD` | No | None | Minimum cosine similarity (0–1) for `/v1/search` hits. Search is unavailable when unset. |
+| `DRIVE_SERVICE_ACCOUNT_JSON` | No | Empty | Google Drive service-account JSON. Configure with `DRIVE_FOLDER_ID` to enable manual Drive sync. |
+| `DRIVE_FOLDER_ID` | No | Empty | Google Drive source folder ID. |
+| `DROPBOX_APP_KEY` | No | Empty | Dropbox app key. Configure all Dropbox values to enable manual Dropbox sync. |
+| `DROPBOX_APP_SECRET` | No | Empty | Dropbox app secret. |
+| `DROPBOX_REFRESH_TOKEN` | No | Empty | Dropbox offline refresh token. |
+| `DROPBOX_ROOT_PATH` | No | Empty | Dropbox source folder path, such as `/team-assets`. |
+
+Google Drive and Dropbox are registered in backend code. Configure each source independently; no `STORAGE_PROVIDER` selector exists, and no sync runs until an administrator selects that provider in `/admin`.
 
 At startup, the app checks the configured Qdrant collection and creates it when missing using the configured vector size and distance metric.
 
@@ -67,7 +75,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The UI is served at `http://localhost:${FRONTEND_PORT:-5173}/`; its nginx reverse-proxies `/v1` and `/health` to the app container, so the browser stays same-origin and no CORS configuration is needed.
+The UI is served at `http://localhost:${FRONTEND_PORT:-5173}/`; nginx serves the Vite bundle, routes `/admin` to that SPA, and reverse-proxies `/v1`, `/health`, and `/admin/sync/` to the app container. The browser stays same-origin, so no CORS configuration is needed.
 
 When the model API runs on the Docker Desktop host, set `MODEL_ENDPOINT_URL=http://host.docker.internal:8001/v1`. In other environments, use a URL reachable from the app container. Compose connects the app to Qdrant using service DNS.
 
@@ -212,6 +220,10 @@ cd frontend && npm run dev
 ```
 
 Open `http://localhost:5173/`.
+
+### Storage admin
+
+Open `http://localhost:5173/admin` to operate configured providers. Enter `ADMIN_API_KEY` after each page load; it is held only in React component memory, never browser storage, URLs, logs, or frontend environment variables. The page sends the key only as a bearer header to `/admin/sync/`.
 
 ### Build
 

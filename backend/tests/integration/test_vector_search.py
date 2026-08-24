@@ -18,7 +18,6 @@ from backend.app.exceptions import (
     SettingsError,
 )
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
-from backend.app.main import create_app
 
 
 def override_ingestion_service(app: FastAPI, service: Mock) -> None:
@@ -63,7 +62,8 @@ def test_search_returns_hits(app: FastAPI) -> None:
                 "file_type": "image/png",
                 "content": "description text",
                 "source_url": None,
-                "drive_id": None,
+                "provider": None,
+                "storage_file_id": None,
             }
         ],
     }
@@ -159,6 +159,3 @@ def test_search_returns_502_when_qdrant_fails(app: FastAPI) -> None:
 
     assert response.status_code == 502
     assert response.json()["detail"] == "Qdrant storage failure"
-
-
-

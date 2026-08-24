@@ -657,6 +657,19 @@ wheels = [
 ]
 
 [[package]]
+name = "dropbox"
+version = "12.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "stone" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b0/2c/08c98e1d818c07ed051b917c674f755402692af9683c106fedab7e8bb9b3/dropbox-12.2.1.tar.gz", hash = "sha256:61fcb821f7e8585aa4b9e2abc94801aaf8d65ed5ca89313450e56d51c46add7e", size = 1251668, upload-time = "2026-07-20T16:43:20.627Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f4/8d/4dfdb50aa7378cfe8be2820ed375d840340a9dfb4971e76c780883c860d5/dropbox-12.2.1-py3-none-any.whl", hash = "sha256:a0f9cdc3505b104f7a14b35f81a8a0be6f44eb738475ef324243684c25efe1fb", size = 668881, upload-time = "2026-07-20T16:43:19.115Z" },
+]
+
+[[package]]
 name = "fastapi"
 version = "0.141.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1499,6 +1512,7 @@ name = "openai-file-embeddings"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "dropbox" },
     { name = "fastapi" },
     { name = "google-api-python-client" },
     { name = "google-auth" },
@@ -1525,6 +1539,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dropbox", specifier = ">=12.0.2" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "google-api-python-client", specifier = ">=2.150.0" },
     { name = "google-auth", specifier = ">=2.35.0" },
@@ -2235,6 +2250,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b5/b4/205b0d5241d934e8add0c38aa924c4f9fb7330834ff11e5444db964ec3f9/starlette-1.6.0.tar.gz", hash = "sha256:d4e3ac5e546444960c710297a3c9fc3f7ebae1b7e963f3d36173b49da535be9b", size = 2716969, upload-time = "2026-08-08T18:27:57.512Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/cb/6a6a47d5b464bd08695d254f3da6e7986cc70c9fa5d778eda57538edfe56/starlette-1.6.0-py3-none-any.whl", hash = "sha256:a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c", size = 75969, upload-time = "2026-08-08T18:27:56.196Z" },
+]
+
+[[package]]
+name = "stone"
+version = "3.5.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/93/bd/7eaf2892202c9467f6571f580bffe0249ce1a9680a994d803cebc3d14748/stone-3.5.4.tar.gz", hash = "sha256:4f4f4399e6a7646917716d7dc06f814d32f94f30fb51d61b5c760e8f6d3ba53b", size = 335941, upload-time = "2026-08-03T21:27:28.756Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/f7/3e9fe84515c8f3fc25eb62f43156384fc6fb73faaba2a80c7f38f43a909e/stone-3.5.4-py3-none-any.whl", hash = "sha256:987c88b0e3f9f05012030fa08dddc4f8d33cb0ce1d61a5b7a53076f719e1c3b4", size = 203998, upload-time = "2026-08-03T21:27:27.533Z" },
 ]
 
 [[package]]

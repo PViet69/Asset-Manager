@@ -3,8 +3,6 @@ services:
     build: ./frontend
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
-    environment:
-      ADMIN_API_KEY: "${ADMIN_API_KEY:-}"
     depends_on:
       - app
 
@@ -29,7 +27,10 @@ services:
       ADMIN_API_KEY: "${ADMIN_API_KEY:-}"
       DRIVE_SERVICE_ACCOUNT_JSON: "${DRIVE_SERVICE_ACCOUNT_JSON:-}"
       DRIVE_FOLDER_ID: "${DRIVE_FOLDER_ID:-}"
-      DRIVE_SYNC_INTERVAL_SECONDS: "${DRIVE_SYNC_INTERVAL_SECONDS:-300}"
+      DROPBOX_APP_KEY: "${DROPBOX_APP_KEY:-}"
+      DROPBOX_APP_SECRET: "${DROPBOX_APP_SECRET:-}"
+      DROPBOX_REFRESH_TOKEN: "${DROPBOX_REFRESH_TOKEN:-}"
+      DROPBOX_ROOT_PATH: "${DROPBOX_ROOT_PATH:-}"
     depends_on:
       qdrant:
         condition: service_healthy

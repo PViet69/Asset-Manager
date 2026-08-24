@@ -25,13 +25,16 @@ def test_compose_defines_frontend_service() -> None:
 
     assert frontend["build"] == "./frontend"
     assert frontend["ports"] == ["127.0.0.1:${FRONTEND_PORT:-5173}:80"]
-    assert frontend["environment"]["ADMIN_API_KEY"] == "${ADMIN_API_KEY:-}"
+    assert "environment" not in frontend
     assert frontend["depends_on"] == ["app"]
     nginx_template = (
         ROOT / "frontend" / "nginx-templates" / "default.conf.template"
     ).read_text()
     assert "client_max_body_size 250m" in nginx_template
     assert "proxy_pass http://app:8000" in nginx_template
+    assert "location /admin/sync/" in nginx_template
+    assert "try_files $uri $uri/ /index.html" in nginx_template
+    assert "ADMIN_API_KEY" not in nginx_template
 
 
 def test_compose_uses_safe_reproducible_qdrant_defaults() -> None:

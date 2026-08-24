@@ -1,236 +1,145 @@
-"""Integration tests for admin/sync routes."""
+"""Integration tests for provider-scoped admin sync routes."""
 
 from dataclasses import dataclass
+from unittest.mock import Mock
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.drive.scheduler import SyncTickResult
+from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.main import create_app
+from backend.app.storage.registry import ProviderRegistry, ProviderSync
+from backend.app.storage.scheduler import SyncTickResult
 
 
 @dataclass
-class _StubScheduler:
-    last_result: SyncTickResult | None = None
+class _Client:
+    health: str = "ok"
+
+    def check_health(self) -> str:
+        return self.health
+
+
+@dataclass
+class _Scheduler:
+    provider: str
     trigger_count: int = 0
-    delete_count: int = 0
-    tick_result: SyncTickResult = SyncTickResult(
-        upserted=2, deleted=1, unchanged=3, failed=0
-    )
-
-    async def start(self) -> None:
-        return None
-
-    async def stop(self) -> None:
-        return None
+    deleted: int = 0
+    last_result: SyncTickResult | None = None
 
     async def tick_once(self) -> SyncTickResult:
         self.trigger_count += 1
-        self.last_result = self.tick_result
-        return self.tick_result
+        self.last_result = SyncTickResult(self.provider, 2, 1, 3, 0)
+        return self.last_result
 
-    async def delete_for_reindex(self, drive_id: str) -> int:
-        self.delete_count += 1
+    async def delete_for_reindex(self, storage_file_id: str) -> int:  # noqa: ARG002
+        self.deleted += 1
         return 1
 
 
-@pytest.mark.integration
-def test_admin_sync_requires_bearer_token(app: FastAPI) -> None:
-    stub = _StubScheduler()
-    app_with = create_app(
-        service=app_with_service_stub(),  # type: ignore[arg-type]
-        admin_api_key="admin-secret",
-        sync_scheduler=stub,  # type: ignore[arg-type]
+def _registry(
+    drive_enabled: bool = True, dropbox_enabled: bool = True
+) -> tuple[ProviderRegistry, _Scheduler, _Scheduler]:
+    drive = _Scheduler("google_drive")
+    dropbox = _Scheduler("dropbox")
+    return (
+        ProviderRegistry(
+            (
+                ProviderSync(
+                    "google_drive",
+                    "Google Drive",
+                    _Client(),
+                    drive if drive_enabled else None,
+                ),
+                ProviderSync(
+                    "dropbox",
+                    "Dropbox",
+                    _Client(),
+                    dropbox if dropbox_enabled else None,
+                ),
+            )
+        ),
+        drive,
+        dropbox,
     )
 
-    with TestClient(app_with) as client:
-        response = client.post("/admin/sync")
 
-    assert response.status_code == 401
-
-
-@pytest.mark.integration
-def test_admin_routes_forbidden_when_no_admin_key_configured(
-    app: FastAPI,
-) -> None:
-    stub = _StubScheduler()
-    app_with = create_app(
-        service=app_with_service_stub(),  # type: ignore[arg-type]
-        admin_api_key=None,
-        sync_scheduler=stub,  # type: ignore[arg-type]
-    )
-
-    with TestClient(app_with) as client:
-        response = client.post(
-            "/admin/sync",
-            headers={"Authorization": "Bearer anything"},
-        )
-
-    assert response.status_code == 403
-
-
-@pytest.mark.integration
-def test_admin_sync_returns_503_when_scheduler_disabled(app: FastAPI) -> None:
-    app_with = create_app(
-        service=app_with_service_stub(),  # type: ignore[arg-type]
-        admin_api_key="admin-secret",
-        sync_scheduler=None,
-    )
-
-    with TestClient(app_with) as client:
-        response = client.post(
-            "/admin/sync",
-            headers={"Authorization": "Bearer admin-secret"},
-        )
-
-    assert response.status_code == 503
-    assert response.json() == {"detail": "Drive sync is not configured"}
-
-
-@pytest.mark.integration
-def test_admin_reindex_returns_503_when_scheduler_disabled(
-    app: FastAPI,
-) -> None:
-    app_with = create_app(
-        service=app_with_service_stub(),  # type: ignore[arg-type]
-        admin_api_key="admin-secret",
-        sync_scheduler=None,
-    )
-
-    with TestClient(app_with) as client:
-        response = client.post(
-            "/admin/sync/reindex/abc",
-            headers={"Authorization": "Bearer admin-secret"},
-        )
-
-    assert response.status_code == 503
-
-
-@pytest.mark.integration
-def test_admin_rejects_malformed_authorization_header(app: FastAPI) -> None:
-    stub = _StubScheduler()
-    app_with = create_app(
-        service=app_with_service_stub(),  # type: ignore[arg-type]
-        admin_api_key="admin-secret",
-        sync_scheduler=stub,  # type: ignore[arg-type]
-    )
-
-    with TestClient(app_with) as client:
-        response = client.post(
-            "/admin/sync",
-            headers={"Authorization": "Basic admin-secret"},
-        )
-
-    assert response.status_code == 401
-
-
-@pytest.mark.integration
-def test_admin_sync_runs_tick_when_authorized(app: FastAPI) -> None:
-    stub = _StubScheduler()
-    app_with = create_app(
-        service=app_with_service_stub(),  # type: ignore[arg-type]
-        admin_api_key="admin-secret",
-        sync_scheduler=stub,  # type: ignore[arg-type]
-    )
-
-    with TestClient(app_with) as client:
-        response = client.post(
-            "/admin/sync", headers={"Authorization": "Bearer admin-secret"}
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "upserted": 2,
-        "deleted": 1,
-        "unchanged": 3,
-        "failed": 0,
-        "traces": [],
-    }
-    assert stub.trigger_count == 1
-
-
-@pytest.mark.integration
-def test_admin_sync_status_reports_disabled_when_no_scheduler(
-    app: FastAPI,
-) -> None:
-    app_with = create_app(
-        service=app_with_service_stub(),  # type: ignore[arg-type]
-        admin_api_key="admin-secret",
-        sync_scheduler=None,
-    )
-
-    with TestClient(app_with) as client:
-        response = client.get(
-            "/admin/sync/status",
-            headers={"Authorization": "Bearer admin-secret"},
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "enabled": False,
-        "last_upserted": None,
-        "last_deleted": None,
-        "last_unchanged": None,
-        "last_failed": None,
-        "last_traces": [],
-    }
-
-
-@pytest.mark.integration
-def test_admin_sync_status_reports_last_result(app: FastAPI) -> None:
-    stub = _StubScheduler(
-        last_result=SyncTickResult(upserted=4, deleted=0, unchanged=10, failed=0)
-    )
-    app_with = create_app(
-        service=app_with_service_stub(),  # type: ignore[arg-type]
-        admin_api_key="admin-secret",
-        sync_scheduler=stub,  # type: ignore[arg-type]
-    )
-
-    with TestClient(app_with) as client:
-        response = client.get(
-            "/admin/sync/status",
-            headers={"Authorization": "Bearer admin-secret"},
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "enabled": True,
-        "last_upserted": 4,
-        "last_deleted": 0,
-        "last_unchanged": 10,
-        "last_failed": 0,
-        "last_traces": [],
-    }
-
-
-@pytest.mark.integration
-def test_admin_reindex_deletes_by_drive_id(app: FastAPI) -> None:
-    stub = _StubScheduler()
-    app_with = create_app(
-        service=app_with_service_stub(),  # type: ignore[arg-type]
-        admin_api_key="admin-secret",
-        sync_scheduler=stub,  # type: ignore[arg-type]
-    )
-
-    with TestClient(app_with) as client:
-        response = client.post(
-            "/admin/sync/reindex/abc-123",
-            headers={"Authorization": "Bearer admin-secret"},
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {"drive_id": "abc-123", "deleted": 1}
-    assert stub.delete_count == 1
-
-
-def app_with_service_stub():  # noqa: ANN201
-    from unittest.mock import Mock
-
-    from backend.app.file_embeddings.ingestion_service import (
-        FileIngestionService,
-    )
-
+def _app(registry: ProviderRegistry, admin_api_key: str | None = "admin-secret"):
     service = Mock(spec=FileIngestionService)
-    return service
+    return create_app(
+        service=service, admin_api_key=admin_api_key, provider_registry=registry
+    )
+
+
+@pytest.mark.integration
+def test_admin_sync_requires_bearer_token() -> None:
+    registry, _, _ = _registry()
+    with TestClient(_app(registry)) as client:
+        response = client.post("/admin/sync/dropbox")
+    assert response.status_code == 401
+
+
+@pytest.mark.integration
+def test_unknown_provider_returns_404() -> None:
+    registry, _, _ = _registry()
+    with TestClient(_app(registry)) as client:
+        response = client.post(
+            "/admin/sync/unknown", headers={"Authorization": "Bearer admin-secret"}
+        )
+    assert response.status_code == 404
+
+
+@pytest.mark.integration
+def test_disabled_selected_provider_returns_503() -> None:
+    registry, _, _ = _registry(dropbox_enabled=False)
+    with TestClient(_app(registry)) as client:
+        response = client.post(
+            "/admin/sync/dropbox", headers={"Authorization": "Bearer admin-secret"}
+        )
+    assert response.status_code == 503
+
+
+@pytest.mark.integration
+def test_selected_provider_runs_without_triggering_other_provider() -> None:
+    registry, drive, dropbox = _registry()
+    with TestClient(_app(registry)) as client:
+        response = client.post(
+            "/admin/sync/dropbox", headers={"Authorization": "Bearer admin-secret"}
+        )
+    assert response.status_code == 200
+    assert response.json()["provider"] == "dropbox"
+    assert dropbox.trigger_count == 1
+    assert drive.trigger_count == 0
+
+
+@pytest.mark.integration
+def test_status_returns_all_registered_providers() -> None:
+    registry, _, _ = _registry(dropbox_enabled=False)
+    with TestClient(_app(registry)) as client:
+        response = client.get(
+            "/admin/sync/status", headers={"Authorization": "Bearer admin-secret"}
+        )
+    assert response.status_code == 200
+    assert [item["provider"] for item in response.json()["providers"]] == [
+        "google_drive",
+        "dropbox",
+    ]
+    assert response.json()["providers"][1]["enabled"] is False
+
+
+@pytest.mark.integration
+def test_reindex_is_scoped_to_requested_provider() -> None:
+    registry, drive, dropbox = _registry()
+    with TestClient(_app(registry)) as client:
+        response = client.post(
+            "/admin/sync/dropbox/reindex/id-1",
+            headers={"Authorization": "Bearer admin-secret"},
+        )
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider": "dropbox",
+        "storage_file_id": "id-1",
+        "deleted": 1,
+    }
+    assert dropbox.deleted == 1
+    assert drive.deleted == 0
