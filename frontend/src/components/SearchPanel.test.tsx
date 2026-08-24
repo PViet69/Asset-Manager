@@ -28,6 +28,14 @@ test("keeps a long source filename accessible while showing its score", async ()
         content: "Quarterly campaign report",
         source_url: "https://example.com/reports/quarterly.pdf",
       },
+      {
+        point_id: "point-2",
+        score: 0.701,
+        filename: "campaign-summary.pdf",
+        file_path: "/reports/summary.pdf",
+        file_type: "application/pdf",
+        content: "Campaign summary",
+      },
     ],
   });
   render(<SearchPanel />);
@@ -44,4 +52,8 @@ test("keeps a long source filename accessible while showing its score", async ()
   expect(filename).toHaveAttribute("href", "https://example.com/reports/quarterly.pdf");
   expect(filename.parentElement).toHaveClass("result-name");
   await waitFor(() => expect(screen.getByText("0.872")).toBeInTheDocument());
+  const resultList = screen.getByRole("list", { name: "Search results" });
+  expect(resultList).toHaveClass("search-results--entering");
+  expect(resultList.children[0]).toHaveStyle({ "--result-index": "0" });
+  expect(resultList.children[1]).toHaveStyle({ "--result-index": "1" });
 });

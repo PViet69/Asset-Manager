@@ -271,12 +271,17 @@ def _to_dropbox_file(entry: Any, require_supported: bool = True) -> StorageFile 
     mime_type = _EXTENSION_MIMES.get(PurePosixPath(path).suffix.lower())
     if require_supported and mime_type not in _SUPPORTED_MIMES:
         return None
+    modified_time = getattr(
+        entry, "client_modified", datetime.fromtimestamp(0, tz=timezone.utc)
+    )
+    if modified_time.tzinfo is None:
+        modified_time = modified_time.replace(tzinfo=timezone.utc)
     return StorageFile(
         DROPBOX_PROVIDER,
         file_id,
         str(getattr(entry, "name", PurePosixPath(path).name)),
         mime_type or "application/octet-stream",
-        getattr(entry, "client_modified", datetime.fromtimestamp(0, tz=timezone.utc)),
+        modified_time,
         int(getattr(entry, "size", 0)),
         f"https://www.dropbox.com/home{quote(path, safe='/')}",
     )

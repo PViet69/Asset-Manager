@@ -93,7 +93,7 @@ def test_dropbox_lists_paged_supported_files_and_downloads() -> None:
         path_display="/team/note.txt",
         name="note.txt",
         size=5,
-        client_modified=datetime(2026, 8, 1, tzinfo=timezone.utc),
+        client_modified=datetime(2026, 8, 1),
     )
     ignored = SimpleNamespace(
         id="id-2",
@@ -109,6 +109,8 @@ def test_dropbox_lists_paged_supported_files_and_downloads() -> None:
     downloaded = client.download("id-1")
     assert [file.storage_file_id for file in files] == ["id-1"]
     assert files[0].provider == DROPBOX_PROVIDER
+    assert files[0].modified_time == datetime(2026, 8, 1, tzinfo=timezone.utc)
+    assert downloaded.file.modified_time == datetime(2026, 8, 1, tzinfo=timezone.utc)
     assert downloaded.content == b"hello"
 
 

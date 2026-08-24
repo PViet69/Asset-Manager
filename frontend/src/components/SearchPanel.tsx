@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type CSSProperties, type FormEvent } from "react";
 import { ApiError, searchVectors } from "../api/client";
 import type { VectorSearchItem } from "../types";
 
@@ -97,11 +97,12 @@ export function SearchPanel(): JSX.Element {
       {state.kind === "result" && (
         <div className="results">
           <h3>Hits</h3>
-          <ul className="list">
-            {state.items.map((item) => {
+          <ul className="list search-results--entering" aria-label="Search results">
+            {state.items.map((item, index) => {
               const sourceUrl = item.source_url ?? null;
+              const animationStyle = { "--result-index": index } as CSSProperties;
               return (
-                <li key={item.point_id}>
+                <li key={item.point_id} style={animationStyle}>
                   <div className="row-line">
                     <div className="result-name">
                       {sourceUrl ? (
