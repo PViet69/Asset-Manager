@@ -100,14 +100,19 @@ def test_file_upload_is_immutable() -> None:
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    ("provider", "storage_file_id"),
-    [("dropbox", None), (None, "id:example")],
+    ("provider", "storage_file_id", "source_url"),
+    [
+        ("dropbox", None, "https://www.dropbox.com/home/note.txt"),
+        (None, "id:example", "https://drive.google.com/file/d/id:example/view"),
+        ("dropbox", "id:example", None),
+    ],
 )
-def test_file_upload_requires_complete_provider_identity(
+def test_file_upload_requires_complete_provider_source_identity(
     provider: str | None,
     storage_file_id: str | None,
+    source_url: str | None,
 ) -> None:
-    with pytest.raises(ValueError, match="provided together"):
+    with pytest.raises(ValueError, match="provider-backed files"):
         FileUpload(
             filename="note.txt",
             content_type="text/plain",
@@ -116,6 +121,7 @@ def test_file_upload_requires_complete_provider_identity(
             modified_time=TEST_MODIFIED_TIME,
             provider=provider,
             storage_file_id=storage_file_id,
+            source_url=source_url,
         )
 
 

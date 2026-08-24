@@ -103,7 +103,7 @@ export function SearchPanel(): JSX.Element {
               return (
                 <li key={item.point_id}>
                   <div className="row-line">
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div className="result-name">
                       {sourceUrl ? (
                         <a
                           href={sourceUrl}
@@ -113,16 +113,15 @@ export function SearchPanel(): JSX.Element {
                           style={{
                             color: "var(--accent-2)",
                             textDecoration: "none",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px",
                           }}
-                          title="Open source file"
+                          title={item.filename}
                         >
                           📄 {item.filename} <span style={{ fontSize: "11px" }}>↗</span>
                         </a>
                       ) : (
-                        <span className="fname">📄 {item.filename}</span>
+                        <span className="fname" title={item.filename}>
+                          📄 {item.filename}
+                        </span>
                       )}
                     </div>
                     <span className="score">{formatScore(item.score)}</span>

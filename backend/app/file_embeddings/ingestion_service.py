@@ -49,8 +49,13 @@ class FileUpload:
 
     def __post_init__(self) -> None:
         """Require provider-backed files to carry a complete source identity."""
-        if (self.provider is None) != (self.storage_file_id is None):
-            raise ValueError("provider and storage_file_id must be provided together")
+        source_identity = (self.provider, self.storage_file_id, self.source_url)
+        if any(value is None for value in source_identity) and any(
+            value is not None for value in source_identity
+        ):
+            raise ValueError(
+                "provider-backed files require provider, storage_file_id, and source_url"
+            )
 
 
 class FileIngestionService:

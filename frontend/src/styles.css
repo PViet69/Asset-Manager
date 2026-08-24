@@ -232,7 +232,9 @@ ul.list li {
 ul.list li:hover { border-color: var(--border-strong); transform: translateX(2px); }
 
 .row-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.fname { font-weight: 600; letter-spacing: -0.01em; }
+.result-name { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.fname { display: block; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; letter-spacing: -0.01em; }
+.score { flex: 0 0 auto; }
 .meta-row { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
 .snippet {
   color: var(--text-dim);
