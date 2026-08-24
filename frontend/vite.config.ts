@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/v1": { target: proxyTarget, changeOrigin: true },
         "/health": { target: proxyTarget, changeOrigin: true },
+        "/admin/sync": { target: proxyTarget, changeOrigin: true },
       },
     },
     build: {

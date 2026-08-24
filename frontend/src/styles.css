@@ -135,10 +135,14 @@ header.bar {
   padding: 22px;
 }
 
-.grid-2 {
+.grid-2, .admin-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
 }
-@media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .grid-2, .admin-grid { grid-template-columns: 1fr; } }
+
+.admin-grid .panel-card h2 { margin: 0; font-size: 16px; }
+.admin-grid .panel-card .meta { margin: 8px 0; }
+.admin-grid .primary { margin-top: 6px; }
 
 label.field {
   display: block;

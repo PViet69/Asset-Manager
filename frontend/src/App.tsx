@@ -1,6 +1,12 @@
+import { AdminPage } from "./components/AdminPage";
 import { SearchPanel } from "./components/SearchPanel";
 
 export function App(): JSX.Element {
+  if (window.location.pathname === "/admin") return <AdminPage />;
+  return <MainPage />;
+}
+
+function MainPage(): JSX.Element {
   return (
     <div className="app">
       <header className="bar">

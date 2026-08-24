@@ -99,18 +99,14 @@ export function SearchPanel(): JSX.Element {
           <h3>Hits</h3>
           <ul className="list">
             {state.items.map((item) => {
-              const driveUrl =
-                item.source_url ||
-                (item.drive_id
-                  ? `https://drive.google.com/file/d/${item.drive_id}/view`
-                  : null);
+              const sourceUrl = item.source_url ?? null;
               return (
                 <li key={item.point_id}>
                   <div className="row-line">
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      {driveUrl ? (
+                      {sourceUrl ? (
                         <a
-                          href={driveUrl}
+                          href={sourceUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="fname"
@@ -121,7 +117,7 @@ export function SearchPanel(): JSX.Element {
                             alignItems: "center",
                             gap: "4px",
                           }}
-                          title="Open file directly on Google Drive"
+                          title="Open source file"
                         >
                           📄 {item.filename} <span style={{ fontSize: "11px" }}>↗</span>
                         </a>

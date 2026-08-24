@@ -1,5 +1,9 @@
 import { config } from "../config";
-import type { VectorSearchResponse } from "../types";
+import type {
+  AdminSyncResponse,
+  AdminSyncStatusResponse,
+  VectorSearchResponse,
+} from "../types";
 
 export class ApiError extends Error {
   public readonly status: number;
@@ -51,4 +55,30 @@ export function searchVectors(
   limit: number = 10
 ): Promise<VectorSearchResponse> {
   return postJson<VectorSearchResponse>("/v1/search", { query, limit });
+}
+
+async function adminRequest<T>(
+  path: string,
+  adminApiKey: string,
+  method: "GET" | "POST" = "GET"
+): Promise<T> {
+  const res = await fetch(`${config.apiBase}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${adminApiKey}` },
+  });
+  if (!res.ok) await parseError(res);
+  return (await res.json()) as T;
+}
+
+export function getAdminSyncStatus(
+  adminApiKey: string
+): Promise<AdminSyncStatusResponse> {
+  return adminRequest("/admin/sync/status", adminApiKey);
+}
+
+export function triggerAdminSync(
+  provider: string,
+  adminApiKey: string
+): Promise<AdminSyncResponse> {
+  return adminRequest(`/admin/sync/${encodeURIComponent(provider)}`, adminApiKey, "POST");
 }
