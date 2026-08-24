@@ -1,22 +1,16 @@
 """Health check API route."""
 
 from dataclasses import dataclass
-from typing import Protocol
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 
-from backend.app.api.schemas.health import HealthResponse
+from backend.app.api.schemas.health import HealthResponse, ProviderHealth
 from backend.app.integrations.model_client import ModelClient
 from backend.app.integrations.qdrant_store import QdrantStore
 from backend.app.model.description_client import ImageDescriptionClient
+from backend.app.storage.registry import ProviderRegistry
 
 router = APIRouter()
-
-
-class DriveHealthChecker(Protocol):
-    """Subset of DriveClient behavior needed for the health endpoint."""
-
-    def check_health(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -26,7 +20,6 @@ class HealthDependencies:
     description_client: ImageDescriptionClient
     model_client: ModelClient
     qdrant_store: QdrantStore
-    drive: DriveHealthChecker | None = None
 
 
 _HEALTH_DEPENDENCIES: HealthDependencies | None = None
@@ -45,26 +38,29 @@ def get_health_dependencies() -> HealthDependencies:
     status_code=status.HTTP_200_OK,
 )
 def health(
+    request: Request,
     dependencies: HealthDependencies = Depends(get_health_dependencies),
 ) -> HealthResponse:
     """Report image description, embedding, Qdrant, and Drive availability."""
     description_status = dependencies.description_client.check_health()
     model_status = dependencies.model_client.check_health()
     qdrant_status = dependencies.qdrant_store.check_health()
-    drive_status = (
-        dependencies.drive.check_health()
-        if dependencies.drive is not None
-        else "disabled"
+    registry: ProviderRegistry = getattr(
+        request.app.state, "provider_registry", ProviderRegistry(())
     )
+    provider_health = [
+        ProviderHealth(provider=entry.name, status=entry.client.check_health())
+        for entry in registry.providers
+    ]
     model_status_combined = (
         "unavailable" if "unavailable" in (description_status, model_status) else "ok"
     )
-    # "disabled" is expected (Drive not configured), not a degradation.
+    # Disabled registered providers are expected, not a degradation.
     component_statuses = (
         description_status,
         model_status,
         qdrant_status,
-        drive_status,
+        *(item.status for item in provider_health),
     )
     overall_status = (
         "ok"
@@ -75,5 +71,5 @@ def health(
         status=overall_status,
         qdrant=qdrant_status,
         model=model_status_combined,
-        drive=drive_status,
+        providers=provider_health,
     )

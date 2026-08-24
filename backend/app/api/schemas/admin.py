@@ -1,50 +1,54 @@
-"""Schemas for admin-only endpoints."""
+"""Schemas for provider-scoped admin sync endpoints."""
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SyncTraceItem(BaseModel):
-    """Step-by-step execution trace log item."""
-
     model_config = ConfigDict(frozen=True)
 
     timestamp: str
+    provider: str
     step: str
-    status: str  # "success", "failed", "info"
+    status: str
     detail: str
     filename: str | None = None
-    drive_id: str | None = None
+    storage_file_id: str | None = None
 
 
 class AdminSyncResponse(BaseModel):
-    """Result of triggering a Drive sync tick."""
-
     model_config = ConfigDict(frozen=True)
 
+    provider: str
     upserted: int
     deleted: int
     unchanged: int
     failed: int
-    traces: list[SyncTraceItem] = []
+    traces: list[SyncTraceItem] = Field(default_factory=list)
+
+
+class ProviderSyncStatus(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider: str
+    display_name: str
+    enabled: bool
+    health: str
+    last_upserted: int | None = None
+    last_deleted: int | None = None
+    last_unchanged: int | None = None
+    last_failed: int | None = None
+    last_traces: list[SyncTraceItem] = Field(default_factory=list)
 
 
 class AdminSyncStatusResponse(BaseModel):
-    """Status of the Drive sync scheduler."""
-
     model_config = ConfigDict(frozen=True)
 
-    enabled: bool
-    last_upserted: int | None
-    last_deleted: int | None
-    last_unchanged: int | None
-    last_failed: int | None
-    last_traces: list[SyncTraceItem] = []
+    providers: list[ProviderSyncStatus]
 
 
 class AdminReindexResponse(BaseModel):
-    """Result of deleting all stored points for one Drive file id."""
-
     model_config = ConfigDict(frozen=True)
 
-    drive_id: str
+    provider: str
+    storage_file_id: str
     deleted: int

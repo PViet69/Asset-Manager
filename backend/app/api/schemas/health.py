@@ -1,4 +1,11 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ProviderHealth(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider: str
+    status: str
 
 
 class HealthResponse(BaseModel):
@@ -7,4 +14,4 @@ class HealthResponse(BaseModel):
     status: str
     qdrant: str
     model: str
-    drive: str
+    providers: list[ProviderHealth] = Field(default_factory=list)

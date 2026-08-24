@@ -82,11 +82,10 @@ def _as_list(value: object) -> list[object]:
 def create_file_embeddings(
     files: list[UploadFile] | None = File(default=None),
     file_path: list[str] | None = Form(default=None),
-    drive_id: list[str] | None = Form(default=None),
     modified_time: list[str] | None = Form(default=None),
     service: FileIngestionService = Depends(get_file_ingestion_service),
 ) -> FileEmbeddingResponse:
-    """Create embeddings for uploaded files. Each file must carry a drive_id."""
+    """Create embeddings for direct file uploads."""
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
@@ -111,18 +110,6 @@ def create_file_embeddings(
         while len(paths) < len(files):
             paths.append("")
 
-        ids: list[str] = [str(d) for d in _as_list(drive_id) if not _is_field_info(d)]
-        if len(ids) < len(files):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"`drive_id` is required for every file "
-                    f"(got {len(ids)} ids for {len(files)} files)"
-                ),
-            )
-        while len(ids) > len(files):
-            ids.pop()
-
         times: list[object] = [
             t for t in _as_list(modified_time) if not _is_field_info(t)
         ]
@@ -141,7 +128,6 @@ def create_file_embeddings(
                     content_type=file.content_type or "",
                     content=content,
                     file_path=paths[index],
-                    drive_id=ids[index],
                     modified_time=_parse_modified_time(times[index]),
                 )
             )

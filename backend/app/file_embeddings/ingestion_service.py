@@ -24,7 +24,11 @@ from backend.app.exceptions import (
 from backend.app.file_processing.service import process_file
 from backend.app.file_processing.types import ProcessedInput
 from backend.app.integrations.model_client import ModelClient
-from backend.app.integrations.qdrant_store import QdrantStore, SearchHit
+from backend.app.integrations.qdrant_store import (
+    QdrantStore,
+    SearchHit,
+    stable_point_id,
+)
 from backend.app.model.description_client import ImageDescriptionClient
 
 logger = logging.getLogger(__name__)
@@ -38,8 +42,15 @@ class FileUpload:
     content_type: str
     content: bytes
     file_path: str
-    drive_id: str
     modified_time: datetime
+    provider: str | None = None
+    storage_file_id: str | None = None
+    source_url: str | None = None
+
+    def __post_init__(self) -> None:
+        """Require provider-backed files to carry a complete source identity."""
+        if (self.provider is None) != (self.storage_file_id is None):
+            raise ValueError("provider and storage_file_id must be provided together")
 
 
 class FileIngestionService:
@@ -101,12 +112,9 @@ class FileIngestionService:
     @staticmethod
     def _to_search_item(hit: SearchHit) -> VectorSearchItem:
         payload = hit.payload
-        drive_id = payload.get("drive_id")
-        source_url = (
-            f"https://drive.google.com/file/d/{drive_id}/view"
-            if isinstance(drive_id, str) and drive_id
-            else None
-        )
+        provider = payload.get("provider")
+        storage_file_id = payload.get("storage_file_id")
+        source_url = payload.get("source_url")
         return VectorSearchItem(
             point_id=hit.point_id,
             score=hit.score,
@@ -114,8 +122,13 @@ class FileIngestionService:
             file_path=str(payload["file_path"]),
             file_type=str(payload["file_type"]),
             content=str(payload["content"]),
-            source_url=source_url,
-            drive_id=str(drive_id) if isinstance(drive_id, str) and drive_id else None,
+            source_url=str(source_url) if isinstance(source_url, str) else None,
+            provider=str(provider) if isinstance(provider, str) and provider else None,
+            storage_file_id=(
+                str(storage_file_id)
+                if isinstance(storage_file_id, str) and storage_file_id
+                else None
+            ),
         )
 
     def _process_one(self, file: FileUpload) -> FileEmbeddingItem:
@@ -128,16 +141,27 @@ class FileIngestionService:
             embedding_text = self._to_embedding_text(processed)
             vector = self._model_client.embed_text(embedding_text)
             payload = None
-            if processed.kind == "image":
+            point_id = None
+            if file.provider is not None and file.storage_file_id is not None:
                 payload = {
                     "filename": file.filename,
                     "file_path": file.file_path,
                     "file_type": file.content_type,
                     "content": embedding_text,
-                    "drive_id": file.drive_id,
                     "modified_time": file.modified_time.isoformat(),
+                    "provider": file.provider,
+                    "storage_file_id": file.storage_file_id,
+                    "source_url": file.source_url,
                 }
-            self._qdrant_store.store_embedding(vector, payload=payload)
+                point_id = stable_point_id(file.provider, file.storage_file_id)
+            if point_id is None:
+                self._qdrant_store.store_embedding(vector, payload=payload)
+            else:
+                self._qdrant_store.store_embedding(
+                    vector,
+                    payload=payload,
+                    point_id=point_id,
+                )
         except ModelNotFoundError:
             raise
         except (FileProcessingError, ModelEndpointError, QdrantStorageError) as exc:

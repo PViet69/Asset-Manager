@@ -41,11 +41,13 @@ class Settings(BaseSettings):
     QDRANT_DISTANCE: str = "Cosine"
     SEARCH_THRESHOLD: OptionalFloatSetting = Field(default=None, ge=0, le=1)
 
-    # Google Drive sync (optional). When both DRIVE_SERVICE_ACCOUNT_JSON and
-    # DRIVE_FOLDER_ID are set, the scheduler starts; otherwise sync is disabled.
+    # Registered storage providers are enabled independently by credentials.
     DRIVE_SERVICE_ACCOUNT_JSON: str | None = None
     DRIVE_FOLDER_ID: str | None = None
-    DRIVE_SYNC_INTERVAL_SECONDS: int = Field(default=2_592_000, gt=0)
+    DROPBOX_APP_KEY: str | None = None
+    DROPBOX_APP_SECRET: str | None = None
+    DROPBOX_REFRESH_TOKEN: str | None = None
+    DROPBOX_ROOT_PATH: str | None = None
 
     # Admin endpoints (optional). Separate from UPLOAD_API_KEY.
     ADMIN_API_KEY: str | None = None

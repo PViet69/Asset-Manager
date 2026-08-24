@@ -42,7 +42,8 @@ class VectorSearchItem(BaseModel):
     file_type: str
     content: str
     source_url: str | None = None
-    drive_id: str | None = None
+    provider: str | None = None
+    storage_file_id: str | None = None
 
 
 class VectorSearchResponse(BaseModel):

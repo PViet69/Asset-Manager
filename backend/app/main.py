@@ -21,8 +21,6 @@ from backend.app.api.routes.vector_search import (
     router as vector_search_router,
 )
 from backend.app.config import Settings
-from backend.app.drive.client import DriveClient, build_drive_client
-from backend.app.drive.scheduler import SyncScheduler, build_sync_scheduler
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.integrations.model_client import OpenAICompatibleModelClient
 from backend.app.integrations.qdrant_store import QdrantEmbeddingStore
@@ -31,6 +29,7 @@ from backend.app.security import (
     InMemoryRateLimiter,
     reject_oversized_request,
 )
+from backend.app.storage.registry import ProviderRegistry, build_provider_registry
 
 
 @dataclass(frozen=True)
@@ -43,8 +42,7 @@ def create_app(
     service: FileIngestionService | None = None,
     health_dependencies: HealthDependencies | None = None,
     admin_api_key: str | None = None,
-    drive_client: DriveClient | None = None,
-    sync_scheduler: SyncScheduler | None = None,
+    provider_registry: ProviderRegistry | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
@@ -53,16 +51,12 @@ def create_app(
         effective_service = service
         effective_health_dependencies = health_dependencies
         effective_admin_api_key = admin_api_key
-        effective_drive_client = drive_client
-        effective_sync_scheduler = sync_scheduler
+        effective_provider_registry = provider_registry
 
         if effective_service is None:
             settings = Settings()
             if effective_admin_api_key is None:
                 effective_admin_api_key = settings.ADMIN_API_KEY or None
-            if effective_drive_client is None:
-                effective_drive_client = build_drive_client(settings)
-
             description_client = InstructorImageDescriptionClient(
                 endpoint_url=settings.DESCRIPTION_ENDPOINT_URL or "",
                 endpoint_api_key=settings.DESCRIPTION_ENDPOINT_API_KEY,
@@ -82,14 +76,12 @@ def create_app(
                     description_client=description_client,
                     model_client=model_client,
                     qdrant_store=qdrant_store,
-                    drive=effective_drive_client,
                 )
-            if effective_sync_scheduler is None:
-                effective_sync_scheduler = build_sync_scheduler(
-                    settings=settings,
-                    drive_client=effective_drive_client,
-                    ingestion_service=effective_service,
-                    qdrant_store=qdrant_store,
+            if effective_provider_registry is None:
+                effective_provider_registry = build_provider_registry(
+                    settings,
+                    effective_service,
+                    qdrant_store,
                 )
         elif effective_health_dependencies is None:
             unavailable = _UnavailableHealthDependency()
@@ -106,22 +98,18 @@ def create_app(
         application.state.health_dependencies = effective_health_dependencies
         application.state.admin_api_key = effective_admin_api_key
         application.state.upload_rate_limiter = InMemoryRateLimiter()
-        application.state.drive_client = effective_drive_client
-        application.state.sync_scheduler = effective_sync_scheduler
-        if effective_sync_scheduler is not None:
-            await effective_sync_scheduler.start()
+        application.state.provider_registry = (
+            effective_provider_registry or ProviderRegistry(())
+        )
         try:
             yield
         finally:
-            if effective_sync_scheduler is not None:
-                await effective_sync_scheduler.stop()
             for key in (
                 "file_ingestion_service",
                 "health_dependencies",
                 "admin_api_key",
                 "upload_rate_limiter",
-                "drive_client",
-                "sync_scheduler",
+                "provider_registry",
             ):
                 application.state._state.pop(key, None)
 

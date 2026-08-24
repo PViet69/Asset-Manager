@@ -19,26 +19,20 @@ from backend.app.config import Settings
 from backend.app.exceptions import QdrantStorageError
 
 logger = logging.getLogger(__name__)
-
-# Fixed UUID namespace for deriving deterministic point ids from Drive ids.
 NAMESPACE = UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
-
-PAYLOAD_DRIVE_ID = "drive_id"
+PAYLOAD_PROVIDER = "provider"
+PAYLOAD_STORAGE_FILE_ID = "storage_file_id"
 PAYLOAD_MODIFIED_TIME = "modified_time"
 
 
 @dataclass(frozen=True)
 class SearchHit:
-    """One scored vector search result with its stored payload."""
-
     point_id: str
     score: float
     payload: dict
 
 
 class QdrantStore(Protocol):
-    """Protocol for Qdrant collection, storage, search, and health operations."""
-
     def ensure_collection(self) -> None: ...
     def store_embedding(
         self,
@@ -47,9 +41,11 @@ class QdrantStore(Protocol):
         *,
         point_id: str | None = None,
     ) -> str: ...
-    def find_by_drive_id(self, drive_id: str) -> list[SearchHit]: ...
-    def find_all_with_drive_id(self) -> list[SearchHit]: ...
-    def delete_by_drive_id(self, drive_id: str) -> int: ...
+    def find_by_storage_key(
+        self, provider: str, storage_file_id: str
+    ) -> list[SearchHit]: ...
+    def find_all_with_storage_key(self, provider: str) -> list[SearchHit]: ...
+    def delete_by_storage_key(self, provider: str, storage_file_id: str) -> int: ...
     def delete_by_point_ids(self, point_ids: list[str]) -> int: ...
     def search(
         self, vector: list[float], limit: int, score_threshold: float
@@ -57,22 +53,14 @@ class QdrantStore(Protocol):
     def check_health(self) -> str: ...
 
 
-def stable_point_id(drive_id: str) -> str:
-    """Deterministic UUID5-derived point id from a Drive file id.
-
-    Qdrant rejects non-UUID point ids, so we coerce the hash into a valid UUID
-    via ``uuid3`` against a fixed namespace.
-    """
-    return str(uuid3(NAMESPACE, drive_id))
+def stable_point_id(provider: str, storage_file_id: str) -> str:
+    return str(uuid3(NAMESPACE, f"{provider}:{storage_file_id}"))
 
 
 class QdrantEmbeddingStore:
-    """Store and search embedding vectors in a configured Qdrant collection."""
-
     def __init__(self, settings: Settings) -> None:
         self._client = QdrantClient(
-            url=settings.QDRANT_URL,
-            api_key=settings.QDRANT_API_KEY,
+            url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY
         )
         self._vector_size = settings.QDRANT_VECTOR_SIZE
         self._collection = settings.QDRANT_COLLECTION
@@ -80,12 +68,8 @@ class QdrantEmbeddingStore:
 
     @classmethod
     def from_client(
-        cls,
-        client: QdrantClient,
-        vector_size: int,
-        collection: str,
+        cls, client: QdrantClient, vector_size: int, collection: str
     ) -> "QdrantEmbeddingStore":
-        """Construct with a pre-built Qdrant client for testing."""
         instance = cls.__new__(cls)
         instance._client = client
         instance._vector_size = vector_size
@@ -94,17 +78,14 @@ class QdrantEmbeddingStore:
         return instance
 
     def ensure_collection(self) -> None:
-        """Create configured collection when it does not exist."""
         try:
-            if self._client.collection_exists(collection_name=self._collection):
-                return
-            self._client.create_collection(
-                collection_name=self._collection,
-                vectors_config=VectorParams(
-                    size=self._vector_size,
-                    distance=self._distance,
-                ),
-            )
+            if not self._client.collection_exists(collection_name=self._collection):
+                self._client.create_collection(
+                    collection_name=self._collection,
+                    vectors_config=VectorParams(
+                        size=self._vector_size, distance=self._distance
+                    ),
+                )
         except Exception as exc:  # noqa: BLE001
             logger.error("Qdrant collection operation failed", exc_info=True)
             raise QdrantStorageError("Qdrant storage failure") from exc
@@ -116,18 +97,11 @@ class QdrantEmbeddingStore:
         *,
         point_id: str | None = None,
     ) -> str:
-        """Upsert one embedding point and return its id (random UUID by default).
-
-        Pass ``point_id`` for deterministic ids (e.g. derived from a Drive file id)
-        so re-syncing the same file replaces its old vector instead of creating a
-        duplicate.
-        """
         resolved_id = point_id or str(uuid4())
         try:
-            point = PointStruct(id=resolved_id, vector=embedding, payload=payload)
             self._client.upsert(
                 collection_name=self._collection,
-                points=[point],
+                points=[PointStruct(id=resolved_id, vector=embedding, payload=payload)],
                 wait=True,
             )
         except Exception as exc:  # noqa: BLE001
@@ -135,77 +109,46 @@ class QdrantEmbeddingStore:
             raise QdrantStorageError("Qdrant storage failure") from exc
         return resolved_id
 
-    def find_by_drive_id(self, drive_id: str) -> list[SearchHit]:
-        """Return all stored points whose payload carries ``drive_id``."""
+    def _key_filter(self, provider: str, storage_file_id: str | None = None) -> Filter:
+        conditions = [
+            FieldCondition(key=PAYLOAD_PROVIDER, match=MatchValue(value=provider))
+        ]
+        if storage_file_id is not None:
+            conditions.append(
+                FieldCondition(
+                    key=PAYLOAD_STORAGE_FILE_ID, match=MatchValue(value=storage_file_id)
+                )
+            )
+        return Filter(must=conditions)
+
+    def _scroll(self, filter_: Filter) -> list[SearchHit]:
         try:
-            response = self._client.scroll(
+            points = self._client.scroll(
                 collection_name=self._collection,
-                scroll_filter=Filter(
-                    must=[
-                        FieldCondition(
-                            key=PAYLOAD_DRIVE_ID,
-                            match=MatchValue(value=drive_id),
-                        )
-                    ]
-                ),
+                scroll_filter=filter_,
                 limit=10_000,
                 with_payload=True,
                 with_vectors=False,
-            )
+            )[0]
         except Exception as exc:  # noqa: BLE001
             logger.error("Qdrant scroll failed", exc_info=True)
             raise QdrantStorageError("Qdrant storage failure") from exc
-        points = response[0]
-        return [
-            SearchHit(
-                point_id=str(point.id),
-                score=1.0,
-                payload=point.payload or {},
-            )
-            for point in points
-        ]
+        return [SearchHit(str(point.id), 1.0, point.payload or {}) for point in points]
 
-    def find_all_with_drive_id(self) -> list[SearchHit]:
-        """Return every stored point that has a ``drive_id`` payload field.
+    def find_by_storage_key(
+        self, provider: str, storage_file_id: str
+    ) -> list[SearchHit]:
+        return self._scroll(self._key_filter(provider, storage_file_id))
 
-        Qdrant's filter DSL has no "field exists" predicate, so we scroll the
-        whole collection (capped) and filter client-side.
-        """
-        try:
-            response = self._client.scroll(
-                collection_name=self._collection,
-                limit=10_000,
-                with_payload=True,
-                with_vectors=False,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Qdrant scroll failed", exc_info=True)
-            raise QdrantStorageError("Qdrant storage failure") from exc
-        points = response[0]
-        return [
-            SearchHit(
-                point_id=str(point.id),
-                score=1.0,
-                payload=point.payload or {},
-            )
-            for point in points
-            if isinstance(point.payload, dict) and point.payload.get("drive_id")
-        ]
+    def find_all_with_storage_key(self, provider: str) -> list[SearchHit]:
+        return self._scroll(self._key_filter(provider))
 
-    def delete_by_drive_id(self, drive_id: str) -> int:
-        """Delete all points whose payload carries ``drive_id``. Returns count."""
-        before = len(self.find_by_drive_id(drive_id))
+    def delete_by_storage_key(self, provider: str, storage_file_id: str) -> int:
+        before = len(self.find_by_storage_key(provider, storage_file_id))
         try:
             self._client.delete(
                 collection_name=self._collection,
-                points_selector=Filter(
-                    must=[
-                        FieldCondition(
-                            key=PAYLOAD_DRIVE_ID,
-                            match=MatchValue(value=drive_id),
-                        )
-                    ]
-                ),
+                points_selector=self._key_filter(provider, storage_file_id),
                 wait=True,
             )
         except Exception as exc:  # noqa: BLE001
@@ -214,14 +157,11 @@ class QdrantEmbeddingStore:
         return before
 
     def delete_by_point_ids(self, point_ids: list[str]) -> int:
-        """Delete specific points by id. Returns the count requested."""
         if not point_ids:
             return 0
         try:
             self._client.delete(
-                collection_name=self._collection,
-                points_selector=point_ids,
-                wait=True,
+                collection_name=self._collection, points_selector=point_ids, wait=True
             )
         except Exception as exc:  # noqa: BLE001
             logger.error("Qdrant delete failed", exc_info=True)
@@ -231,7 +171,6 @@ class QdrantEmbeddingStore:
     def search(
         self, vector: list[float], limit: int, score_threshold: float
     ) -> list[SearchHit]:
-        """Return top scored points at or above score_threshold."""
         try:
             points = self._client.query_points(
                 collection_name=self._collection,
@@ -243,16 +182,11 @@ class QdrantEmbeddingStore:
             logger.error("Qdrant search failed", exc_info=True)
             raise QdrantStorageError("Qdrant storage failure") from exc
         return [
-            SearchHit(
-                point_id=str(point.id),
-                score=point.score,
-                payload=point.payload or {},
-            )
+            SearchHit(str(point.id), point.score, point.payload or {})
             for point in points
         ]
 
     def check_health(self) -> str:
-        """Return Qdrant availability without exposing client errors."""
         try:
             self._client.get_collections()
         except Exception:  # noqa: BLE001
