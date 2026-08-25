@@ -16,6 +16,8 @@ dependencies = [
     "google-api-python-client>=2.150.0",
     "google-auth>=2.35.0",
     "dropbox>=12.0.2",
+    "argon2-cffi>=23.1.0",
+    "itsdangerous>=2.2.0",
 ]
 
 [project.optional-dependencies]

@@ -8,6 +8,8 @@ services:
 
   app:
     build: .
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:${APP_PORT:-8000}:8000"
     environment:
@@ -24,7 +26,6 @@ services:
       QDRANT_VECTOR_SIZE: "${QDRANT_VECTOR_SIZE:?Set QDRANT_VECTOR_SIZE in .env}"
       QDRANT_DISTANCE: "${QDRANT_DISTANCE:-Cosine}"
       SEARCH_THRESHOLD: "${SEARCH_THRESHOLD:-}"
-      ADMIN_API_KEY: "${ADMIN_API_KEY:-}"
       DRIVE_SERVICE_ACCOUNT_JSON: "${DRIVE_SERVICE_ACCOUNT_JSON:-}"
       DRIVE_FOLDER_ID: "${DRIVE_FOLDER_ID:-}"
       DROPBOX_APP_KEY: "${DROPBOX_APP_KEY:-}"

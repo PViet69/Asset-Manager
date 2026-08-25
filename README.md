@@ -48,7 +48,10 @@ uv run uvicorn backend.app.main:create_app --factory --reload
 | `DESCRIPTION_ENDPOINT_URL` | Yes | None | OpenAI-compatible base URL for the description model. May differ from `MODEL_ENDPOINT_URL`. |
 | `DESCRIPTION_ENDPOINT_API_KEY` | No | Empty | Description endpoint API key. |
 | `EMBEDDING_MODEL` | Yes | None | Text-embedding model used for description text, raw text, and PDF text. |
-| `ADMIN_API_KEY` | No | Empty | Bearer key required for administrative sync management (`/admin`). |
+| `ADMIN_USERNAME` | Yes | None | Username for sole administrator account. |
+| `ADMIN_PASSWORD_HASH` | Yes | None | Argon2id hash for administrator password. |
+| `ADMIN_SESSION_SECRET` | Yes | None | Secret used to sign administrator session cookies. |
+| `ADMIN_ALLOWED_ORIGIN` | Yes | `http://localhost:5173` | Exact frontend origin permitted to log in and issue admin changes. |
 | `QDRANT_URL` | Yes | None | Qdrant URL. |
 | `QDRANT_API_KEY` | No | Empty | Qdrant API key. |
 | `QDRANT_COLLECTION` | No | `file_embeddings` | Qdrant collection name. |
@@ -182,6 +185,19 @@ Healthy response:
 
 The `model` field reports `ok` only when both `DESCRIPTION_MODEL` and `EMBEDDING_MODEL` are reachable from the configured endpoint. The overall status becomes `degraded` when any of the three dependencies (description, embedding, Qdrant) reports unavailable.
 
+## Administrator account
+
+Configure one administrator account in `.env`; this project has no registration, user database, or password reset flow.
+
+```bash
+uv run python -c 'from argon2 import PasswordHasher; print(PasswordHasher().hash("choose-a-strong-password"))'
+uv run python -c 'import secrets; print(secrets.token_urlsafe(48))'
+```
+
+Set first output as `ADMIN_PASSWORD_HASH` and second as `ADMIN_SESSION_SECRET`. Set `ADMIN_USERNAME` to chosen username. Never commit `.env`, password hash, or session secret.
+
+Set `ADMIN_ALLOWED_ORIGIN` to exact public frontend origin without path, query, or trailing slash. Examples: `http://localhost:5173` for local Vite development, `https://assets.example.com` for hosted site. Changing `ADMIN_SESSION_SECRET` invalidates existing sessions.
+
 ## Privacy
 
 - Image bytes leave the app only as part of the description request to `MODEL_ENDPOINT_URL`.
@@ -191,7 +207,7 @@ The `model` field reports `ok` only when both `DESCRIPTION_MODEL` and `EMBEDDING
 
 ## Security
 
-File uploads and vector search use in-memory per-client rate limiting (60 requests/min). Aggregate request bodies are bounded at 250 MB. Administrative management endpoints (`/admin`) are protected by `ADMIN_API_KEY`. Compose publishes app and Qdrant ports on loopback by default. Keep services behind trusted/private networks or an authenticated gateway in production.
+File uploads and vector search use in-memory per-client rate limiting (60 requests/min). Administrative management endpoints require signed, `HttpOnly`, `Secure`, `SameSite=Strict` session cookie from configured administrator account. Sessions expire after two hours; login and admin changes require exact `ADMIN_ALLOWED_ORIGIN`. Compose publishes app and Qdrant ports on loopback by default. Keep services behind trusted/private networks or an authenticated gateway in production.
 
 For production deployments behind a reverse proxy (e.g. Nginx, Traefik, Caddy, or AWS ALB), enforce ingress request body limits (such as Nginx `client_max_body_size 250m;`) to bound chunked uploads before body spooling occurs at the ASGI application server level.
 
@@ -223,7 +239,7 @@ Open `http://localhost:5173/`.
 
 ### Storage admin
 
-Open `http://localhost:5173/admin` to operate configured providers. Enter `ADMIN_API_KEY` after each page load; it is held only in React component memory, never browser storage, URLs, logs, or frontend environment variables. The page sends the key only as a bearer header to `/admin/sync/`.
+Open `http://localhost:5173/admin` to operate configured providers. Sign in using configured `ADMIN_USERNAME` and source password used to create `ADMIN_PASSWORD_HASH`. Browser receives signed `HttpOnly`, `Secure`, `SameSite=Strict` session cookie; it is never stored in browser storage, URLs, logs, or frontend environment variables. Sessions expire after two hours. Sign out to clear cookie.
 
 ### Build
 
@@ -235,7 +251,7 @@ cd frontend && npm run build   # tsc + vite build, output in frontend/dist
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
-| `VITE_API_BASE` | empty (same-origin) | Backend root URL. Leave empty — the Vite dev proxy and Docker nginx both forward `/v1` and `/health` to the backend. Set only if the backend gains CORS support. |
+| `VITE_API_BASE` | empty (same-origin) | Backend root URL. Leave empty — Vite and Docker proxies forward `/v1`, `/health`, `/auth`, and `/admin/sync/` to backend. Set only if backend gains credentialed CORS support. |
 | `VITE_API_KEY` | unset | Optional bearer token sent as `Authorization: Bearer <key>`. Not needed when running behind the Docker frontend proxy (nginx injects the header). |
 | `PROXY_TARGET` | `http://localhost:8000` | Dev-only: Vite dev-server proxy target. Never bundled into the app. |
 
