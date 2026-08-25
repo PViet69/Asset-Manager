@@ -76,6 +76,7 @@ def _file(identifier: str) -> StorageFile:
         "text/plain",
         datetime(2026, 8, 1, tzinfo=timezone.utc),
         0,
+        f"https://dropbox.example.test/{identifier}",
     )
 
 

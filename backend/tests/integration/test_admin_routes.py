@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from unittest.mock import Mock
 
 import pytest
+from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 
+from backend.app.admin_auth import AdminAuthConfig
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.main import create_app
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
@@ -64,48 +66,75 @@ def _registry(
     )
 
 
-def _app(registry: ProviderRegistry, admin_api_key: str | None = "admin-secret"):
+TEST_ORIGIN = "https://admin.example.test"
+
+
+def _app(registry: ProviderRegistry):
     service = Mock(spec=FileIngestionService)
     return create_app(
-        service=service, admin_api_key=admin_api_key, provider_registry=registry
+        service=service,
+        admin_auth_config=AdminAuthConfig(
+            username="admin",
+            password_hash=PasswordHasher().hash("correct-password"),
+            session_secret="session-secret-for-tests-only",
+            allowed_origin=TEST_ORIGIN,
+        ),
+        provider_registry=registry,
     )
 
 
+def _login(client: TestClient) -> None:
+    response = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "correct-password"},
+        headers={"Origin": TEST_ORIGIN},
+    )
+    assert response.status_code == 200
+
+
 @pytest.mark.integration
-def test_admin_sync_requires_bearer_token() -> None:
+def test_admin_sync_requires_session() -> None:
     registry, _, _ = _registry()
-    with TestClient(_app(registry)) as client:
-        response = client.post("/admin/sync/dropbox")
+    with TestClient(_app(registry), base_url="https://testserver") as client:
+        response = client.post("/admin/sync/dropbox", headers={"Origin": TEST_ORIGIN})
     assert response.status_code == 401
+
+
+@pytest.mark.integration
+def test_admin_sync_rejects_cross_origin_session_request() -> None:
+    registry, _, _ = _registry()
+    with TestClient(_app(registry), base_url="https://testserver") as client:
+        _login(client)
+        response = client.post(
+            "/admin/sync/dropbox", headers={"Origin": "https://attacker.example.test"}
+        )
+    assert response.status_code == 403
 
 
 @pytest.mark.integration
 def test_unknown_provider_returns_404() -> None:
     registry, _, _ = _registry()
-    with TestClient(_app(registry)) as client:
-        response = client.post(
-            "/admin/sync/unknown", headers={"Authorization": "Bearer admin-secret"}
-        )
+    with TestClient(_app(registry), base_url="https://testserver") as client:
+        _login(client)
+        response = client.post("/admin/sync/unknown", headers={"Origin": TEST_ORIGIN})
     assert response.status_code == 404
 
 
 @pytest.mark.integration
 def test_disabled_selected_provider_returns_503() -> None:
     registry, _, _ = _registry(dropbox_enabled=False)
-    with TestClient(_app(registry)) as client:
-        response = client.post(
-            "/admin/sync/dropbox", headers={"Authorization": "Bearer admin-secret"}
-        )
+    with TestClient(_app(registry), base_url="https://testserver") as client:
+        _login(client)
+        response = client.post("/admin/sync/dropbox", headers={"Origin": TEST_ORIGIN})
     assert response.status_code == 503
 
 
 @pytest.mark.integration
 def test_selected_provider_runs_without_triggering_other_provider() -> None:
     registry, drive, dropbox = _registry()
-    with TestClient(_app(registry)) as client:
-        response = client.post(
-            "/admin/sync/dropbox", headers={"Authorization": "Bearer admin-secret"}
-        )
+    with TestClient(_app(registry), base_url="https://testserver") as client:
+        _login(client)
+        response = client.post("/admin/sync/dropbox", headers={"Origin": TEST_ORIGIN})
     assert response.status_code == 200
     assert response.json()["provider"] == "dropbox"
     assert dropbox.trigger_count == 1
@@ -115,10 +144,9 @@ def test_selected_provider_runs_without_triggering_other_provider() -> None:
 @pytest.mark.integration
 def test_status_returns_all_registered_providers() -> None:
     registry, _, _ = _registry(dropbox_enabled=False)
-    with TestClient(_app(registry)) as client:
-        response = client.get(
-            "/admin/sync/status", headers={"Authorization": "Bearer admin-secret"}
-        )
+    with TestClient(_app(registry), base_url="https://testserver") as client:
+        _login(client)
+        response = client.get("/admin/sync/status")
     assert response.status_code == 200
     assert [item["provider"] for item in response.json()["providers"]] == [
         "google_drive",
@@ -130,10 +158,10 @@ def test_status_returns_all_registered_providers() -> None:
 @pytest.mark.integration
 def test_reindex_is_scoped_to_requested_provider() -> None:
     registry, drive, dropbox = _registry()
-    with TestClient(_app(registry)) as client:
+    with TestClient(_app(registry), base_url="https://testserver") as client:
+        _login(client)
         response = client.post(
-            "/admin/sync/dropbox/reindex/id-1",
-            headers={"Authorization": "Bearer admin-secret"},
+            "/admin/sync/dropbox/reindex/id-1", headers={"Origin": TEST_ORIGIN}
         )
     assert response.status_code == 200
     assert response.json() == {
