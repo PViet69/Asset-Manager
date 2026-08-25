@@ -1,5 +1,6 @@
 import { config } from "../config";
 import type {
+  AdminAccount,
   AdminSyncResponse,
   AdminSyncStatusResponse,
   VectorSearchResponse,
@@ -24,8 +25,6 @@ function buildHeaders(extra?: HeadersInit): Headers {
 }
 
 async function parseError(res: Response): Promise<never> {
-  // FastAPI returns { detail: string | { msg: ... } } on errors.
-  // Backend exceptions already produce sanitized safe_message strings.
   let message = `Request failed with status ${res.status}`;
   try {
     const body = (await res.json()) as { detail?: unknown };
@@ -35,15 +34,20 @@ async function parseError(res: Response): Promise<never> {
       message = JSON.stringify(body.detail);
     }
   } catch {
-    // body wasn't JSON — keep status-based message
+    // Keep status-based message when response body is not JSON.
   }
   throw new ApiError(res.status, message);
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
+async function postJson<T>(
+  path: string,
+  body: unknown,
+  options: RequestInit = {}
+): Promise<T> {
   const res = await fetch(`${config.apiBase}${path}`, {
+    ...options,
     method: "POST",
-    headers: buildHeaders({ "Content-Type": "application/json" }),
+    headers: buildHeaders({ "Content-Type": "application/json", ...options.headers }),
     body: JSON.stringify(body),
   });
   if (!res.ok) await parseError(res);
@@ -63,28 +67,45 @@ export async function fetchThumbnail(path: string): Promise<Blob> {
   return res.blob();
 }
 
+export function loginAdmin(
+  username: string,
+  password: string
+): Promise<AdminAccount> {
+  return postJson<AdminAccount>("/auth/login", { username, password }, {
+    credentials: "include",
+  });
+}
+
+export async function logoutAdmin(): Promise<void> {
+  const res = await fetch(`${config.apiBase}/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) await parseError(res);
+}
+
+export async function getAdminSession(): Promise<AdminAccount> {
+  const res = await fetch(`${config.apiBase}/auth/me`, { credentials: "include" });
+  if (!res.ok) await parseError(res);
+  return (await res.json()) as AdminAccount;
+}
+
 async function adminRequest<T>(
   path: string,
-  adminApiKey: string,
   method: "GET" | "POST" = "GET"
 ): Promise<T> {
   const res = await fetch(`${config.apiBase}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${adminApiKey}` },
+    credentials: "include",
   });
   if (!res.ok) await parseError(res);
   return (await res.json()) as T;
 }
 
-export function getAdminSyncStatus(
-  adminApiKey: string
-): Promise<AdminSyncStatusResponse> {
-  return adminRequest("/admin/sync/status", adminApiKey);
+export function getAdminSyncStatus(): Promise<AdminSyncStatusResponse> {
+  return adminRequest("/admin/sync/status");
 }
 
-export function triggerAdminSync(
-  provider: string,
-  adminApiKey: string
-): Promise<AdminSyncResponse> {
-  return adminRequest(`/admin/sync/${encodeURIComponent(provider)}`, adminApiKey, "POST");
+export function triggerAdminSync(provider: string): Promise<AdminSyncResponse> {
+  return adminRequest(`/admin/sync/${encodeURIComponent(provider)}`, "POST");
 }

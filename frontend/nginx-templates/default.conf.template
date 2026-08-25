@@ -29,11 +29,16 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 
-    # Protected admin API. Browser supplies per-page bearer key unchanged.
+    # Browser admin session endpoints and protected sync API.
+    location /auth/ {
+        proxy_pass http://app:8000;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
     location /admin/sync/ {
         proxy_pass http://app:8000;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header Authorization $http_authorization;
     }
 }

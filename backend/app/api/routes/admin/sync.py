@@ -8,7 +8,7 @@ from backend.app.api.schemas.admin import (
     AdminSyncStatusResponse,
     ProviderSyncStatus,
 )
-from backend.app.security import require_admin_access
+from backend.app.security import require_admin_access, require_admin_origin
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 from backend.app.storage.scheduler import StorageSyncScheduler
 
@@ -41,7 +41,7 @@ def _scheduler_or_503(entry: ProviderSync) -> StorageSyncScheduler:
     "/sync/{provider}",
     response_model=AdminSyncResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_admin_access)],
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
 )
 async def trigger_sync(provider: str, request: Request) -> AdminSyncResponse:
     scheduler = _scheduler_or_503(_provider_or_404(request, provider))
@@ -86,7 +86,7 @@ async def sync_status(request: Request) -> AdminSyncStatusResponse:
     "/sync/{provider}/reindex/{storage_file_id}",
     response_model=AdminReindexResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_admin_access)],
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
 )
 async def reindex_storage_file(
     provider: str, storage_file_id: str, request: Request

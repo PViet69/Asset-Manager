@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
-import { ApiError, getAdminSyncStatus, triggerAdminSync } from "../api/client";
+import {
+  ApiError,
+  getAdminSession,
+  getAdminSyncStatus,
+  loginAdmin,
+  triggerAdminSync,
+} from "../api/client";
 import type { ProviderSyncStatus } from "../types";
 
 function providerHealthLabel(provider: ProviderSyncStatus): string {
@@ -13,25 +19,62 @@ function traceSummary(count: number): string {
 }
 
 export function AdminPage(): JSX.Element {
-  const [adminApiKey, setAdminApiKey] = useState("");
-  const [activeKey, setActiveKey] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [providers, setProviders] = useState<ProviderSyncStatus[]>([]);
   const [syncingProvider, setSyncingProvider] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadProviders(key: string): Promise<void> {
-    const response = await getAdminSyncStatus(key);
+  async function loadProviders(): Promise<void> {
+    const response = await getAdminSyncStatus();
     setProviders(response.providers);
   }
 
-  async function submitKey(event: FormEvent<HTMLFormElement>): Promise<void> {
+  function clearSession(): void {
+    setIsAuthenticated(false);
+    setProviders([]);
+    setSyncingProvider(null);
+  }
+
+  function handleAdminError(
+    caught: unknown,
+    fallback: string,
+    shouldClearSession: boolean = true
+  ): void {
+    if (shouldClearSession && caught instanceof ApiError && caught.status === 401) {
+      clearSession();
+      return;
+    }
+    setError(caught instanceof ApiError ? caught.message : fallback);
+  }
+
+  useEffect(() => {
+    async function restoreSession(): Promise<void> {
+      try {
+        const account = await getAdminSession();
+        setUsername(account.username);
+        setIsAuthenticated(true);
+        await loadProviders();
+      } catch (caught) {
+        handleAdminError(caught, "Could not restore session");
+      }
+    }
+
+    void restoreSession();
+  }, []);
+
+  async function submitLogin(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setError(null);
     try {
-      await loadProviders(adminApiKey);
-      setActiveKey(adminApiKey);
+      const account = await loginAdmin(username, password);
+      setUsername(account.username);
+      setPassword("");
+      setIsAuthenticated(true);
+      await loadProviders();
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Could not load providers");
+      handleAdminError(caught, "Could not sign in", false);
     }
   }
 
@@ -39,10 +82,10 @@ export function AdminPage(): JSX.Element {
     setSyncingProvider(provider);
     setError(null);
     try {
-      await triggerAdminSync(provider, activeKey);
-      await loadProviders(activeKey);
+      await triggerAdminSync(provider);
+      await loadProviders();
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Sync failed");
+      handleAdminError(caught, "Sync failed");
     } finally {
       setSyncingProvider(null);
     }
@@ -58,11 +101,30 @@ export function AdminPage(): JSX.Element {
           </div>
         </div>
       </header>
-      {!activeKey ? (
-        <form className="glass panel-card" onSubmit={submitKey}>
-          <label className="field" htmlFor="admin-api-key">Admin API key</label>
-          <div className="input"><input id="admin-api-key" type="password" value={adminApiKey} onChange={(event) => setAdminApiKey(event.target.value)} required /></div>
-          <div className="actions"><span className="meta">Kept only until this page reloads.</span><button className="primary" type="submit">Load providers</button></div>
+      {!isAuthenticated ? (
+        <form className="glass panel-card" onSubmit={submitLogin}>
+          <label className="field" htmlFor="admin-username">Username</label>
+          <div className="input">
+            <input
+              id="admin-username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              required
+            />
+          </div>
+          <label className="field" htmlFor="admin-password">Password</label>
+          <div className="input">
+            <input
+              id="admin-password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </div>
+          <div className="actions">
+            <button className="primary" type="submit">Sign in</button>
+          </div>
         </form>
       ) : (
         <section className="admin-grid" aria-label="Storage providers">

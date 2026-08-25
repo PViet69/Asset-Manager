@@ -1,6 +1,12 @@
 from typing import Annotated
 
-from pydantic import BeforeValidator, Field, StringConstraints, model_validator
+from pydantic import (
+    AnyHttpUrl,
+    BeforeValidator,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 NonBlankSetting = Annotated[
@@ -49,8 +55,21 @@ class Settings(BaseSettings):
     DROPBOX_REFRESH_TOKEN: str | None = None
     DROPBOX_ROOT_PATH: str | None = None
 
-    # Admin endpoints (optional). Separate from UPLOAD_API_KEY.
-    ADMIN_API_KEY: str | None = None
+    ADMIN_USERNAME: NonBlankSetting
+    ADMIN_PASSWORD_HASH: NonBlankSetting
+    ADMIN_SESSION_SECRET: NonBlankSetting
+    ADMIN_ALLOWED_ORIGIN: AnyHttpUrl
+
+    @model_validator(mode="after")
+    def _validate_admin_allowed_origin(self) -> "Settings":
+        allowed_origin = self.ADMIN_ALLOWED_ORIGIN
+        if (
+            allowed_origin.path not in {"", "/"}
+            or allowed_origin.query
+            or allowed_origin.fragment
+        ):
+            raise ValueError("ADMIN_ALLOWED_ORIGIN must be an origin without a path")
+        return self
 
     @model_validator(mode="after")
     def _validate_description_endpoint(self) -> "Settings":

@@ -54,6 +54,8 @@ export type ProviderSyncStatus = {
   last_traces: SyncTraceItem[];
 };
 
+export type AdminAccount = { username: string };
+
 export type AdminSyncStatusResponse = { providers: ProviderSyncStatus[] };
 
 export type AdminSyncResponse = {

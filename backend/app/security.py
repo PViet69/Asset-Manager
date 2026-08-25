@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import hmac
 import threading
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, Request, status
+
+from backend.app.admin_auth import AdminAuthConfig, get_session_username
 
 MAX_REQUEST_SIZE = 250 * 1024 * 1024
 RATE_LIMIT_WINDOW_SECONDS = 60
@@ -61,22 +63,24 @@ def require_upload_access(request: Request) -> None:
 
 
 def require_admin_access(request: Request) -> None:
-    """Require a valid admin bearer token."""
-    expected_key: str | None = request.app.state.admin_api_key
-    if not expected_key:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin API not configured",
-        )
-    scheme, _, supplied_key = request.headers.get("authorization", "").partition(" ")
-    is_valid = (
-        scheme.lower() == "bearer"
-        and bool(supplied_key)
-        and hmac.compare_digest(supplied_key, expected_key)
-    )
-    if not is_valid:
+    """Require valid signed admin session cookie."""
+    config: AdminAuthConfig = request.app.state.admin_auth_config
+    token = request.cookies.get("admin_session")
+    username = get_session_username(config, token, datetime.now(UTC)) if token else None
+    if username is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing bearer token",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="Authentication required",
+        )
+
+
+def require_admin_origin(request: Request) -> None:
+    """Require configured browser origin for unsafe admin requests."""
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
+    config: AdminAuthConfig = request.app.state.admin_auth_config
+    if request.headers.get("origin") != config.allowed_origin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid request origin",
         )

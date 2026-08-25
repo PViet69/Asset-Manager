@@ -1,75 +1,122 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, expect, test, vi } from "vitest";
 
-import { getAdminSyncStatus } from "../api/client";
+import {
+  ApiError,
+  getAdminSession,
+  getAdminSyncStatus,
+  loginAdmin,
+  logoutAdmin,
+  triggerAdminSync,
+} from "../api/client";
 import { AdminPage } from "./AdminPage";
 
 vi.mock("../api/client", () => ({
-  ApiError: class ApiError extends Error {},
+  ApiError: class ApiError extends Error {
+    constructor(public readonly status: number, message: string) {
+      super(message);
+    }
+  },
+  getAdminSession: vi.fn(),
   getAdminSyncStatus: vi.fn(),
+  loginAdmin: vi.fn(),
+  logoutAdmin: vi.fn(),
   triggerAdminSync: vi.fn(),
 }));
 
+const mockedGetAdminSession = vi.mocked(getAdminSession);
 const mockedGetAdminSyncStatus = vi.mocked(getAdminSyncStatus);
+const mockedLoginAdmin = vi.mocked(loginAdmin);
+const mockedLogoutAdmin = vi.mocked(logoutAdmin);
 
-test("renders compact sync summary and keeps raw activity collapsed", async () => {
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+function mockSignedOut(): void {
+  mockedGetAdminSession.mockRejectedValue(
+    new ApiError(401, "Authentication required")
+  );
+}
+
+test("logs in then loads provider status", async () => {
   // Arrange
-  mockedGetAdminSyncStatus.mockResolvedValue({
-    providers: [
-      {
-        provider: "dropbox",
-        display_name: "Dropbox",
-        enabled: true,
-        health: "ok",
-        last_upserted: 4,
-        last_deleted: 0,
-        last_unchanged: 2,
-        last_failed: 0,
-        last_traces: [
-          {
-            timestamp: "2026-08-24T10:00:00Z",
-            provider: "dropbox",
-            step: "download",
-            status: "ok",
-            detail: "Downloaded file",
-            filename: "brief.pdf",
-            storage_file_id: "file-1",
-          },
-          {
-            timestamp: "2026-08-24T10:00:01Z",
-            provider: "dropbox",
-            step: "index",
-            status: "ok",
-            detail: "Indexed file",
-            filename: "brief.pdf",
-            storage_file_id: "file-1",
-          },
-        ],
-      },
-    ],
-  });
+  const user = userEvent.setup();
+  mockSignedOut();
+  mockedLoginAdmin.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue({ providers: [] });
   render(<AdminPage />);
 
   // Act
-  fireEvent.change(screen.getByLabelText("Admin API key"), {
-    target: { value: "admin-key" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Load providers" }));
+  await user.type(await screen.findByLabelText("Username"), "admin");
+  await user.type(screen.getByLabelText("Password"), "correct-password");
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
 
   // Assert
-  expect(await screen.findByText("Connected")).toBeInTheDocument();
-  expect(screen.getByText("Last sync result")).toBeInTheDocument();
-  expect(screen.getByText("Indexed")).toBeInTheDocument();
-  expect(screen.getByText("Deleted")).toBeInTheDocument();
-  expect(screen.getByText("Failed")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Sync now" })).toBeInTheDocument();
-  expect(screen.getByText("2 activity events")).toBeInTheDocument();
-  const activity = screen.getByText("View activity").closest("details");
-  expect(activity).not.toHaveAttribute("open");
+  expect(mockedLoginAdmin).toHaveBeenCalledWith("admin", "correct-password");
+  expect(mockedGetAdminSyncStatus).toHaveBeenCalledOnce();
+  expect(screen.getByRole("region", { name: "Storage providers" })).toBeInTheDocument();
+});
 
-  fireEvent.click(screen.getByText("View activity"));
-  expect(activity).toHaveAttribute("open");
-  expect(screen.getByText("Downloaded file")).toBeInTheDocument();
-  expect(screen.getByText("Indexed file")).toBeInTheDocument();
+test("shows invalid login error", async () => {
+  // Arrange
+  const user = userEvent.setup();
+  mockSignedOut();
+  mockedLoginAdmin.mockRejectedValue(
+    new ApiError(401, "Invalid username or password")
+  );
+  render(<AdminPage />);
+
+  // Act
+  await user.type(await screen.findByLabelText("Username"), "admin");
+  await user.type(screen.getByLabelText("Password"), "wrong-password");
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Invalid username or password"
+  );
+});
+
+test("restores session on page load", async () => {
+  // Arrange
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue({ providers: [] });
+
+  // Act
+  render(<AdminPage />);
+
+  // Assert
+  expect(await screen.findByRole("region", { name: "Storage providers" })).toBeInTheDocument();
+});
+
+test("returns to login when provider status returns 401", async () => {
+  // Arrange
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockRejectedValue(
+    new ApiError(401, "Authentication required")
+  );
+
+  // Act
+  render(<AdminPage />);
+
+  // Assert
+  await screen.findByLabelText("Username");
+  expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
+});
+
+test("does not show a sign-out button for an authenticated administrator", async () => {
+  // Arrange
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue({ providers: [] });
+
+  // Act
+  render(<AdminPage />);
+
+  // Assert
+  await screen.findByRole("region", { name: "Storage providers" });
+  expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
 });
