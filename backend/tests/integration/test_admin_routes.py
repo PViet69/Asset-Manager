@@ -17,8 +17,10 @@ from backend.app.storage.scheduler import SyncTickResult
 @dataclass
 class _Client:
     health: str = "ok"
+    health_check_count: int = 0
 
     def check_health(self) -> str:
+        self.health_check_count += 1
         return self.health
 
 
@@ -153,6 +155,32 @@ def test_status_returns_all_registered_providers() -> None:
         "dropbox",
     ]
     assert response.json()["providers"][1]["enabled"] is False
+
+
+@pytest.mark.integration
+def test_status_caches_provider_health_checks() -> None:
+    registry, _, _ = _registry()
+    clients = tuple(entry.client for entry in registry.providers)
+    with TestClient(_app(registry), base_url="https://testserver") as client:
+        _login(client)
+        first_response = client.get("/admin/sync/status")
+        second_response = client.get("/admin/sync/status")
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert all(client.health_check_count == 1 for client in clients)
+
+
+@pytest.mark.integration
+def test_sync_refreshes_cached_provider_health() -> None:
+    registry, _, _ = _registry()
+    clients = tuple(entry.client for entry in registry.providers)
+    with TestClient(_app(registry), base_url="https://testserver") as client:
+        _login(client)
+        client.get("/admin/sync/status")
+        response = client.post("/admin/sync/dropbox", headers={"Origin": TEST_ORIGIN})
+    assert response.status_code == 200
+    assert clients[0].health_check_count == 1
+    assert clients[1].health_check_count == 2
 
 
 @pytest.mark.integration

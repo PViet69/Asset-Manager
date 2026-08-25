@@ -1,6 +1,8 @@
 """Literal registered storage providers."""
 
-from dataclasses import dataclass
+import threading
+import time
+from dataclasses import dataclass, field
 
 from backend.app.config import Settings
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
@@ -17,12 +19,44 @@ from backend.app.storage.client import (
 from backend.app.storage.scheduler import StorageSyncScheduler
 
 
+HEALTH_CACHE_TTL_SECONDS = 5 * 60
+
+
+class ProviderHealthCache:
+    """Cache serialized provider health checks for a bounded interval."""
+
+    def __init__(self, client: StorageClient) -> None:
+        self._client = client
+        self._lock = threading.Lock()
+        self._health = "unknown"
+        self._checked_at = 0.0
+
+    def get(self) -> str:
+        """Return cached health, refreshing only after cache expiry."""
+        with self._lock:
+            if time.monotonic() - self._checked_at >= HEALTH_CACHE_TTL_SECONDS:
+                self._health = self._client.check_health()
+                self._checked_at = time.monotonic()
+            return self._health
+
+    def refresh(self) -> str:
+        """Run a provider health check and replace cached health."""
+        with self._lock:
+            self._health = self._client.check_health()
+            self._checked_at = time.monotonic()
+            return self._health
+
+
 @dataclass(frozen=True)
 class ProviderSync:
     name: str
     display_name: str
     client: StorageClient
     scheduler: StorageSyncScheduler | None
+    health_cache: ProviderHealthCache = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "health_cache", ProviderHealthCache(self.client))
 
 
 @dataclass(frozen=True)

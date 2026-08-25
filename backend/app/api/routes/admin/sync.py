@@ -1,5 +1,7 @@
 """Provider-scoped manual storage sync API."""
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from backend.app.api.schemas.admin import (
@@ -46,6 +48,7 @@ def _scheduler_or_503(entry: ProviderSync) -> StorageSyncScheduler:
 async def trigger_sync(provider: str, request: Request) -> AdminSyncResponse:
     scheduler = _scheduler_or_503(_provider_or_404(request, provider))
     result = await scheduler.tick_once()
+    await asyncio.to_thread(_provider_or_404(request, provider).health_cache.refresh)
     return AdminSyncResponse(
         provider=result.provider,
         upserted=result.upserted,
@@ -71,7 +74,7 @@ async def sync_status(request: Request) -> AdminSyncStatusResponse:
                 provider=entry.name,
                 display_name=entry.display_name,
                 enabled=entry.scheduler is not None,
-                health=entry.client.check_health(),
+                health=await asyncio.to_thread(entry.health_cache.get),
                 last_upserted=last.upserted if last else None,
                 last_deleted=last.deleted if last else None,
                 last_unchanged=last.unchanged if last else None,
