@@ -9,6 +9,21 @@ vi.mock("../api/client", () => ({
   searchVectors: vi.fn(),
 }));
 
+vi.mock("./SearchResultThumbnail", () => ({
+  SearchResultThumbnail: ({
+    filename,
+    thumbnailUrl,
+  }: {
+    filename: string;
+    thumbnailUrl: string | null | undefined;
+  }) =>
+    thumbnailUrl ? (
+      <img src="blob:thumbnail" alt={`Thumbnail for ${filename}`} />
+    ) : (
+      <span aria-label="File thumbnail unavailable">📄</span>
+    ),
+}));
+
 const LONG_FILENAME =
   "quarterly-asset-inventory-and-regional-campaign-performance-report-2026-final-final-final.pdf";
 
@@ -27,6 +42,7 @@ test("keeps a long source filename accessible while showing its score", async ()
         file_type: "application/pdf",
         content: "Quarterly campaign report",
         source_url: "https://example.com/reports/quarterly.pdf",
+        thumbnail_url: "/v1/storage/dropbox/id:photo/thumbnail",
       },
       {
         point_id: "point-2",
@@ -52,6 +68,10 @@ test("keeps a long source filename accessible while showing its score", async ()
   expect(filename).toHaveAttribute("href", "https://example.com/reports/quarterly.pdf");
   expect(filename.parentElement).toHaveClass("result-name");
   await waitFor(() => expect(screen.getByText("0.872")).toBeInTheDocument());
+  expect(
+    screen.getByRole("img", { name: `Thumbnail for ${LONG_FILENAME}` })
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("File thumbnail unavailable")).toBeInTheDocument();
   const resultList = screen.getByRole("list", { name: "Search results" });
   expect(resultList).toHaveClass("search-results--entering");
   expect(resultList.children[0]).toHaveStyle({ "--result-index": "0" });

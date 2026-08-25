@@ -17,6 +17,7 @@ from backend.app.api.routes.health import (
 from backend.app.api.routes.health import (
     router as health_router,
 )
+from backend.app.api.routes.thumbnails import router as thumbnails_router
 from backend.app.api.routes.vector_search import (
     router as vector_search_router,
 )
@@ -120,6 +121,7 @@ def create_app(
     )
     app.include_router(file_embeddings_router)
     app.include_router(vector_search_router)
+    app.include_router(thumbnails_router)
     app.include_router(health_router)
     app.include_router(admin_sync_router)
 

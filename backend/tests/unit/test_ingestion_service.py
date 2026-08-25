@@ -373,6 +373,69 @@ def test_text_ingestion_stores_vector_without_payload() -> None:
 
 
 @pytest.mark.unit
+def test_find_indexed_thumbnail_source_requires_exact_stored_identity() -> None:
+    service, _, _, qdrant_store = make_service()
+    qdrant_store.find_by_storage_key.return_value = [
+        SearchHit(
+            point_id="point-1",
+            score=1.0,
+            payload={
+                "provider": "dropbox",
+                "storage_file_id": "id:photo",
+                "file_type": "image/png",
+            },
+        )
+    ]
+
+    source = service.find_indexed_thumbnail_source("dropbox", "id:photo")
+
+    assert source is not None
+    assert source.provider == "dropbox"
+    assert source.storage_file_id == "id:photo"
+    assert source.file_type == "image/png"
+    qdrant_store.find_by_storage_key.assert_called_once_with("dropbox", "id:photo")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("file_type", "provider", "storage_file_id", "thumbnail_url"),
+    [
+        ("image/png", "dropbox", "id:one", "/v1/storage/dropbox/id:one/thumbnail"),
+        (
+            "image/jpeg",
+            "google_drive",
+            "drive-1",
+            "/v1/storage/google_drive/drive-1/thumbnail",
+        ),
+        ("application/pdf", "dropbox", "id:pdf", None),
+        ("image/webp", None, None, None),
+    ],
+)
+def test_search_thumbnail_url_requires_image_type_and_complete_source_identity(
+    file_type: str,
+    provider: str | None,
+    storage_file_id: str | None,
+    thumbnail_url: str | None,
+) -> None:
+    item = FileIngestionService._to_search_item(
+        SearchHit(
+            point_id="point-1",
+            score=0.9,
+            payload={
+                "filename": "asset",
+                "file_path": "asset",
+                "file_type": file_type,
+                "content": "description",
+                "provider": provider,
+                "storage_file_id": storage_file_id,
+            },
+        )
+    )
+
+    assert item.thumbnail_url == thumbnail_url
+
+
+@pytest.mark.unit
 def test_search_returns_stored_source_metadata() -> None:
     service, _, model_client, qdrant_store = make_service()
     service_with_settings = FileIngestionService(
@@ -446,6 +509,7 @@ def test_search_embeds_query_and_maps_hits() -> None:
                 "source_url": None,
                 "provider": None,
                 "storage_file_id": None,
+                "thumbnail_url": None,
             }
         ],
     }
@@ -501,4 +565,5 @@ def test_search_drops_hits_without_complete_payload() -> None:
         "source_url": None,
         "provider": None,
         "storage_file_id": None,
+        "thumbnail_url": None,
     }

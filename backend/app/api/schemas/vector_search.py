@@ -44,6 +44,7 @@ class VectorSearchItem(BaseModel):
     source_url: str | None = None
     provider: str | None = None
     storage_file_id: str | None = None
+    thumbnail_url: str | None = None
 
 
 class VectorSearchResponse(BaseModel):

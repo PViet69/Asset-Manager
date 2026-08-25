@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type FormEvent } from "react";
 import { ApiError, searchVectors } from "../api/client";
 import type { VectorSearchItem } from "../types";
+import { SearchResultThumbnail } from "./SearchResultThumbnail";
 
 const DEFAULT_TOP_K = 10;
 const MIN_TOP_K = 1;
@@ -104,6 +105,10 @@ export function SearchPanel(): JSX.Element {
               return (
                 <li key={item.point_id} style={animationStyle}>
                   <div className="row-line">
+                    <SearchResultThumbnail
+                      thumbnailUrl={item.thumbnail_url}
+                      filename={item.filename}
+                    />
                     <div className="result-name">
                       {sourceUrl ? (
                         <a
@@ -117,11 +122,11 @@ export function SearchPanel(): JSX.Element {
                           }}
                           title={item.filename}
                         >
-                          📄 {item.filename} <span style={{ fontSize: "11px" }}>↗</span>
+                          {item.filename} <span style={{ fontSize: "11px" }}>↗</span>
                         </a>
                       ) : (
                         <span className="fname" title={item.filename}>
-                          📄 {item.filename}
+                          {item.filename}
                         </span>
                       )}
                     </div>

@@ -57,6 +57,12 @@ export function searchVectors(
   return postJson<VectorSearchResponse>("/v1/search", { query, limit });
 }
 
+export async function fetchThumbnail(path: string): Promise<Blob> {
+  const res = await fetch(`${config.apiBase}${path}`, { headers: buildHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.blob();
+}
+
 async function adminRequest<T>(
   path: string,
   adminApiKey: string,

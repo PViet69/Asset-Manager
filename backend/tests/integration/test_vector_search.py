@@ -64,6 +64,7 @@ def test_search_returns_hits(app: FastAPI) -> None:
                 "source_url": None,
                 "provider": None,
                 "storage_file_id": None,
+                "thumbnail_url": None,
             }
         ],
     }

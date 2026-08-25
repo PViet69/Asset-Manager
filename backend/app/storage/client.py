@@ -37,6 +37,10 @@ _SUPPORTED_MIMES: frozenset[str] = frozenset(
         *_GOOGLE_NATIVE_MIMES,
     }
 )
+_THUMBNAIL_MIME_TYPES: frozenset[str] = frozenset(
+    {"image/png", "image/jpeg", "image/webp"}
+)
+
 _EXTENSION_MIMES = {
     ".txt": "text/plain",
     ".md": "text/markdown",
@@ -66,9 +70,30 @@ class DownloadedStorageFile:
     export_mime_type: str | None = None
 
 
+@dataclass(frozen=True)
+class Thumbnail:
+    content: bytes
+    media_type: str
+
+
+class StorageThumbnailUnavailable(Exception):
+    """Raised when a provider cannot produce a thumbnail."""
+
+    def __init__(self) -> None:
+        super().__init__("Storage thumbnail unavailable")
+
+
+class StorageThumbnailNotFound(Exception):
+    """Raised when a provider thumbnail source no longer exists."""
+
+    def __init__(self) -> None:
+        super().__init__("Storage thumbnail not found")
+
+
 class StorageClient(Protocol):
     def list_files(self, root: str) -> list[StorageFile]: ...
     def download(self, storage_file_id: str) -> DownloadedStorageFile: ...
+    def get_thumbnail(self, storage_file_id: str) -> Thumbnail: ...
     def check_health(self) -> str: ...
 
 
@@ -81,6 +106,9 @@ class DisabledStorageClient:
 
     def download(self, storage_file_id: str) -> DownloadedStorageFile:  # noqa: ARG002
         raise RuntimeError(f"{self._provider} sync is not configured")
+
+    def get_thumbnail(self, storage_file_id: str) -> Thumbnail:  # noqa: ARG002
+        raise StorageThumbnailUnavailable()
 
     def check_health(self) -> str:
         return "disabled"
@@ -132,6 +160,7 @@ class GoogleDriveClient:
     def __init__(
         self, service_account_info: dict[str, Any], root_folder_id: str
     ) -> None:
+        from google.auth.transport.requests import AuthorizedSession
         from google.oauth2 import service_account
         from googleapiclient.discovery import build
 
@@ -142,6 +171,7 @@ class GoogleDriveClient:
         self._service = build(
             "drive", "v3", credentials=credentials, cache_discovery=False
         )
+        self._thumbnail_session = AuthorizedSession(credentials)
         self._root_folder_id = root_folder_id
 
     def list_files(self, root: str) -> list[StorageFile]:
@@ -194,6 +224,31 @@ class GoogleDriveClient:
         return DownloadedStorageFile(
             file, content if isinstance(content, bytes) else b"", export_mime
         )
+
+    def get_thumbnail(self, storage_file_id: str) -> Thumbnail:
+        try:
+            metadata = (
+                self._service.files()
+                .get(fileId=storage_file_id, fields="thumbnailLink")
+                .execute()
+            )
+            thumbnail_link = metadata.get("thumbnailLink")
+            if not isinstance(thumbnail_link, str) or not thumbnail_link:
+                raise StorageThumbnailUnavailable()
+            response = self._thumbnail_session.get(thumbnail_link)
+            media_type = str(response.headers.get("content-type", "")).split(";", 1)[0]
+            content = bytes(response.content)
+            if (
+                not response.ok
+                or media_type not in _THUMBNAIL_MIME_TYPES
+                or not content
+            ):
+                raise StorageThumbnailUnavailable()
+            return Thumbnail(content, media_type)
+        except StorageThumbnailUnavailable:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise StorageThumbnailUnavailable() from exc
 
     def check_health(self) -> str:
         try:
@@ -253,6 +308,26 @@ class DropboxClient:
         if file is None:
             raise RuntimeError("Dropbox download metadata is invalid")
         return DownloadedStorageFile(file, bytes(response.content))
+
+    def get_thumbnail(self, storage_file_id: str) -> Thumbnail:
+        try:
+            from dropbox import files
+
+            _, response = self._client.files_get_thumbnail_v2(
+                files.PathOrLink.path(storage_file_id),
+                format=files.ThumbnailFormat.jpeg,
+                size=files.ThumbnailSize.w256h256,
+                mode=files.ThumbnailMode.strict,
+                exclude_media_info=True,
+            )
+            content = bytes(response.content)
+            if not content:
+                raise StorageThumbnailUnavailable()
+            return Thumbnail(content, "image/jpeg")
+        except StorageThumbnailUnavailable:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise StorageThumbnailUnavailable() from exc
 
     def check_health(self) -> str:
         try:

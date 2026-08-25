@@ -30,6 +30,10 @@ from backend.app.integrations.qdrant_store import (
     stable_point_id,
 )
 from backend.app.model.description_client import ImageDescriptionClient
+from backend.app.storage.thumbnail_service import (
+    SUPPORTED_THUMBNAIL_MIME_TYPES,
+    IndexedThumbnailSource,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +58,8 @@ class FileUpload:
             value is not None for value in source_identity
         ):
             raise ValueError(
-                "provider-backed files require provider, storage_file_id, and source_url"
+                "provider-backed files require provider, storage_file_id, "
+                "and source_url"
             )
 
 
@@ -105,6 +110,24 @@ class FileIngestionService:
         ]
         return VectorSearchResponse(data=items)
 
+    def find_indexed_thumbnail_source(
+        self, provider: str, storage_file_id: str
+    ) -> IndexedThumbnailSource | None:
+        """Return matching indexed source metadata for thumbnail authorization."""
+        hits = self._qdrant_store.find_by_storage_key(provider, storage_file_id)
+        for hit in hits:
+            payload = hit.payload
+            if (
+                payload.get("provider") == provider
+                and payload.get("storage_file_id") == storage_file_id
+                and isinstance(payload.get("file_type"), str)
+                and payload["file_type"]
+            ):
+                return IndexedThumbnailSource(
+                    provider, storage_file_id, payload["file_type"]
+                )
+        return None
+
     @staticmethod
     def _has_full_payload(hit: SearchHit) -> bool:
         """Points without a complete payload are excluded from results."""
@@ -113,6 +136,22 @@ class FileIngestionService:
             payload.get(key) is not None
             for key in ("filename", "file_path", "file_type", "content")
         )
+
+    @staticmethod
+    def _thumbnail_url(
+        provider: object, storage_file_id: object, file_type: object
+    ) -> str | None:
+        if (
+            not isinstance(provider, str)
+            or not provider
+            or not isinstance(storage_file_id, str)
+            or not storage_file_id
+            or not isinstance(file_type, str)
+        ):
+            return None
+        if file_type not in SUPPORTED_THUMBNAIL_MIME_TYPES:
+            return None
+        return f"/v1/storage/{provider}/{storage_file_id}/thumbnail"
 
     @staticmethod
     def _to_search_item(hit: SearchHit) -> VectorSearchItem:
@@ -133,6 +172,9 @@ class FileIngestionService:
                 str(storage_file_id)
                 if isinstance(storage_file_id, str) and storage_file_id
                 else None
+            ),
+            thumbnail_url=FileIngestionService._thumbnail_url(
+                provider, storage_file_id, payload["file_type"]
             ),
         )
 

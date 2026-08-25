@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -14,6 +15,8 @@ from backend.app.storage.client import (
     DropboxClient,
     GoogleDriveClient,
     StorageFile,
+    StorageThumbnailUnavailable,
+    Thumbnail,
     build_google_drive_client,
     is_dropbox_configured,
     is_google_drive_configured,
@@ -123,6 +126,65 @@ def test_storage_file_is_immutable() -> None:
         file.name = "changed"  # type: ignore[misc]
 
 
+@pytest.mark.unit
+def test_disabled_storage_thumbnail_raises_safe_unavailable_error() -> None:
+    with pytest.raises(StorageThumbnailUnavailable, match="thumbnail unavailable"):
+        DisabledStorageClient(DROPBOX_PROVIDER).get_thumbnail("id:photo")
+
+
+@pytest.mark.unit
+def test_dropbox_thumbnail_uses_thumbnail_endpoint_not_source_download() -> None:
+    sdk = _DropboxSdk([], [], SimpleNamespace())
+    sdk.files_get_thumbnail_v2 = Mock(
+        return_value=(SimpleNamespace(), SimpleNamespace(content=b"small-jpeg"))
+    )
+    client = DropboxClient.from_client(sdk, "/team")
+
+    thumbnail = client.get_thumbnail("id:photo")
+
+    assert thumbnail == Thumbnail(b"small-jpeg", "image/jpeg")
+    thumbnail_call = sdk.files_get_thumbnail_v2.call_args
+    assert thumbnail_call is not None
+    assert thumbnail_call.args[0].is_path()
+    assert thumbnail_call.args[0].get_path() == "id:photo"
+    assert sdk.files_download.call_count == 0
+
+
+@pytest.mark.unit
+def test_google_drive_thumbnail_fetches_authenticated_thumbnail_link() -> None:
+    service = _ThumbnailDriveService("https://thumbnail.example/image")
+    response = SimpleNamespace(
+        ok=True,
+        content=b"small-png",
+        headers={"content-type": "image/png"},
+    )
+    session = Mock()
+    session.get.return_value = response
+    client = GoogleDriveClient.__new__(GoogleDriveClient)
+    client._service = service
+    client._thumbnail_session = session
+
+    thumbnail = client.get_thumbnail("drive-photo")
+
+    assert thumbnail == Thumbnail(b"small-png", "image/png")
+    service.files().get.assert_called_once_with(
+        fileId="drive-photo", fields="thumbnailLink"
+    )
+    session.get.assert_called_once_with("https://thumbnail.example/image")
+    service.files().get_media.assert_not_called()
+
+
+@pytest.mark.unit
+def test_provider_thumbnail_failure_hides_provider_error_details() -> None:
+    sdk = _DropboxSdk([], [], SimpleNamespace())
+    sdk.files_get_thumbnail_v2 = Mock(side_effect=RuntimeError("provider secret"))
+
+    with pytest.raises(StorageThumbnailUnavailable) as raised:
+        DropboxClient.from_client(sdk, "/team").get_thumbnail("id:photo")
+
+    assert "provider secret" not in str(raised.value)
+
+
 class _Call:
     def __init__(self, response: object) -> None:
         self._response = response
@@ -147,6 +209,15 @@ class _DriveService:
         return self._files
 
 
+class _ThumbnailDriveService:
+    def __init__(self, thumbnail_link: str) -> None:
+        self._files = Mock()
+        self._files.get.return_value = _Call({"thumbnailLink": thumbnail_link})
+
+    def files(self) -> Mock:
+        return self._files
+
+
 @dataclass
 class _DropboxPage:
     entries: list[object]
@@ -161,6 +232,9 @@ class _DropboxSdk:
         self._first = first
         self._second = second
         self._metadata = metadata
+        self.files_download = Mock(
+            return_value=(self._metadata, SimpleNamespace(content=b"hello"))
+        )
 
     def files_list_folder(self, root: str, recursive: bool) -> _DropboxPage:  # noqa: ARG002
         return _DropboxPage(self._first, True)
