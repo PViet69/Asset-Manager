@@ -10,7 +10,11 @@ from backend.app.admin_auth import (
     verify_admin_credentials,
 )
 from backend.app.api.schemas.auth import AdminAccountResponse, AdminLoginRequest
-from backend.app.security import require_admin_access, require_admin_origin
+from backend.app.security import (
+    require_admin_access,
+    require_admin_login_rate_limit,
+    require_admin_origin,
+)
 
 ADMIN_SESSION_COOKIE = "admin_session"
 ADMIN_SESSION_MAX_AGE_SECONDS = 2 * 60 * 60
@@ -22,7 +26,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     "/login",
     response_model=AdminAccountResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_admin_origin)],
+    dependencies=[
+        Depends(require_admin_origin),
+        Depends(require_admin_login_rate_limit),
+    ],
 )
 def login(
     payload: AdminLoginRequest, request: Request, response: Response

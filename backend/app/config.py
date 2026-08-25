@@ -22,8 +22,8 @@ OptionalFloatSetting = Annotated[
 ]
 
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+class AdminAuthSettings(BaseSettings):
+    """Admin session settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -31,6 +31,26 @@ class Settings(BaseSettings):
         frozen=True,
         extra="ignore",
     )
+
+    ADMIN_USERNAME: NonBlankSetting
+    ADMIN_PASSWORD_HASH: NonBlankSetting
+    ADMIN_SESSION_SECRET: NonBlankSetting
+    ADMIN_ALLOWED_ORIGIN: AnyHttpUrl
+
+    @model_validator(mode="after")
+    def _validate_admin_allowed_origin(self) -> "AdminAuthSettings":
+        allowed_origin = self.ADMIN_ALLOWED_ORIGIN
+        if (
+            allowed_origin.path not in {"", "/"}
+            or allowed_origin.query
+            or allowed_origin.fragment
+        ):
+            raise ValueError("ADMIN_ALLOWED_ORIGIN must be an origin without a path")
+        return self
+
+
+class Settings(AdminAuthSettings):
+    """Application settings loaded from environment variables."""
 
     MODEL_ENDPOINT_URL: str
     MODEL_ENDPOINT_API_KEY: str | None = None
@@ -54,22 +74,6 @@ class Settings(BaseSettings):
     DROPBOX_APP_SECRET: str | None = None
     DROPBOX_REFRESH_TOKEN: str | None = None
     DROPBOX_ROOT_PATH: str | None = None
-
-    ADMIN_USERNAME: NonBlankSetting
-    ADMIN_PASSWORD_HASH: NonBlankSetting
-    ADMIN_SESSION_SECRET: NonBlankSetting
-    ADMIN_ALLOWED_ORIGIN: AnyHttpUrl
-
-    @model_validator(mode="after")
-    def _validate_admin_allowed_origin(self) -> "Settings":
-        allowed_origin = self.ADMIN_ALLOWED_ORIGIN
-        if (
-            allowed_origin.path not in {"", "/"}
-            or allowed_origin.query
-            or allowed_origin.fragment
-        ):
-            raise ValueError("ADMIN_ALLOWED_ORIGIN must be an origin without a path")
-        return self
 
     @model_validator(mode="after")
     def _validate_description_endpoint(self) -> "Settings":

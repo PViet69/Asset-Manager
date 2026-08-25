@@ -19,6 +19,7 @@ function traceSummary(count: number): string {
 }
 
 export function AdminPage(): JSX.Element {
+  document.title = "Admin Dashboard";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -96,7 +97,7 @@ export function AdminPage(): JSX.Element {
       <header className="bar">
         <div className="brand">
           <div>
-            <h1>Storage sync</h1>
+            <h1>Admin Dashboard</h1>
             <div className="sub">Manual provider controls</div>
           </div>
         </div>

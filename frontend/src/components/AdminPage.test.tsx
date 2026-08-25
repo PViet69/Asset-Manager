@@ -42,6 +42,18 @@ function mockSignedOut(): void {
   );
 }
 
+test("shows Admin Dashboard title", () => {
+  // Arrange
+  mockSignedOut();
+
+  // Act
+  render(<AdminPage />);
+
+  // Assert
+  expect(screen.getByRole("heading", { name: "Admin Dashboard" })).toBeInTheDocument();
+  expect(document.title).toBe("Admin Dashboard");
+});
+
 test("logs in then loads provider status", async () => {
   // Arrange
   const user = userEvent.setup();

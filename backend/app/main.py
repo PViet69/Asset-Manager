@@ -23,12 +23,16 @@ from backend.app.api.routes.thumbnails import router as thumbnails_router
 from backend.app.api.routes.vector_search import (
     router as vector_search_router,
 )
-from backend.app.config import Settings
+from backend.app.config import AdminAuthSettings, Settings
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.integrations.model_client import OpenAICompatibleModelClient
 from backend.app.integrations.qdrant_store import QdrantEmbeddingStore
 from backend.app.model.description_client import InstructorImageDescriptionClient
-from backend.app.security import InMemoryRateLimiter, reject_oversized_request
+from backend.app.security import (
+    AdminLoginRateLimiter,
+    InMemoryRateLimiter,
+    reject_oversized_request,
+)
 from backend.app.storage.registry import ProviderRegistry, build_provider_registry
 
 
@@ -53,18 +57,14 @@ def create_app(
         effective_admin_auth_config = admin_auth_config
         effective_provider_registry = provider_registry
 
-        settings = (
-            Settings()
-            if effective_service is None or effective_admin_auth_config is None
-            else None
-        )
+        settings = Settings() if effective_service is None else None
         if effective_admin_auth_config is None:
-            assert settings is not None
+            auth_settings = AdminAuthSettings()
             effective_admin_auth_config = AdminAuthConfig(
-                username=settings.ADMIN_USERNAME,
-                password_hash=settings.ADMIN_PASSWORD_HASH,
-                session_secret=settings.ADMIN_SESSION_SECRET,
-                allowed_origin=str(settings.ADMIN_ALLOWED_ORIGIN).rstrip("/"),
+                username=auth_settings.ADMIN_USERNAME,
+                password_hash=auth_settings.ADMIN_PASSWORD_HASH,
+                session_secret=auth_settings.ADMIN_SESSION_SECRET,
+                allowed_origin=str(auth_settings.ADMIN_ALLOWED_ORIGIN).rstrip("/"),
             )
 
         if effective_service is None:
@@ -111,6 +111,7 @@ def create_app(
         application.state.health_dependencies = effective_health_dependencies
         application.state.admin_auth_config = effective_admin_auth_config
         application.state.upload_rate_limiter = InMemoryRateLimiter()
+        application.state.admin_login_rate_limiter = AdminLoginRateLimiter()
         application.state.provider_registry = (
             effective_provider_registry or ProviderRegistry(())
         )
@@ -122,6 +123,7 @@ def create_app(
                 "health_dependencies",
                 "admin_auth_config",
                 "upload_rate_limiter",
+                "admin_login_rate_limiter",
                 "provider_registry",
             ):
                 application.state._state.pop(key, None)

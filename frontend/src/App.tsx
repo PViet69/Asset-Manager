@@ -3,6 +3,7 @@ import { SearchPanel } from "./components/SearchPanel";
 
 export function App(): JSX.Element {
   if (window.location.pathname === "/admin") return <AdminPage />;
+  document.title = "Asset Manager";
   return <MainPage />;
 }
 
@@ -26,7 +27,7 @@ function MainPage(): JSX.Element {
             </svg>
           </div>
           <div>
-            <h1>Embedding UI</h1>
+            <h1>Asset Manager</h1>
             <div className="sub">OpenAI-compatible · quick tester</div>
           </div>
         </div>
