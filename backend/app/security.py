@@ -2,23 +2,28 @@
 
 from __future__ import annotations
 
-import hmac
 import threading
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, Request, status
+
+from backend.app.admin_auth import AdminAuthConfig, get_session_username
 
 MAX_REQUEST_SIZE = 250 * 1024 * 1024
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_REQUESTS = 60
+ADMIN_LOGIN_RATE_LIMIT_REQUESTS = 5
 
 
 @dataclass
 class InMemoryRateLimiter:
-    """Thread-safe fixed-window request limiter keyed by client address."""
+    """Thread-safe rolling-window request limiter keyed by client address."""
 
+    request_limit: int = RATE_LIMIT_REQUESTS
+    window_seconds: float = RATE_LIMIT_WINDOW_SECONDS
     _requests: dict[str, deque[float]] = field(
         default_factory=lambda: defaultdict(deque)
     )
@@ -26,15 +31,22 @@ class InMemoryRateLimiter:
 
     def allow(self, key: str, now: float | None = None) -> bool:
         current = time.monotonic() if now is None else now
-        cutoff = current - RATE_LIMIT_WINDOW_SECONDS
+        cutoff = current - self.window_seconds
         with self._lock:
             timestamps = self._requests[key]
             while timestamps and timestamps[0] <= cutoff:
                 timestamps.popleft()
-            if len(timestamps) >= RATE_LIMIT_REQUESTS:
+            if len(timestamps) >= self.request_limit:
                 return False
             timestamps.append(current)
             return True
+
+
+class AdminLoginRateLimiter(InMemoryRateLimiter):
+    """Limit admin login attempts per client address."""
+
+    def __init__(self) -> None:
+        super().__init__(request_limit=ADMIN_LOGIN_RATE_LIMIT_REQUESTS)
 
 
 def reject_oversized_request(request: Request) -> None:
@@ -51,27 +63,44 @@ def reject_oversized_request(request: Request) -> None:
 
 
 def require_upload_access(request: Request) -> None:
-    """Require upload access and enforce per-client request rate."""
-    expected_key: str | None = request.app.state.upload_api_key
-    if expected_key is not None:
-        scheme, _, supplied_key = request.headers.get("authorization", "").partition(
-            " "
-        )
-        is_valid = (
-            scheme.lower() == "bearer"
-            and bool(supplied_key)
-            and hmac.compare_digest(supplied_key, expected_key)
-        )
-        if not is_valid:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or missing bearer token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
+    """Enforce per-client request rate limit."""
     client_key = request.client.host if request.client is not None else "unknown"
     if not request.app.state.upload_rate_limiter.allow(client_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Upload rate limit exceeded",
+        )
+
+
+def require_admin_login_rate_limit(request: Request) -> None:
+    """Limit admin login attempts from each client address."""
+    client_key = request.client.host if request.client is not None else "unknown"
+    if not request.app.state.admin_login_rate_limiter.allow(client_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Login rate limit exceeded",
+        )
+
+
+def require_admin_access(request: Request) -> None:
+    """Require valid signed admin session cookie."""
+    config: AdminAuthConfig = request.app.state.admin_auth_config
+    token = request.cookies.get("admin_session")
+    username = get_session_username(config, token, datetime.now(UTC)) if token else None
+    if username is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+
+def require_admin_origin(request: Request) -> None:
+    """Require configured browser origin for unsafe admin requests."""
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
+    config: AdminAuthConfig = request.app.state.admin_auth_config
+    if request.headers.get("origin") != config.allowed_origin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid request origin",
         )

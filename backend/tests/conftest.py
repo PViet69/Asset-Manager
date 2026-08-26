@@ -13,6 +13,15 @@ from backend.app.main import create_app
 from backend.app.model.description_client import ImageDescriptionClient
 
 
+@pytest.fixture(autouse=True)
+def admin_session_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provide required admin configuration to tests that do not use it directly."""
+    monkeypatch.setenv("ADMIN_USERNAME", "test-admin")
+    monkeypatch.setenv("ADMIN_PASSWORD_HASH", "test-password-hash")
+    monkeypatch.setenv("ADMIN_SESSION_SECRET", "test-session-secret")
+    monkeypatch.setenv("ADMIN_ALLOWED_ORIGIN", "https://admin.example.test")
+
+
 @pytest.fixture
 def app() -> FastAPI:
     """Return a fresh FastAPI application instance."""

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from inspect import iscoroutinefunction
 from io import BytesIO
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -89,6 +89,8 @@ def test_upload_uses_configured_ingestion_service_without_model_field(
     assert uploads[0].filename == "note.txt"
     assert uploads[0].file_path == ""
     assert uploads[0].content == b"hello"
+    assert uploads[0].provider is None
+    assert uploads[0].storage_file_id is None
     assert service.process_files.call_args.kwargs == {}
 
 
@@ -144,8 +146,8 @@ def test_uploads_files_in_order_and_returns_public_response(
     }
     service.process_files.assert_called_once_with(
         (
-            FileUpload("first.txt", "text/plain", b"first content", ""),
-            FileUpload("second.txt", "text/plain", b"second content", ""),
+            FileUpload("first.txt", "text/plain", b"first content", "", ANY),
+            FileUpload("second.txt", "text/plain", b"second content", "", ANY),
         ),
     )
     assert "point_id" not in response.json()
@@ -159,51 +161,7 @@ def test_openapi_has_no_request_level_model_fields(app: FastAPI) -> None:
         "Body_create_file_embeddings_v1_file_embeddings_post"
     ]["properties"]
 
-    assert set(upload_parameters) == {"files", "file_path"}
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize(
-    "headers",
-    [{}, {"Authorization": "Bearer wrong"}],
-)
-def test_upload_requires_configured_api_key(
-    headers: dict[str, str],
-    app: FastAPI,
-) -> None:
-    service = Mock(spec=FileIngestionService)
-    override_ingestion_service(app, service)
-    app_with_key = create_app(service=service, upload_api_key="secret")
-
-    with TestClient(app_with_key) as client:
-        response = client.post(
-            "/v1/file-embeddings",
-            files=[("files", ("file.txt", b"content", "text/plain"))],
-            headers=headers,
-        )
-
-    assert response.status_code == 401
-    service.process_files.assert_not_called()
-
-
-@pytest.mark.integration
-def test_upload_with_correct_api_key_reaches_service(app: FastAPI) -> None:
-    service = Mock(spec=FileIngestionService)
-    service.process_files.return_value = FileEmbeddingResponse(data=[])
-    override_ingestion_service(app, service)
-    app_with_key = create_app(service=service, upload_api_key="secret")
-
-    with TestClient(app_with_key) as client:
-        response = client.post(
-            "/v1/file-embeddings",
-            files=[("files", ("file.txt", b"content", "text/plain"))],
-            headers={"Authorization": "Bearer secret"},
-        )
-
-    assert response.status_code == 200
-    service.process_files.assert_called_once_with(
-        (FileUpload("file.txt", "text/plain", b"content", ""),),
-    )
+    assert set(upload_parameters) == {"files", "file_path", "modified_time"}
 
 
 @pytest.mark.integration
@@ -511,6 +469,7 @@ def test_health_is_ok_when_both_models_and_qdrant_are_available(
         "status": "ok",
         "qdrant": "ok",
         "model": "ok",
+        "providers": [],
     }
 
 
@@ -548,6 +507,31 @@ def test_health_is_degraded_when_any_dependency_is_unavailable(
         "model": "unavailable"
         if "unavailable" in (description_status, embedding_status)
         else "ok",
+        "providers": [],
+    }
+
+
+@pytest.mark.integration
+def test_health_is_ok_without_registered_providers(
+    app: FastAPI,
+) -> None:
+    service = Mock(spec=FileIngestionService)
+    dependencies = HealthDependencies(
+        description_client=_HealthDependency("ok"),
+        model_client=_HealthDependency("ok"),
+        qdrant_store=_HealthDependency("ok"),
+    )
+    app_with_deps = create_app(service=service, health_dependencies=dependencies)
+
+    with TestClient(app_with_deps) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "qdrant": "ok",
+        "model": "ok",
+        "providers": [],
     }
 
 

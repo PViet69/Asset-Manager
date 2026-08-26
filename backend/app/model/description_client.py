@@ -2,6 +2,7 @@
 
 import base64
 import logging
+import threading
 from typing import Protocol
 
 import instructor
@@ -16,8 +17,9 @@ from openai import APIConnectionError, APIError, APITimeoutError, NotFoundError,
 
 logger = logging.getLogger(__name__)
 
+_MAGIC_LOCK = threading.Lock()
 SUPPORTED_IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
-MAX_DESCRIPTION_RETRIES = 2
+MAX_DESCRIPTION_RETRIES = 0
 
 
 class ImageDescriptionClient(Protocol):
@@ -136,7 +138,16 @@ class InstructorImageDescriptionClient:
 
     @staticmethod
     def _build_data_url(image_bytes: bytes) -> str:
-        mime_type = magic.from_buffer(image_bytes, mime=True)
+        mime_type = None
+        if image_bytes.startswith(b"\xff\xd8\xff"):
+            mime_type = "image/jpeg"
+        elif image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+            mime_type = "image/png"
+        elif image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP":
+            mime_type = "image/webp"
+        else:
+            with _MAGIC_LOCK:
+                mime_type = magic.from_buffer(image_bytes, mime=True)
         if mime_type not in SUPPORTED_IMAGE_MIME_TYPES:
             raise ModelEndpointError("Unsupported image format")
         encoded = base64.b64encode(image_bytes).decode("ascii")

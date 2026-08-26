@@ -21,9 +21,48 @@ export type VectorSearchItem = {
   file_path: string;
   file_type: string;
   content: string;
+  source_url?: string | null;
+  provider?: string | null;
+  storage_file_id?: string | null;
+  thumbnail_url?: string | null;
 };
 
 export type VectorSearchResponse = {
   object: "list";
   data: VectorSearchItem[];
+};
+
+export type SyncTraceItem = {
+  timestamp: string;
+  provider: string;
+  step: string;
+  status: string;
+  detail: string;
+  filename: string | null;
+  storage_file_id: string | null;
+};
+
+export type ProviderSyncStatus = {
+  provider: string;
+  display_name: string;
+  enabled: boolean;
+  health: string;
+  last_upserted: number | null;
+  last_deleted: number | null;
+  last_unchanged: number | null;
+  last_failed: number | null;
+  last_traces: SyncTraceItem[];
+};
+
+export type AdminAccount = { username: string };
+
+export type AdminSyncStatusResponse = { providers: ProviderSyncStatus[] };
+
+export type AdminSyncResponse = {
+  provider: string;
+  upserted: number;
+  deleted: number;
+  unchanged: number;
+  failed: number;
+  traces: SyncTraceItem[];
 };

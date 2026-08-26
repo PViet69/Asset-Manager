@@ -1,6 +1,7 @@
 server {
     listen 80;
     server_name _;
+    absolute_redirect off;
 
     # Match the backend's MAX_REQUEST_SIZE (250 MB) so nginx does not
     # truncate multipart uploads before the app applies its own limit.
@@ -11,23 +12,33 @@ server {
 
     # SPA fallback
     location / {
-        try_files $uri /index.html;
+        try_files $uri $uri/ /index.html;
     }
 
     # Proxy API routes to the backend service (same-origin for the browser,
-    # so no CORS configuration is needed on the backend). When
-    # UPLOAD_API_KEY is set, the bearer header is injected here — the key
-    # never reaches the browser bundle.
+    # so no CORS configuration is needed on the backend).
     location /v1/ {
         proxy_pass http://app:8000;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header Authorization "Bearer ${UPLOAD_API_KEY}";
     }
 
     location = /health {
         proxy_pass http://app:8000;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # Browser admin session endpoints and protected sync API.
+    location /auth/ {
+        proxy_pass http://app:8000;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /admin/sync/ {
+        proxy_pass http://app:8000;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }

@@ -18,7 +18,6 @@ from backend.app.exceptions import (
     SettingsError,
 )
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
-from backend.app.main import create_app
 
 
 def override_ingestion_service(app: FastAPI, service: Mock) -> None:
@@ -62,6 +61,10 @@ def test_search_returns_hits(app: FastAPI) -> None:
                 "file_path": "photos/photo.png",
                 "file_type": "image/png",
                 "content": "description text",
+                "source_url": None,
+                "provider": None,
+                "storage_file_id": None,
+                "thumbnail_url": None,
             }
         ],
     }
@@ -157,15 +160,3 @@ def test_search_returns_502_when_qdrant_fails(app: FastAPI) -> None:
 
     assert response.status_code == 502
     assert response.json()["detail"] == "Qdrant storage failure"
-
-
-@pytest.mark.integration
-def test_search_requires_bearer_token_when_upload_key_configured() -> None:
-    service = make_search_service()
-    app = create_app(service=service, upload_api_key="secret-key")
-
-    with TestClient(app) as client:
-        response = client.post("/v1/search", json={"query": "red car"})
-
-    assert response.status_code == 401
-    service.search.assert_not_called()

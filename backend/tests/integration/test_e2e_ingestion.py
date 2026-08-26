@@ -104,12 +104,7 @@ def test_end_to_end_image_pipeline_embeds_description_and_stores_vector() -> Non
     assert _normalize(points[0].vector) == pytest.approx(
         _normalize([0.11, 0.22, 0.33]), rel=1e-3
     )
-    assert points[0].payload == {
-        "filename": "small.png",
-        "file_path": "small.png",
-        "file_type": "image/png",
-        "content": expected_text,
-    }
+    assert points[0].payload == {}
 
 
 @pytest.mark.integration

@@ -1,5 +1,6 @@
+from datetime import datetime, timezone
 from logging import ERROR
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 
@@ -46,9 +47,48 @@ def make_service() -> tuple[FileIngestionService, Mock, Mock, Mock]:
     return service, description_client, model_client, qdrant_store
 
 
+TEST_MODIFIED_TIME = datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+
+def make_upload(
+    filename: str,
+    content_type: str,
+    content: bytes,
+    file_path: str,
+    modified_time: datetime = TEST_MODIFIED_TIME,
+) -> FileUpload:
+    return FileUpload(
+        filename=filename,
+        content_type=content_type,
+        content=content,
+        file_path=file_path,
+        modified_time=modified_time,
+    )
+
+
+def make_storage_upload(
+    filename: str,
+    content_type: str,
+    content: bytes,
+    file_path: str,
+    storage_file_id: str = "drive-id-1",
+    modified_time: datetime = TEST_MODIFIED_TIME,
+) -> FileUpload:
+    return FileUpload(
+        filename=filename,
+        content_type=content_type,
+        content=content,
+        file_path=file_path,
+        modified_time=modified_time,
+        provider="google_drive",
+        storage_file_id=storage_file_id,
+        source_url=f"https://drive.google.com/file/d/{storage_file_id}/view",
+    )
+
+
 @pytest.mark.unit
 def test_file_upload_is_immutable() -> None:
-    upload = FileUpload("note.txt", "text/plain", b"hello", "note.txt")
+    upload = make_upload("note.txt", "text/plain", b"hello", "note.txt")
 
     with pytest.raises((AttributeError, TypeError)):
         upload.filename = "changed.txt"
@@ -59,13 +99,42 @@ def test_file_upload_is_immutable() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("provider", "storage_file_id", "source_url"),
+    [
+        ("dropbox", None, "https://www.dropbox.com/home/note.txt"),
+        (None, "id:example", "https://drive.google.com/file/d/id:example/view"),
+        ("dropbox", "id:example", None),
+    ],
+)
+def test_file_upload_requires_complete_provider_source_identity(
+    provider: str | None,
+    storage_file_id: str | None,
+    source_url: str | None,
+) -> None:
+    with pytest.raises(ValueError, match="provider-backed files"):
+        FileUpload(
+            filename="note.txt",
+            content_type="text/plain",
+            content=b"hello",
+            file_path="note.txt",
+            modified_time=TEST_MODIFIED_TIME,
+            provider=provider,
+            storage_file_id=storage_file_id,
+            source_url=source_url,
+        )
+
+
+@pytest.mark.unit
 def test_image_description_text_is_embedded_and_only_vector_is_stored() -> None:
     service, description_client, model_client, qdrant_store = make_service()
     description = make_description()
     description_client.describe.return_value = description
     model_client.embed_text.return_value = [0.3]
     image_bytes = b"validated-image-bytes"
-    upload = FileUpload("photo.png", "image/png", image_bytes, "photos/photo.png")
+    upload = make_storage_upload(
+        "photo.png", "image/png", image_bytes, "photos/photo.png"
+    )
 
     with patch(
         "backend.app.file_embeddings.ingestion_service.process_file",
@@ -82,7 +151,12 @@ def test_image_description_text_is_embedded_and_only_vector_is_stored() -> None:
             "file_path": "photos/photo.png",
             "file_type": "image/png",
             "content": description.to_embedding_text(),
+            "modified_time": TEST_MODIFIED_TIME.isoformat(),
+            "provider": "google_drive",
+            "storage_file_id": "drive-id-1",
+            "source_url": "https://drive.google.com/file/d/drive-id-1/view",
         },
+        point_id=ANY,
     )
     assert response.data[0].model_dump() == {
         "filename": "photo.png",
@@ -96,7 +170,7 @@ def test_image_description_text_is_embedded_and_only_vector_is_stored() -> None:
 def test_text_bypasses_description_and_embeds_extracted_text() -> None:
     service, description_client, model_client, qdrant_store = make_service()
     model_client.embed_text.return_value = [0.1, 0.2]
-    upload = FileUpload("note.txt", "text/plain", b"source-bytes", "note.txt")
+    upload = make_upload("note.txt", "text/plain", b"source-bytes", "note.txt")
 
     with patch(
         "backend.app.file_embeddings.ingestion_service.process_file",
@@ -131,8 +205,8 @@ def test_description_error_is_safe_and_later_files_continue_in_order() -> None:
     )
     model_client.embed_text.return_value = [0.4]
     uploads = (
-        FileUpload("bad.png", "image/png", b"image", "bad.png"),
-        FileUpload("good.txt", "text/plain", b"text", "good.txt"),
+        make_upload("bad.png", "image/png", b"image", "bad.png"),
+        make_upload("good.txt", "text/plain", b"text", "good.txt"),
     )
 
     with patch(
@@ -159,8 +233,11 @@ def test_real_processing_returns_normal_response_when_all_files_fail() -> None:
 
     response = service.process_files(
         (
-            FileUpload(
-                "bad.bin", "application/octet-stream", b"\x1f\x8b\x08\x00", "bad.bin"
+            make_upload(
+                "bad.bin",
+                "application/octet-stream",
+                b"\x1f\x8b\x08\x00",
+                "bad.bin",
             ),
         ),
     )
@@ -188,7 +265,7 @@ def test_file_processing_error_returns_safe_message() -> None:
         side_effect=FileProcessingError("Unsupported file type"),
     ):
         response = service.process_files(
-            (FileUpload("bad.bin", "application/octet-stream", b"bytes", "bad.bin"),),
+            (make_upload("bad.bin", "application/octet-stream", b"bytes", "bad.bin"),),
         )
 
     assert response.data[0].status == "failed"
@@ -209,7 +286,7 @@ def test_qdrant_storage_error_returns_safe_message() -> None:
         return_value=ProcessedInput("text", "hello"),
     ):
         response = service.process_files(
-            (FileUpload("note.txt", "text/plain", b"bytes", "note.txt"),),
+            (make_upload("note.txt", "text/plain", b"bytes", "note.txt"),),
         )
 
     assert response.data[0].status == "failed"
@@ -230,7 +307,7 @@ def test_unexpected_error_logs_context_without_sensitive_content(
         side_effect=RuntimeError("secret provider response"),
     ):
         response = service.process_files(
-            (FileUpload(filename, "text/plain", file_content, filename),),
+            (make_upload(filename, "text/plain", file_content, filename),),
         )
 
     assert response.data[0].reason == "Processing failed"
@@ -284,7 +361,7 @@ def make_settings(search_threshold: float | None = 0.2) -> Settings:
 def test_text_ingestion_stores_vector_without_payload() -> None:
     service, _, model_client, qdrant_store = make_service()
     model_client.embed_text.return_value = [0.5]
-    upload = FileUpload("note.txt", "text/plain", b"hello world", "note.txt")
+    upload = make_upload("note.txt", "text/plain", b"hello world", "note.txt")
 
     with patch(
         "backend.app.file_embeddings.ingestion_service.process_file",
@@ -293,6 +370,102 @@ def test_text_ingestion_stores_vector_without_payload() -> None:
         service.process_files((upload,))
 
     qdrant_store.store_embedding.assert_called_once_with([0.5], payload=None)
+
+
+@pytest.mark.unit
+def test_find_indexed_thumbnail_source_requires_exact_stored_identity() -> None:
+    service, _, _, qdrant_store = make_service()
+    qdrant_store.find_by_storage_key.return_value = [
+        SearchHit(
+            point_id="point-1",
+            score=1.0,
+            payload={
+                "provider": "dropbox",
+                "storage_file_id": "id:photo",
+                "file_type": "image/png",
+            },
+        )
+    ]
+
+    source = service.find_indexed_thumbnail_source("dropbox", "id:photo")
+
+    assert source is not None
+    assert source.provider == "dropbox"
+    assert source.storage_file_id == "id:photo"
+    assert source.file_type == "image/png"
+    qdrant_store.find_by_storage_key.assert_called_once_with("dropbox", "id:photo")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("file_type", "provider", "storage_file_id", "thumbnail_url"),
+    [
+        ("image/png", "dropbox", "id:one", "/v1/storage/dropbox/id:one/thumbnail"),
+        (
+            "image/jpeg",
+            "google_drive",
+            "drive-1",
+            "/v1/storage/google_drive/drive-1/thumbnail",
+        ),
+        ("application/pdf", "dropbox", "id:pdf", None),
+        ("image/webp", None, None, None),
+    ],
+)
+def test_search_thumbnail_url_requires_image_type_and_complete_source_identity(
+    file_type: str,
+    provider: str | None,
+    storage_file_id: str | None,
+    thumbnail_url: str | None,
+) -> None:
+    item = FileIngestionService._to_search_item(
+        SearchHit(
+            point_id="point-1",
+            score=0.9,
+            payload={
+                "filename": "asset",
+                "file_path": "asset",
+                "file_type": file_type,
+                "content": "description",
+                "provider": provider,
+                "storage_file_id": storage_file_id,
+            },
+        )
+    )
+
+    assert item.thumbnail_url == thumbnail_url
+
+
+@pytest.mark.unit
+def test_search_returns_stored_source_metadata() -> None:
+    service, _, model_client, qdrant_store = make_service()
+    service_with_settings = FileIngestionService(
+        service._description_client,
+        model_client,
+        qdrant_store,
+        settings=make_settings(0.2),
+    )
+    model_client.embed_text.return_value = [0.7]
+    qdrant_store.search.return_value = [
+        SearchHit(
+            point_id="point-1",
+            score=0.9,
+            payload={
+                "filename": "photo.png",
+                "file_path": "photo.png",
+                "file_type": "image/png",
+                "content": "description text",
+                "provider": "dropbox",
+                "storage_file_id": "id:abc123",
+                "source_url": "https://www.dropbox.com/home/team/photo.png",
+            },
+        )
+    ]
+
+    response = service_with_settings.search("red car", limit=5)
+
+    assert response.data[0].source_url == "https://www.dropbox.com/home/team/photo.png"
+    assert response.data[0].provider == "dropbox"
+    assert response.data[0].storage_file_id == "id:abc123"
 
 
 @pytest.mark.unit
@@ -333,6 +506,10 @@ def test_search_embeds_query_and_maps_hits() -> None:
                 "file_path": "photo.png",
                 "file_type": "image/png",
                 "content": "description text",
+                "source_url": None,
+                "provider": None,
+                "storage_file_id": None,
+                "thumbnail_url": None,
             }
         ],
     }
@@ -385,4 +562,8 @@ def test_search_drops_hits_without_complete_payload() -> None:
         "file_path": "photo.png",
         "file_type": "image/png",
         "content": "description text",
+        "source_url": None,
+        "provider": None,
+        "storage_file_id": None,
+        "thumbnail_url": None,
     }

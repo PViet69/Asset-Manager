@@ -21,6 +21,9 @@ OpenAI/
 .coverage
 htmlcov/
 
+# Local codebase index
+.codebase-memory/
+
 # Qdrant (local dev)
 qdrant_data/
 

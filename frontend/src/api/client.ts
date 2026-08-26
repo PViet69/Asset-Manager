@@ -1,6 +1,8 @@
 import { config } from "../config";
 import type {
-  FileEmbeddingResponse,
+  AdminAccount,
+  AdminSyncResponse,
+  AdminSyncStatusResponse,
   VectorSearchResponse,
 } from "../types";
 
@@ -23,8 +25,6 @@ function buildHeaders(extra?: HeadersInit): Headers {
 }
 
 async function parseError(res: Response): Promise<never> {
-  // FastAPI returns { detail: string | { msg: ... } } on errors.
-  // Backend exceptions already produce sanitized safe_message strings.
   let message = `Request failed with status ${res.status}`;
   try {
     const body = (await res.json()) as { detail?: unknown };
@@ -34,15 +34,20 @@ async function parseError(res: Response): Promise<never> {
       message = JSON.stringify(body.detail);
     }
   } catch {
-    // body wasn't JSON — keep status-based message
+    // Keep status-based message when response body is not JSON.
   }
   throw new ApiError(res.status, message);
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
+async function postJson<T>(
+  path: string,
+  body: unknown,
+  options: RequestInit = {}
+): Promise<T> {
   const res = await fetch(`${config.apiBase}${path}`, {
+    ...options,
     method: "POST",
-    headers: buildHeaders({ "Content-Type": "application/json" }),
+    headers: buildHeaders({ "Content-Type": "application/json", ...options.headers }),
     body: JSON.stringify(body),
   });
   if (!res.ok) await parseError(res);
@@ -56,27 +61,42 @@ export function searchVectors(
   return postJson<VectorSearchResponse>("/v1/search", { query, limit });
 }
 
-export async function uploadFiles(
-  files: File[],
-  filePaths: string[] = []
-): Promise<FileEmbeddingResponse> {
-  const form = new FormData();
-  for (const file of files) {
-    form.append("files", file, file.name);
-  }
-  // Backend route accepts repeating `file_path` form fields aligned with
-  // `files`. Pad with empty strings so the count matches.
-  const padded = filePaths.slice(0, files.length);
-  while (padded.length < files.length) padded.push("");
-  for (const filePath of padded) {
-    form.append("file_path", filePath);
-  }
-  // NOTE: do NOT set Content-Type — browser must add the multipart boundary.
-  const res = await fetch(`${config.apiBase}/v1/file-embeddings`, {
-    method: "POST",
-    headers: buildHeaders(),
-    body: form,
+export async function fetchThumbnail(path: string): Promise<Blob> {
+  const res = await fetch(`${config.apiBase}${path}`, { headers: buildHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.blob();
+}
+
+export function loginAdmin(
+  username: string,
+  password: string
+): Promise<AdminAccount> {
+  return postJson<AdminAccount>("/auth/login", { username, password }, {
+    credentials: "include",
+  });
+}
+export async function getAdminSession(): Promise<AdminAccount> {
+  const res = await fetch(`${config.apiBase}/auth/me`, { credentials: "include" });
+  if (!res.ok) await parseError(res);
+  return (await res.json()) as AdminAccount;
+}
+
+async function adminRequest<T>(
+  path: string,
+  method: "GET" | "POST" = "GET"
+): Promise<T> {
+  const res = await fetch(`${config.apiBase}${path}`, {
+    method,
+    credentials: "include",
   });
   if (!res.ok) await parseError(res);
-  return (await res.json()) as FileEmbeddingResponse;
+  return (await res.json()) as T;
+}
+
+export function getAdminSyncStatus(): Promise<AdminSyncStatusResponse> {
+  return adminRequest("/admin/sync/status");
+}
+
+export function triggerAdminSync(provider: string): Promise<AdminSyncResponse> {
+  return adminRequest(`/admin/sync/${encodeURIComponent(provider)}`, "POST");
 }

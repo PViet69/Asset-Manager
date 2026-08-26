@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Google Drive Sync — Design Spec</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          ink: '#0B1220',
+          panel: '#101A2E',
+          raised: '#16233C',
+          line: '#22314F',
+          dblue: '#5B9BFF',
+          damber: '#FFC24B',
+          dgreen: '#4ADE80',
+          dred: '#FF6B6B',
+          dviolet: '#A78BFA',
+          dcyan: '#67E8F9',
+          body: '#C7D3E8',
+          muted: '#8FA1BF',
+        },
+        fontFamily: {
+          display: ['"Space Grotesk"', 'sans-serif'],
+          body: ['"IBM Plex Sans"', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'monospace'],
+        },
+      },
+    },
+  };
+</script>
+
+<style>
+  /* Collapsible sections */
+  details > summary { list-style: none; cursor: pointer; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary .chev { transition: transform 0.2s ease; }
+  details[open] > summary .chev { transform: rotate(90deg); }
+
+  /* Sync-loop signature animation */
+  @keyframes travel {
+    0%   { left: 2%;  opacity: 0; }
+    6%   { opacity: 1; }
+    94%  { opacity: 1; }
+    100% { left: 98%; opacity: 0; }
+  }
+  .sync-dot {
+    animation: travel 6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
+  @keyframes nodepulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(91, 155, 255, 0); }
+    50%      { box-shadow: 0 0 0 5px rgba(91, 155, 255, 0.18); }
+  }
+  .sync-node { animation: nodepulse 3s ease-in-out infinite; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sync-dot, .sync-node { animation: none; }
+    .sync-dot { display: none; }
+  }
+
+  /* Thin scrollbars for pre blocks */
+  pre::-webkit-scrollbar { height: 8px; }
+  pre::-webkit-scrollbar-thumb { background: #22314F; border-radius: 4px; }
+
+  :focus-visible { outline: 2px solid #5B9BFF; outline-offset: 2px; border-radius: 4px; }
+</style>
+</head>
+
+<body class="bg-ink text-body font-body antialiased min-h-screen">
+
+<!-- ======================= HERO ======================= -->
+<header class="relative overflow-hidden border-b border-line">
+  <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(91,155,255,0.10),transparent_60%)]"></div>
+  <div class="relative mx-auto max-w-6xl px-6 pt-14 pb-10">
+    <p class="font-mono text-xs tracking-[0.3em] text-dblue uppercase">Design spec · Ingestion pipeline</p>
+    <h1 class="mt-3 font-display text-4xl sm:text-5xl font-bold text-white leading-tight">
+      Google Drive Sync
+    </h1>
+    <p class="mt-3 max-w-2xl text-muted text-base sm:text-lg">
+      A monthly background loop traverses one configured Drive folder, embeds new and
+      changed files through the existing ingestion pipeline, and keeps Qdrant in step.
+      The upload route stays as a Drive-aware test scaffold that requires a
+      <code class="font-mono text-xs text-dcyan">drive_id</code> per file. A single-page admin UI wraps the admin endpoints.
+    </p>
+
+    <div class="mt-5 flex flex-wrap items-center gap-2 font-mono text-xs">
+      <span class="rounded-full border border-damber/40 bg-damber/10 px-3 py-1 text-damber">STATUS · DRAFT</span>
+      <span class="rounded-full border border-line bg-panel px-3 py-1 text-muted">DATE · 2026-08-20</span>
+      <span class="rounded-full border border-line bg-panel px-3 py-1 text-muted">BRANCH · feat/simple-visualizer</span>
+      <span class="rounded-full border border-dgreen/40 bg-dgreen/10 px-3 py-1 text-dgreen">CADENCE · 30 DAYS</span>
+    </div>
+
+    <!-- Signature: the sync loop -->
+    <div class="mt-10 rounded-2xl border border-line bg-panel/80 p-5 sm:p-6">
+      <div class="flex items-center justify-between">
+        <p class="font-mono text-[11px] tracking-[0.25em] text-muted uppercase">Sync loop — one pass</p>
+        <p class="font-mono text-[11px] text-muted">startup + every 30d</p>
+      </div>
+      <div class="relative mt-6 mb-2">
+        <div class="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-line"></div>
+        <div class="sync-dot absolute top-1/2 z-10 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-dblue shadow-[0_0_12px_2px_rgba(91,155,255,0.6)]"></div>
+        <div class="relative flex flex-wrap items-start justify-between gap-y-6">
+          <div class="flex min-w-[90px] flex-col items-center text-center">
+            <div class="sync-node flex h-10 w-10 items-center justify-center rounded-xl border border-dblue/40 bg-dblue/15 font-display text-sm font-semibold text-dblue">D</div>
+            <p class="mt-2 font-mono text-[11px] text-body">Drive folder</p>
+          </div>
+          <div class="flex min-w-[90px] flex-col items-center text-center">
+            <div class="sync-node flex h-10 w-10 items-center justify-center rounded-xl border border-dcyan/40 bg-dcyan/15 font-display text-sm font-semibold text-dcyan">W</div>
+            <p class="mt-2 font-mono text-[11px] text-body">Folder traversal</p>
+          </div>
+          <div class="flex min-w-[90px] flex-col items-center text-center">
+            <div class="sync-node flex h-10 w-10 items-center justify-center rounded-xl border border-damber/40 bg-damber/15 font-display text-sm font-semibold text-damber">Δ</div>
+            <p class="mt-2 font-mono text-[11px] text-body">Diff vs known</p>
+          </div>
+          <div class="flex min-w-[90px] flex-col items-center text-center">
+            <div class="sync-node flex h-10 w-10 items-center justify-center rounded-xl border border-dviolet/40 bg-dviolet/15 font-display text-sm font-semibold text-dviolet">I</div>
+            <p class="mt-2 font-mono text-[11px] text-body">Ingest + embed</p>
+          </div>
+          <div class="flex min-w-[90px] flex-col items-center text-center">
+            <div class="sync-node flex h-10 w-10 items-center justify-center rounded-xl border border-dgreen/40 bg-dgreen/15 font-display text-sm font-semibold text-dgreen">Q</div>
+            <p class="mt-2 font-mono text-[11px] text-body">Qdrant vectors</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="mx-auto max-w-6xl px-6 py-12 space-y-16">
+
+  <!-- ======================= KEY TAKEAWAYS ======================= -->
+  <section aria-labelledby="takeaways">
+    <p class="font-mono text-xs tracking-[0.3em] text-dblue uppercase">§ Overview</p>
+    <h2 id="takeaways" class="mt-2 font-display text-2xl font-semibold text-white">Key takeaways</h2>
+
+    <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <article class="rounded-2xl border border-dblue/30 bg-gradient-to-br from-dblue/15 to-panel p-5">
+        <p class="font-mono text-[11px] tracking-widest text-dblue uppercase">Cadence</p>
+        <p class="mt-2 font-display text-xl font-semibold text-white">Monthly + on startup</p>
+        <p class="mt-2 text-sm text-muted">Initial scan runs at boot, then the loop sleeps
+          <code class="font-mono text-xs text-dblue">DRIVE_SYNC_INTERVAL_SECONDS</code> between scans
+          (default 2,592,000 s = 30 days).</p>
+      </article>
+
+      <article class="rounded-2xl border border-dgreen/30 bg-gradient-to-br from-dgreen/15 to-panel p-5">
+        <p class="font-mono text-[11px] tracking-widest text-dgreen uppercase">State</p>
+        <p class="mt-2 font-display text-xl font-semibold text-white">No new database</p>
+        <p class="mt-2 text-sm text-muted">Sync bookkeeping rides on Qdrant payloads
+          (<code class="font-mono text-xs text-dgreen">drive_id</code>,
+          <code class="font-mono text-xs text-dgreen">modified_time</code>). Known-file set seeds
+          from a payload scroll at startup — state survives restarts.</p>
+      </article>
+
+      <article class="rounded-2xl border border-dviolet/30 bg-gradient-to-br from-dviolet/15 to-panel p-5">
+        <p class="font-mono text-[11px] tracking-widest text-dviolet uppercase">Reuse</p>
+        <p class="mt-2 font-display text-xl font-semibold text-white">Same ingest path</p>
+        <p class="mt-2 text-sm text-muted">Drive files flow through the existing
+          <code class="font-mono text-xs text-dviolet">FileIngestionService</code> — identical
+          embeddings to the HTTP upload route, regardless of source.</p>
+      </article>
+
+      <article class="rounded-2xl border border-damber/30 bg-gradient-to-br from-damber/15 to-panel p-5">
+        <p class="font-mono text-[11px] tracking-widest text-damber uppercase">Auth</p>
+        <p class="mt-2 font-display text-xl font-semibold text-white">Service account only</p>
+        <p class="mt-2 text-sm text-muted">One configured service account, one watched folder
+          (includes all subfolders). No per-user OAuth, no whole-drive scanning.</p>
+      </article>
+
+      <article class="rounded-2xl border border-dcyan/30 bg-gradient-to-br from-dcyan/15 to-panel p-5">
+        <p class="font-mono text-[11px] tracking-widest text-dcyan uppercase">End users</p>
+        <p class="mt-2 font-display text-xl font-semibold text-white">Search + open in Drive</p>
+        <p class="mt-2 text-sm text-muted">Users never see Drive auth, sync state, or admin
+          controls. Results carry <code class="font-mono text-xs text-dcyan">source_url</code>
+          linking the original asset; access is gated by Drive's sharing settings.</p>
+      </article>
+
+      <article class="rounded-2xl border border-dred/30 bg-gradient-to-br from-dred/15 to-panel p-5">
+        <p class="font-mono text-[11px] tracking-widest text-dred uppercase">Admin</p>
+        <p class="mt-2 font-display text-xl font-semibold text-white">Endpoints + admin UI</p>
+        <p class="mt-2 text-sm text-muted"><code class="font-mono text-xs text-dred">/admin/sync</code>,
+          <code class="font-mono text-xs text-dred">/admin/sync/status</code>,
+          <code class="font-mono text-xs text-dred">/admin/sync/reindex/{id}</code> — all behind
+          <code class="font-mono text-xs text-dred">ADMIN_API_KEY</code>. Thin single-page UI at
+          <code class="font-mono text-xs text-dred">/admin/ui</code>.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ======================= GOALS / NON-GOALS ======================= -->
+  <section aria-labelledby="goals">
+    <p class="font-mono text-xs tracking-[0.3em] text-dblue uppercase">§ Scope</p>
+    <h2 id="goals" class="mt-2 font-display text-2xl font-semibold text-white">Goals &amp; non-goals</h2>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-2">
+      <div class="rounded-2xl border border-line bg-panel p-6">
+        <p class="flex items-center gap-2 font-display text-lg font-semibold text-dgreen">
+          <span class="inline-block h-2.5 w-2.5 rounded-full bg-dgreen"></span> Goals
+        </p>
+        <ul class="mt-4 space-y-2.5 text-sm text-body">
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> Drive is the production ingestion source. <code class="font-mono text-xs text-dgreen">POST /v1/file-embeddings</code> stays as a Drive-aware test scaffold — every request must carry a <code class="font-mono text-xs text-dgreen">drive_id</code> per file; uploads without one are rejected (422).</li>
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> The Upload tab and <code class="font-mono text-xs text-dgreen">uploadFiles</code> client are removed from the UI; the route stays for scripted tests behind <code class="font-mono text-xs text-dgreen">UPLOAD_API_KEY</code>.</li>
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> Admin can trigger out-of-band sync and inspect state via <code class="font-mono text-xs text-dgreen">/admin/sync</code>, <code class="font-mono text-xs text-dgreen">/admin/sync/status</code>, or the admin UI at <code class="font-mono text-xs text-dgreen">/admin/ui</code>.</li>
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> Once-per-month interval; initial scan on startup.</li>
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> Reuse <code class="font-mono text-xs text-dgreen">FileIngestionService</code> — embeddings identical regardless of source.</li>
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> Qdrant payloads carry sync bookkeeping; no new database, no lost state.</li>
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> End users never see Drive auth, sync state, or admin controls.</li>
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> Search results carry a <code class="font-mono text-xs text-dgreen">source_url</code> to the original Drive asset; opening it is gated by Drive's own sharing settings, not the backend.</li>
+        </ul>
+      </div>
+      <div class="rounded-2xl border border-line bg-panel p-6">
+        <p class="flex items-center gap-2 font-display text-lg font-semibold text-dred">
+          <span class="inline-block h-2.5 w-2.5 rounded-full bg-dred"></span> Non-goals
+        </p>
+        <ul class="mt-4 space-y-2.5 text-sm text-body">
+          <li class="flex gap-2"><span class="text-dred">▸</span> Per-user Drive OAuth — service account only.</li>
+          <li class="flex gap-2"><span class="text-dred">▸</span> Multiple folders or whole-Drive watching.</li>
+          <li class="flex gap-2"><span class="text-dred">▸</span> Drive push webhooks (needs public HTTPS + ~7-day channel expiry).</li>
+          <li class="flex gap-2"><span class="text-dred">▸</span> Writing back to Drive.</li>
+          <li class="flex gap-2"><span class="text-dred">▸</span> A polished, multi-page admin app. The admin UI is one static page — key gate, status panel, sync trigger, reindex form. JSON endpoints stay canonical.</li>
+          <li class="flex gap-2"><span class="text-dred">▸</span> OCR for scanned PDFs (existing pipeline limit).</li>
+          <li class="flex gap-2"><span class="text-dred">▸</span> Backend proxying of file bytes or end-user permission checks — Drive sharing settings are the access gate.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= DISCOVERY ======================= -->
+  <section aria-labelledby="discovery">
+    <p class="font-mono text-xs tracking-[0.3em] text-dblue uppercase">§ Discovery</p>
+    <h2 id="discovery" class="mt-2 font-display text-2xl font-semibold text-white">How files are found</h2>
+
+    <div class="mt-6 rounded-2xl border border-line bg-panel p-6">
+      <p class="text-sm text-body">
+        Drive's <code class="font-mono text-xs text-dcyan">changes.list</code> is whole-drive, so it
+        doesn't fit single-folder scoping. The scanner does a
+        <strong class="text-white">folder traversal</strong> instead:
+      </p>
+      <pre class="mt-4 overflow-x-auto rounded-xl bg-ink p-4 font-mono text-xs leading-relaxed text-dcyan">files.list(q="'&lt;FOLDER_ID&gt;' in parents and trashed=false",
+           fields="files(id,name,mimeType,modifiedTime)", pageSize=1000)
+traverse into mimeType == application/vnd.google-apps.folder   # subfolders
+paginate with pageToken until exhausted</pre>
+      <div class="mt-4 grid gap-3 sm:grid-cols-2">
+        <div class="rounded-xl border border-line bg-ink/60 p-4">
+          <p class="font-mono text-[11px] tracking-widest text-damber uppercase">Change detection</p>
+          <p class="mt-1.5 text-sm text-muted">Compare each file's Drive <code class="font-mono text-xs">modifiedTime</code> against the <code class="font-mono text-xs">modified_time</code> stored in the Qdrant point payload.</p>
+        </div>
+        <div class="rounded-xl border border-line bg-ink/60 p-4">
+          <p class="font-mono text-[11px] tracking-widest text-dred uppercase">Deletion detection</p>
+          <p class="mt-1.5 text-sm text-muted">Diff the traversal result against the known-ID set, seeded from Qdrant at startup.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= ARCHITECTURE ======================= -->
+  <section aria-labelledby="architecture">
+    <p class="font-mono text-xs tracking-[0.3em] text-dblue uppercase">§ Architecture</p>
+    <h2 id="architecture" class="mt-2 font-display text-2xl font-semibold text-white">Where it lives</h2>
+    <p class="mt-2 max-w-2xl text-sm text-muted">
+      New packages <code class="font-mono text-xs text-dblue">backend/app/drive/</code> (client, sync
+      state, scheduler) plus <code class="font-mono text-xs text-dblue">backend/app/api/routes/admin.py</code>.
+      Reuses FileIngestionService and the Qdrant store.
+    </p>
+
+    <details class="group mt-4 rounded-2xl border border-line bg-panel">
+      <summary class="flex items-center justify-between p-5 font-display text-base font-semibold text-white">
+        <span>System diagram</span>
+        <span class="chev font-mono text-dblue" aria-hidden="true">▶</span>
+      </summary>
+      <div class="border-t border-line px-5 py-4">
+        <pre class="overflow-x-auto rounded-xl bg-ink p-4 font-mono text-xs leading-relaxed text-body">┌────────────────────────────┐
+│ FastAPI app                │
+│                            │
+│  /v1/search ──► Qdrant     │ ◄── end users
+│  /health ──► healthdeps    │
+│  (upload removed)          │
+│  /admin/sync               │ ◄── admin only
+│  /admin/sync/status        │
+│  /admin/sync/reindex/{id}  │
+│  /admin/ui (static page)   │
+│                            │
+│  lifespan (startup):       │
+│    drive_client = build()  │
+│    known_ids = scroll from │
+│      Qdrant payloads       │
+│    scheduler.start()       │
+│                            │
+│  scheduler (asyncio task): │
+│    initial scan            │
+│    sleep DRIVE_SYNC_...    │
+│    loop                    │
+└────────────────────────────┘</pre>
+      </div>
+    </details>
+
+    <details class="group mt-4 rounded-2xl border border-line bg-panel">
+      <summary class="flex items-center justify-between p-5 font-display text-base font-semibold text-white">
+        <span>Admin UI wireframe — <code class="font-mono text-sm text-dcyan">/admin/ui</code></span>
+        <span class="chev font-mono text-dblue" aria-hidden="true">▶</span>
+      </summary>
+      <div class="border-t border-line px-5 py-4">
+        <p class="text-sm text-muted">Single static page. Unauthenticated shell; every data call carries the admin key as a bearer token. Key stored in <code class="font-mono text-xs">sessionStorage</code> only.</p>
+        <pre class="mt-3 overflow-x-auto rounded-xl bg-ink p-4 font-mono text-xs leading-relaxed text-body">┌────────────────────────────────────────────────────┐
+│ DRIVE SYNC ADMIN                          [sign out]│
+├────────────────────────────────────────────────────┤
+│ ● running · enabled                                 │
+│ known files: 1,284      last sync: 2026-08-18 02:00 │
+│ last result: +12 upserted · 3 skipped · 1 deleted   │
+├────────────────────────────────────────────────────┤
+│ [ Run sync now ]                                    │
+├────────────────────────────────────────────────────┤
+│ reindex by drive_id                                 │
+│ [1AbCdEfGhIjKlMnOpQrSt..................] [Reindex] │
+└────────────────────────────────────────────────────┘</pre>
+        <ul class="mt-3 space-y-2 text-sm text-muted">
+          <li class="flex gap-2"><span class="text-dcyan">▸</span> Key gate: paste <code class="font-mono text-xs">ADMIN_API_KEY</code>, verified via <code class="font-mono text-xs">GET /admin/sync/status</code> (200 → in, 401/403 → error banner, 503 → read-only “sync disabled”).</li>
+          <li class="flex gap-2"><span class="text-dcyan">▸</span> Status panel polls every 5 s while <code class="font-mono text-xs">running: true</code>.</li>
+          <li class="flex gap-2"><span class="text-dcyan">▸</span> Run sync disables with spinner while busy; 409 → toast “scan already running”.</li>
+          <li class="flex gap-2"><span class="text-dcyan">▸</span> Reindex 404 → inline error; success shows <code class="font-mono text-xs">{reembedded}</code>.</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <!-- ======================= CONFIG ======================= -->
+  <section aria-labelledby="config">
+    <p class="font-mono text-xs tracking-[0.3em] text-dblue uppercase">§ Configuration</p>
+    <h2 id="config" class="mt-2 font-display text-2xl font-semibold text-white">Environment variables</h2>
+    <p class="mt-2 max-w-2xl text-sm text-muted">
+      Read once at startup via the existing <code class="font-mono text-xs">Settings</code> class.
+      Sync is enabled when both Drive vars are set; otherwise the scheduler never starts and
+      <code class="font-mono text-xs">/health</code> reports <code class="font-mono text-xs text-damber">drive: "disabled"</code>.
+    </p>
+
+    <div class="mt-6 overflow-x-auto rounded-2xl border border-line bg-panel">
+      <table class="w-full min-w-[640px] text-left text-sm">
+        <thead>
+          <tr class="border-b border-line font-mono text-[11px] uppercase tracking-widest text-muted">
+            <th class="px-5 py-3.5">Variable</th>
+            <th class="px-5 py-3.5">Required</th>
+            <th class="px-5 py-3.5">Default</th>
+            <th class="px-5 py-3.5">Description</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-line">
+          <tr>
+            <td class="px-5 py-4 font-mono text-xs text-dblue">DRIVE_SERVICE_ACCOUNT_JSON</td>
+            <td class="px-5 py-4"><span class="rounded-full border border-damber/40 bg-damber/10 px-2.5 py-0.5 font-mono text-[11px] text-damber">when enabled</span></td>
+            <td class="px-5 py-4 font-mono text-xs text-muted">None</td>
+            <td class="px-5 py-4 text-muted">Full service-account JSON as a single env var.</td>
+          </tr>
+          <tr>
+            <td class="px-5 py-4 font-mono text-xs text-dblue">DRIVE_FOLDER_ID</td>
+            <td class="px-5 py-4"><span class="rounded-full border border-damber/40 bg-damber/10 px-2.5 py-0.5 font-mono text-[11px] text-damber">when enabled</span></td>
+            <td class="px-5 py-4 font-mono text-xs text-muted">None</td>
+            <td class="px-5 py-4 text-muted">Single Drive folder ID to watch. All subfolders included. Admin's private folder — never exposed in UI.</td>
+          </tr>
+          <tr>
+            <td class="px-5 py-4 font-mono text-xs text-dblue">DRIVE_SYNC_INTERVAL_SECONDS</td>
+            <td class="px-5 py-4"><span class="rounded-full border border-line bg-ink px-2.5 py-0.5 font-mono text-[11px] text-muted">optional</span></td>
+            <td class="px-5 py-4 font-mono text-xs text-dgreen">2592000 (30 days)</td>
+            <td class="px-5 py-4 text-muted">Sleep between scheduled scans. Initial startup scan always runs when Drive is configured.</td>
+          </tr>
+          <tr>
+            <td class="px-5 py-4 font-mono text-xs text-dblue">UPLOAD_API_KEY</td>
+            <td class="px-5 py-4"><span class="rounded-full border border-line bg-ink px-2.5 py-0.5 font-mono text-[11px] text-muted">optional</span></td>
+            <td class="px-5 py-4 font-mono text-xs text-muted">None</td>
+            <td class="px-5 py-4 text-muted">Bearer token required for <code class="font-mono text-xs">POST /v1/file-embeddings</code>. When unset, the route returns 403. Used only by scripted tests.</td>
+          </tr>
+          <tr>
+            <td class="px-5 py-4 font-mono text-xs text-dblue">ADMIN_API_KEY</td>
+            <td class="px-5 py-4"><span class="rounded-full border border-line bg-ink px-2.5 py-0.5 font-mono text-[11px] text-muted">optional</span></td>
+            <td class="px-5 py-4 font-mono text-xs text-muted">None</td>
+            <td class="px-5 py-4 text-muted">Bearer token for <code class="font-mono text-xs">/admin/*</code>. When unset, admin endpoints return 403. Separate from <code class="font-mono text-xs">UPLOAD_API_KEY</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-3 text-xs text-muted"><code class="font-mono text-xs">.env.example</code> ships placeholders.</p>
+  </section>
+
+  <!-- ======================= COMPONENTS ======================= -->
+  <section aria-labelledby="components">
+    <p class="font-mono text-xs tracking-[0.3em] text-dblue uppercase">§ Components</p>
+    <h2 id="components" class="mt-2 font-display text-2xl font-semibold text-white">Four modules, one new store method pair</h2>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-2">
+
+      <details class="group rounded-2xl border border-dblue/30 bg-panel" open>
+        <summary class="flex items-center justify-between p-5">
+          <div>
+            <p class="font-mono text-xs text-dblue">drive/client.py</p>
+            <p class="mt-1 font-display text-base font-semibold text-white">DriveClient</p>
+          </div>
+          <span class="chev font-mono text-dblue" aria-hidden="true">▶</span>
+        </summary>
+        <div class="border-t border-line px-5 py-4">
+          <p class="text-sm text-muted">Thin wrapper over <code class="font-mono text-xs text-dblue">googleapiclient.discovery.build('drive', 'v3', ...)</code>. Runs in a thread via <code class="font-mono text-xs">asyncio.to_thread</code> — googleapiclient is sync, backend rules forbid blocking the event loop.</p>
+          <pre class="mt-3 overflow-x-auto rounded-xl bg-ink p-4 font-mono text-xs leading-relaxed text-body">DriveFile (immutable record):
+    drive_id           # Google's file ID
+    name
+    mime_type
+    modified_time      # timezone-aware UTC
+    drive_path         # e.g. "Reports/2026/Q1.pdf"
+
+DriveClient:
+    traverse_folder(folder_id) -> list of DriveFile
+        # folder traversal; skips trashed; files only
+
+    download(drive_id, mime_type) -> bytes
+        # native files: fetch raw content
+        # Google-native (docs/sheets/slides): export to PDF first
+
+    check_health() -> "ok" | "unavailable"
+        # ping via about.get</pre>
+        </div>
+      </details>
+
+      <details class="group rounded-2xl border border-damber/30 bg-panel">
+        <summary class="flex items-center justify-between p-5">
+          <div>
+            <p class="font-mono text-xs text-damber">drive/sync_state.py</p>
+            <p class="mt-1 font-display text-base font-semibold text-white">SyncState + SyncPlan</p>
+          </div>
+          <span class="chev font-mono text-damber" aria-hidden="true">▶</span>
+        </summary>
+        <div class="border-t border-line px-5 py-4">
+          <p class="text-sm text-muted">Holds the known-ID set plus last-run bookkeeping. No I/O except the Qdrant seed. <code class="font-mono text-xs text-damber">SyncPlan</code> is immutable: <code class="font-mono text-xs">upsert</code> (list of DriveFile), <code class="font-mono text-xs">delete_ids</code> (list of drive IDs).</p>
+          <pre class="mt-3 overflow-x-auto rounded-xl bg-ink p-4 font-mono text-xs leading-relaxed text-body">SyncState:
+    seed_from_qdrant() -> count
+        # scroll all points, collect payload drive_id values
+
+    diff(seen) -> SyncPlan
+        # upsert = all seen files (modified_time dedup happens at
+        # ingest time); delete_ids = known - seen
+
+    record_upserted(drive_id)
+    record_deleted(drive_id)</pre>
+        </div>
+      </details>
+
+      <details class="group rounded-2xl border border-dviolet/30 bg-panel">
+        <summary class="flex items-center justify-between p-5">
+          <div>
+            <p class="font-mono text-xs text-dviolet">drive/scheduler.py</p>
+            <p class="mt-1 font-display text-base font-semibold text-white">SyncScheduler</p>
+          </div>
+          <span class="chev font-mono text-dviolet" aria-hidden="true">▶</span>
+        </summary>
+        <div class="border-t border-line px-5 py-4">
+          <p class="text-sm text-muted">Async loop. Owns one DriveClient, one SyncState, the ingestion service, and the Qdrant store.</p>
+          <pre class="mt-3 overflow-x-auto rounded-xl bg-ink p-4 font-mono text-xs leading-relaxed text-body">SyncScheduler:
+    start()
+        # seed state from Qdrant, run initial scan, then sleep loop
+
+    stop()
+
+    tick_once() -> SyncResult
+        # one full scan; public so /admin/sync can call it</pre>
+          <p class="mt-3 text-sm text-muted"><code class="font-mono text-xs text-dviolet">tick_once</code> per file: read existing Qdrant payload by <code class="font-mono text-xs">drive_id</code>; skip when <code class="font-mono text-xs">modified_time</code> matches; else download and pass (filename, content type, content, drive path) into the ingestion service with extra payload <code class="font-mono text-xs">{drive_id, modified_time}</code>.</p>
+          <p class="mt-2 text-sm text-muted">Requires new Qdrant store methods <code class="font-mono text-xs text-dviolet">find_by_drive_id</code> and <code class="font-mono text-xs text-dviolet">delete_by_drive_id</code> (payload-field filter), plus passing extra payload through on upsert.</p>
+        </div>
+      </details>
+
+      <details class="group rounded-2xl border border-dgreen/30 bg-panel">
+        <summary class="flex items-center justify-between p-5">
+          <div>
+            <p class="font-mono text-xs text-dgreen">api/routes/health.py</p>
+            <p class="mt-1 font-display text-base font-semibold text-white">Health extension</p>
+          </div>
+          <span class="chev font-mono text-dgreen" aria-hidden="true">▶</span>
+        </summary>
+        <div class="border-t border-line px-5 py-4">
+          <p class="text-sm text-muted"><code class="font-mono text-xs text-dgreen">HealthResponse</code> gains <code class="font-mono text-xs">drive: str</code> — one of
+            <span class="ml-1 rounded-full border border-dgreen/40 bg-dgreen/10 px-2 py-0.5 font-mono text-[11px] text-dgreen">ok</span>
+            <span class="rounded-full border border-dred/40 bg-dred/10 px-2 py-0.5 font-mono text-[11px] text-dred">unavailable</span>
+            <span class="rounded-full border border-line bg-ink px-2 py-0.5 font-mono text-[11px] text-muted">disabled</span>.
+          </p>
+          <p class="mt-2 text-sm text-muted"><code class="font-mono text-xs">/health</code> stays public; the frontend already removed the health badge, so this is for curl/admin visibility only.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ======================= ADMIN API ======================= -->
+  <section aria-labelledby="api">
+    <p class="font-mono text-xs tracking-[0.3em] text-dred uppercase">§ Admin API</p>
+    <h2 id="api" class="mt-2 font-display text-2xl font-semibold text-white">Endpoints &amp; HTTP status codes</h2>
+    <p class="mt-2 max-w-2xl text-sm text-muted">
+      All three endpoints sit behind <code class="font-mono text-xs text-dred">require_admin</code>
+      (bearer <code class="font-mono text-xs text-dred">ADMIN_API_KEY</code>) and share these codes:
+    </p>
+    <div class="mt-3 flex flex-wrap gap-2 font-mono text-xs">
+      <span class="rounded-full border border-damber/40 bg-damber/10 px-3 py-1 text-damber">401 · missing bearer token</span>
+      <span class="rounded-full border border-damber/40 bg-damber/10 px-3 py-1 text-damber">403 · wrong key</span>
+      <span class="rounded-full border border-dred/40 bg-dred/10 px-3 py-1 text-dred">503 · Drive sync disabled</span>
+    </div>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-3">
+
+      <article class="flex flex-col rounded-2xl border border-line bg-panel p-5">
+        <div class="flex items-center gap-2">
+          <span class="rounded-md bg-dgreen/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-dgreen">POST</span>
+          <code class="font-mono text-sm text-white">/admin/sync</code>
+        </div>
+        <p class="mt-3 text-sm text-muted">Runs <code class="font-mono text-xs">scheduler.tick_once()</code>. Body carries the result even when <code class="font-mono text-xs">failed &gt; 0</code>:</p>
+        <pre class="mt-2 overflow-x-auto rounded-lg bg-ink p-3 font-mono text-[11px] text-body">{ upserted: int, skipped: int,
+  deleted: int, failed: int,
+  duration_ms: int }</pre>
+        <div class="mt-auto pt-4 flex flex-wrap gap-1.5 font-mono text-[11px]">
+          <span class="rounded-full border border-dgreen/40 bg-dgreen/10 px-2.5 py-0.5 text-dgreen">200 scan completed</span>
+          <span class="rounded-full border border-damber/40 bg-damber/10 px-2.5 py-0.5 text-damber">409 scan already running</span>
+        </div>
+      </article>
+
+      <article class="flex flex-col rounded-2xl border border-line bg-panel p-5">
+        <div class="flex items-center gap-2">
+          <span class="rounded-md bg-dblue/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-dblue">GET</span>
+          <code class="font-mono text-sm text-white">/admin/sync/status</code>
+        </div>
+        <p class="mt-3 text-sm text-muted">Read-only, never fails on Drive state:</p>
+        <pre class="mt-2 overflow-x-auto rounded-lg bg-ink p-3 font-mono text-[11px] text-body">{ enabled: bool, running: bool,
+  known_files: int,
+  last_sync_at: str | null,
+  last_result: object | null }</pre>
+        <div class="mt-auto pt-4 flex flex-wrap gap-1.5 font-mono text-[11px]">
+          <span class="rounded-full border border-dgreen/40 bg-dgreen/10 px-2.5 py-0.5 text-dgreen">200 always when reachable</span>
+        </div>
+      </article>
+
+      <article class="flex flex-col rounded-2xl border border-line bg-panel p-5">
+        <div class="flex items-center gap-2">
+          <span class="rounded-md bg-dgreen/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-dgreen">POST</span>
+          <code class="font-mono text-sm text-white">/admin/sync/reindex/{drive_id}</code>
+        </div>
+        <p class="mt-3 text-sm text-muted">Fetches metadata + bytes, forces an upsert regardless of <code class="font-mono text-xs">modified_time</code>. Returns <code class="font-mono text-xs">{reembedded: bool}</code>.</p>
+        <div class="mt-auto pt-4 flex flex-wrap gap-1.5 font-mono text-[11px]">
+          <span class="rounded-full border border-dgreen/40 bg-dgreen/10 px-2.5 py-0.5 text-dgreen">200 reindexed</span>
+          <span class="rounded-full border border-damber/40 bg-damber/10 px-2.5 py-0.5 text-damber">404 not in folder or Qdrant</span>
+          <span class="rounded-full border border-damber/40 bg-damber/10 px-2.5 py-0.5 text-damber">409 scan already running</span>
+          <span class="rounded-full border border-dred/40 bg-dred/10 px-2.5 py-0.5 text-dred">502 Drive API unreachable</span>
+        </div>
+      </article>
+    </div>
+
+    <p class="mt-4 text-xs text-muted">Admin auth reuses the bearer pattern from <code class="font-mono text-xs">backend/app/security.py</code>. UI page: <code class="font-mono text-xs">backend/app/static/admin.html</code> served at <code class="font-mono text-xs">GET /admin/ui</code> — no framework, <code class="font-mono text-xs">fetch()</code> only, all state server-side.</p>
+  </section>
+
+  <!-- ======================= ASSET ACCESS ======================= -->
+  <section aria-labelledby="assetaccess">
+    <p class="font-mono text-xs tracking-[0.3em] text-dcyan uppercase">§ Asset access</p>
+    <h2 id="assetaccess" class="mt-2 font-display text-2xl font-semibold text-white">Users open the original asset</h2>
+    <p class="mt-2 max-w-2xl text-sm text-muted">
+      Search results link back to the original Drive asset. Access is gated by Drive's
+      sharing settings — the backend never proxies bytes or checks permissions itself.
+    </p>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-2">
+      <div class="rounded-2xl border border-dcyan/30 bg-panel p-5">
+        <p class="font-mono text-[11px] tracking-widest text-dcyan uppercase">Mechanism</p>
+        <ul class="mt-3 space-y-2.5 text-sm text-muted">
+          <li class="flex gap-2"><span class="text-dcyan">▸</span> Scheduler stores <code class="font-mono text-xs">drive_id</code> on every synced point payload.</li>
+          <li class="flex gap-2"><span class="text-dcyan">▸</span> <code class="font-mono text-xs">_to_search_item</code> derives <code class="font-mono text-xs text-dcyan">source_url</code> = <code class="font-mono text-xs">https://drive.google.com/file/d/&lt;drive_id&gt;/view</code> when present; <code class="font-mono text-xs">null</code> otherwise.</li>
+          <li class="flex gap-2"><span class="text-dcyan">▸</span> <code class="font-mono text-xs">VectorSearchItem</code> gains <code class="font-mono text-xs text-dcyan">source_url: str | None</code>.</li>
+          <li class="flex gap-2"><span class="text-dcyan">▸</span> <code class="font-mono text-xs">SearchPanel</code> renders an “Open in Drive” link when present.</li>
+        </ul>
+        <div class="mt-4 rounded-xl border border-line bg-ink/60 p-3">
+          <p class="font-mono text-[11px] text-muted">images only for now: only image points carry a full payload today (<code class="text-dcyan">_has_full_payload</code> filters the rest), so only images get a <code class="text-dcyan">source_url</code>.</p>
+        </div>
+      </div>
+      <div class="rounded-2xl border border-dgreen/30 bg-panel p-5">
+        <p class="font-mono text-[11px] tracking-widest text-dgreen uppercase">Access model</p>
+        <ul class="mt-3 space-y-2.5 text-sm text-muted">
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> Prerequisite: watched folder shared with the intended audience (workspace-wide or link sharing).</li>
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> Opening <code class="font-mono text-xs">source_url</code> is gated entirely by Drive; users without access see Drive's own 403 / request-access page.</li>
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> <code class="font-mono text-xs">drive_id</code> in the response is an identifier, not a secret — it grants nothing without Drive-side permission.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= DATA FLOW ======================= -->
+  <section aria-labelledby="dataflow">
+    <p class="font-mono text-xs tracking-[0.3em] text-dblue uppercase">§ Data flow</p>
+    <h2 id="dataflow" class="mt-2 font-display text-2xl font-semibold text-white">One scan, step by step</h2>
+
+    <details class="group mt-6 rounded-2xl border border-line bg-panel" open>
+      <summary class="flex items-center justify-between p-5 font-display text-base font-semibold text-white">
+        <span>Scheduled scan — happy path</span>
+        <span class="chev font-mono text-dblue" aria-hidden="true">▶</span>
+      </summary>
+      <div class="border-t border-line px-5 py-4">
+        <pre class="overflow-x-auto rounded-xl bg-ink p-4 font-mono text-xs leading-relaxed text-body">1. start a scan (tick_once)
+2. files = traverse the watched folder        # runs in a thread
+3. plan = diff(files) against known IDs
+4. for each file in plan.upsert:
+     existing = look up stored point by drive_id
+     if it exists and modified_time is unchanged: skip
+     content = download the file
+     ingest (name, mime type, content, drive path) with
+       extra payload {drive_id, modified_time}
+     record as upserted
+5. for each id in plan.delete_ids:
+     delete stored point by drive_id
+     record as deleted</pre>
+      </div>
+    </details>
+
+    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+      <div class="rounded-2xl border border-dgreen/30 bg-dgreen/5 p-5">
+        <p class="font-mono text-[11px] tracking-widest text-dgreen uppercase">First run</p>
+        <p class="mt-2 text-sm text-muted">Known-ID set empty (fresh Qdrant) → everything in the folder is upserted.</p>
+      </div>
+      <div class="rounded-2xl border border-dblue/30 bg-dblue/5 p-5">
+        <p class="font-mono text-[11px] tracking-widest text-dblue uppercase">Restart with data</p>
+        <p class="mt-2 text-sm text-muted">Seed from Qdrant, so deletions remain detectable across restarts.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= FAILURE MODES ======================= -->
+  <section aria-labelledby="failures">
+    <p class="font-mono text-xs tracking-[0.3em] text-dred uppercase">§ Failure modes</p>
+    <h2 id="failures" class="mt-2 font-display text-2xl font-semibold text-white">Error handling</h2>
+
+    <div class="mt-6 space-y-3">
+      <div class="flex flex-col gap-1 rounded-2xl border border-line bg-panel p-5 sm:flex-row sm:items-baseline sm:gap-4">
+        <span class="shrink-0 rounded-full border border-damber/40 bg-damber/10 px-3 py-0.5 font-mono text-[11px] text-damber sm:w-44 sm:text-center">Drive 429 / 5xx</span>
+        <p class="text-sm text-muted">Retry with backoff, 5 attempts inside <code class="font-mono text-xs">traverse_folder</code>/<code class="font-mono text-xs">download</code>. After exhaustion, abort this tick; next scan retries everything — traversals are idempotent. Never crash the loop.</p>
+      </div>
+      <div class="flex flex-col gap-1 rounded-2xl border border-line bg-panel p-5 sm:flex-row sm:items-baseline sm:gap-4">
+        <span class="shrink-0 rounded-full border border-dred/40 bg-dred/10 px-3 py-0.5 font-mono text-[11px] text-dred sm:w-44 sm:text-center">Drive 401 / 403</span>
+        <p class="text-sm text-muted">Auth failure — log loudly; <code class="font-mono text-xs">/health</code> reports <code class="font-mono text-xs text-dred">drive: "unavailable"</code>. Search keeps working on existing Qdrant data.</p>
+      </div>
+      <div class="flex flex-col gap-1 rounded-2xl border border-line bg-panel p-5 sm:flex-row sm:items-baseline sm:gap-4">
+        <span class="shrink-0 rounded-full border border-dviolet/40 bg-dviolet/10 px-3 py-0.5 font-mono text-[11px] text-dviolet sm:w-44 sm:text-center">Per-file ingest fail</span>
+        <p class="text-sm text-muted">Counted in <code class="font-mono text-xs">SyncResult.failed</code>; reason surfaces via <code class="font-mono text-xs">GET /admin/sync/status</code>. Loop continues with the next file.</p>
+      </div>
+      <div class="flex flex-col gap-1 rounded-2xl border border-line bg-panel p-5 sm:flex-row sm:items-baseline sm:gap-4">
+        <span class="shrink-0 rounded-full border border-dcyan/40 bg-dcyan/10 px-3 py-0.5 font-mono text-[11px] text-dcyan sm:w-44 sm:text-center">Download blip</span>
+        <p class="text-sm text-muted">One retry, then count as failed.</p>
+      </div>
+      <div class="flex flex-col gap-1 rounded-2xl border border-line bg-panel p-5 sm:flex-row sm:items-baseline sm:gap-4">
+        <span class="shrink-0 rounded-full border border-damber/40 bg-damber/10 px-3 py-0.5 font-mono text-[11px] text-damber sm:w-44 sm:text-center">Concurrent scans</span>
+        <p class="text-sm text-muted"><code class="font-mono text-xs">tick_once</code> guarded by an <code class="font-mono text-xs">asyncio.Lock</code>; <code class="font-mono text-xs">POST /admin/sync</code> and <code class="font-mono text-xs">POST /admin/sync/reindex/{id}</code> return <span class="font-mono text-xs text-damber">409</span> when busy.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= TESTING ======================= -->
+  <section aria-labelledby="testing">
+    <p class="font-mono text-xs tracking-[0.3em] text-dgreen uppercase">§ Testing</p>
+    <h2 id="testing" class="mt-2 font-display text-2xl font-semibold text-white">Test plan</h2>
+
+    <details class="group mt-6 rounded-2xl border border-line bg-panel" open>
+      <summary class="flex items-center justify-between p-5 font-display text-base font-semibold text-white">
+        <span>Unit · integration · manual</span>
+        <span class="chev font-mono text-dgreen" aria-hidden="true">▶</span>
+      </summary>
+      <div class="border-t border-line px-5 py-4">
+        <ul class="space-y-3 text-sm">
+          <li class="flex gap-3">
+            <span class="shrink-0 rounded-full border border-dblue/40 bg-dblue/10 px-2.5 py-0.5 font-mono text-[11px] text-dblue">unit</span>
+            <span class="text-muted"><code class="font-mono text-xs text-white">DriveClient</code> with fake googleapiclient service objects: subfolder traversal, pagination, Google-native export branch.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="shrink-0 rounded-full border border-dblue/40 bg-dblue/10 px-2.5 py-0.5 font-mono text-[11px] text-dblue">unit</span>
+            <span class="text-muted"><code class="font-mono text-xs text-white">SyncState.diff</code>: new files, deletions, seed-from-empty.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="shrink-0 rounded-full border border-dblue/40 bg-dblue/10 px-2.5 py-0.5 font-mono text-[11px] text-dblue">unit</span>
+            <span class="text-muted"><code class="font-mono text-xs text-white">SyncScheduler.tick_once</code> with mocked client/store: skip when unchanged, upsert when modified, delete removal, lock behavior.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="shrink-0 rounded-full border border-dblue/40 bg-dblue/10 px-2.5 py-0.5 font-mono text-[11px] text-dblue">unit</span>
+            <span class="text-muted">Admin auth: 403 without key, 200 with; 409 when busy.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="shrink-0 rounded-full border border-dviolet/40 bg-dviolet/10 px-2.5 py-0.5 font-mono text-[11px] text-dviolet">integration</span>
+            <span class="text-muted">Fake Drive fixture → real FileIngestionService + real Qdrant → assert vectors present with <code class="font-mono text-xs">drive_id</code> payload; remove a file from fixture, rescan, assert point deleted.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="shrink-0 rounded-full border border-dgreen/40 bg-dgreen/10 px-2.5 py-0.5 font-mono text-[11px] text-dgreen">manual</span>
+            <span class="text-muted">Real test folder; initial scan; second <code class="font-mono text-xs">POST /admin/sync</code> shows <code class="font-mono text-xs">skipped == upserted</code> from the first.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="shrink-0 rounded-full border border-dgreen/40 bg-dgreen/10 px-2.5 py-0.5 font-mono text-[11px] text-dgreen">manual</span>
+            <span class="text-muted">Admin UI: wrong key rejected at the gate; status panel updates during a triggered scan; reindex 404 surfaces inline.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="shrink-0 rounded-full border border-dblue/40 bg-dblue/10 px-2.5 py-0.5 font-mono text-[11px] text-dblue">unit</span>
+            <span class="text-muted">Upload route: rejects files missing <code class="font-mono text-xs">drive_id</code> (422); accepts <code class="font-mono text-xs">drive_id</code> + optional <code class="font-mono text-xs">modified_time</code> and writes the same Qdrant payload as the scheduler.</span>
+          </li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <!-- ======================= FRONTEND ======================= -->
+  <section aria-labelledby="frontend">
+    <p class="font-mono text-xs tracking-[0.3em] text-dcyan uppercase">§ Frontend</p>
+    <h2 id="frontend" class="mt-2 font-display text-2xl font-semibold text-white">UI changes — small on purpose</h2>
+    <div class="mt-6 grid gap-3 sm:grid-cols-3">
+      <div class="rounded-2xl border border-line bg-panel p-5 text-sm text-muted">Remove the Upload tab from <code class="font-mono text-xs text-dcyan">App.tsx</code>; render <code class="font-mono text-xs text-dcyan">SearchPanel</code> directly.</div>
+      <div class="rounded-2xl border border-line bg-panel p-5 text-sm text-muted">Delete <code class="font-mono text-xs text-dcyan">UploadPanel.tsx</code> and the unused <code class="font-mono text-xs text-dcyan">uploadFiles</code> client function.</div>
+      <div class="rounded-2xl border border-line bg-panel p-5 text-sm text-muted"><code class="font-mono text-xs text-dcyan">SearchPanel</code> renders an “Open in Drive” link from <code class="font-mono text-xs text-dcyan">source_url</code> when present.</div>
+      <div class="rounded-2xl border border-line bg-panel p-5 text-sm text-muted">No new components.</div>
+    </div>
+  </section>
+
+  <!-- ======================= UPLOAD ROUTE ======================= -->
+  <section aria-labelledby="uploadroute">
+    <p class="font-mono text-xs tracking-[0.3em] text-dviolet uppercase">§ Upload route</p>
+    <h2 id="uploadroute" class="mt-2 font-display text-2xl font-semibold text-white">Drive-aware test scaffold</h2>
+    <p class="mt-2 max-w-2xl text-sm text-muted">
+      <code class="font-mono text-xs text-dviolet">POST /v1/file-embeddings</code> stays as a Drive-aware test scaffold. Every request must declare the Google Drive ID per file; without it, the upload has no link back to its source and the deletion logic can't identify it.
+    </p>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-2">
+      <div class="rounded-2xl border border-dviolet/30 bg-panel p-5">
+        <p class="font-mono text-[11px] tracking-widest text-dviolet uppercase">Contract</p>
+        <ul class="mt-3 space-y-2.5 text-sm text-muted">
+          <li class="flex gap-2"><span class="text-dviolet">▸</span> Multipart body: one or more <code class="font-mono text-xs">files</code> fields with matching <code class="font-mono text-xs">drive_id</code> and optional <code class="font-mono text-xs">modified_time</code> per file.</li>
+          <li class="flex gap-2"><span class="text-dviolet">▸</span> Missing <code class="font-mono text-xs">drive_id</code> → <code class="font-mono text-xs text-dviolet">422</code> for that file. <code class="font-mono text-xs">modified_time</code> optional, defaults to "now" if absent.</li>
+          <li class="flex gap-2"><span class="text-dviolet">▸</span> The handler constructs the same <code class="font-mono text-xs">FileUpload</code> value the scheduler uses, threading <code class="font-mono text-xs">drive_id</code> and <code class="font-mono text-xs">modified_time</code> into the Qdrant payload.</li>
+          <li class="flex gap-2"><span class="text-dviolet">▸</span> Auth: <code class="font-mono text-xs">UPLOAD_API_KEY</code> (separate from <code class="font-mono text-xs">ADMIN_API_KEY</code>). When unset, the route returns <code class="font-mono text-xs text-dviolet">403</code>.</li>
+          <li class="flex gap-2"><span class="text-dviolet">▸</span> Response (<code class="font-mono text-xs">FileEmbeddingResponse</code>) unchanged.</li>
+        </ul>
+      </div>
+      <div class="rounded-2xl border border-dgreen/30 bg-panel p-5">
+        <p class="font-mono text-[11px] tracking-widest text-dgreen uppercase">Why the requirement</p>
+        <ul class="mt-3 space-y-2.5 text-sm text-muted">
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> Sync identifies files by <code class="font-mono text-xs">drive_id</code>; uploads without one become invisible to the deletion logic.</li>
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> <code class="font-mono text-xs">source_url</code> only resolves when <code class="font-mono text-xs">drive_id</code> is present; missing it breaks the user link.</li>
+          <li class="flex gap-2"><span class="text-dgreen">▸</span> <code class="font-mono text-xs">FileUpload</code> gains <code class="font-mono text-xs text-dgreen">drive_id: str</code> + <code class="font-mono text-xs text-dgreen">modified_time: datetime</code> — required for both ingestion paths.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= REMOVAL LIST ======================= -->
+  <section aria-labelledby="removal">
+    <p class="font-mono text-xs tracking-[0.3em] text-dred uppercase">§ Removal list</p>
+    <h2 id="removal" class="mt-2 font-display text-2xl font-semibold text-white">What goes away</h2>
+    <p class="mt-2 max-w-2xl text-sm text-muted">
+      Once Drive is the source, only the UI surface for the upload route is removed:
+    </p>
+    <div class="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="rounded-2xl border border-dred/30 bg-panel p-5 text-sm">
+        <p class="font-mono text-[11px] tracking-widest text-dred uppercase">Frontend (UI only)</p>
+        <ul class="mt-3 space-y-1.5 text-muted">
+          <li><code class="font-mono text-xs">UploadPanel.tsx</code></li>
+          <li>upload tab state in <code class="font-mono text-xs">App.tsx</code></li>
+          <li><code class="font-mono text-xs">uploadFiles</code> in <code class="font-mono text-xs">api/client.ts</code></li>
+          <li>README UI examples for the upload tab</li>
+        </ul>
+      </div>
+      <div class="rounded-2xl border border-dgreen/30 bg-panel p-5 text-sm">
+        <p class="font-mono text-[11px] tracking-widest text-dgreen uppercase">Stays (route stays)</p>
+        <ul class="mt-3 space-y-1.5 text-muted">
+          <li><code class="font-mono text-xs">POST /v1/file-embeddings</code> handler (now requires <code class="font-mono text-xs">drive_id</code>)</li>
+          <li>router include in <code class="font-mono text-xs">main.py</code></li>
+          <li><code class="font-mono text-xs">UPLOAD_API_KEY</code> setting</li>
+          <li><code class="font-mono text-xs">FileUpload</code> dataclass (gains required <code class="font-mono text-xs">drive_id</code> + <code class="font-mono text-xs">modified_time</code>)</li>
+        </ul>
+        <p class="mt-3 text-xs text-muted">Used only by scripted tests that simulate the scheduler end-to-end.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= SCOPE TAIL ======================= -->
+  <section aria-labelledby="risks">
+    <p class="font-mono text-xs tracking-[0.3em] text-damber uppercase">§ Scope tail</p>
+    <h2 id="risks" class="mt-2 font-display text-2xl font-semibold text-white">Out of scope &amp; open risks</h2>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-2">
+      <details class="group rounded-2xl border border-line bg-panel">
+        <summary class="flex items-center justify-between p-5 font-display text-base font-semibold text-white">
+          <span>Out-of-scope follow-ups</span>
+          <span class="chev font-mono text-damber" aria-hidden="true">▶</span>
+        </summary>
+        <div class="border-t border-line px-5 py-4">
+          <ul class="space-y-2 text-sm text-muted">
+            <li class="flex gap-2"><span class="text-damber">▸</span> Push notifications (webhooks)</li>
+            <li class="flex gap-2"><span class="text-damber">▸</span> Multi-folder watching</li>
+            <li class="flex gap-2"><span class="text-damber">▸</span> Per-user OAuth + personalized search</li>
+            <li class="flex gap-2"><span class="text-damber">▸</span> OCR for scanned PDFs</li>
+            <li class="flex gap-2"><span class="text-damber">▸</span> Progress streaming for very large folders</li>
+          </ul>
+        </div>
+      </details>
+
+      <div class="rounded-2xl border border-line bg-panel p-5">
+        <p class="font-display text-base font-semibold text-white">Open risks</p>
+        <div class="mt-4 space-y-4">
+          <div>
+            <div class="flex items-center justify-between">
+              <p class="font-mono text-xs text-white">Drive API quota</p>
+              <span class="rounded-full border border-dgreen/40 bg-dgreen/10 px-2.5 py-0.5 font-mono text-[11px] text-dgreen">low</span>
+            </div>
+            <p class="mt-1 text-sm text-muted">Personal-scale folders are far under quota; monthly cadence keeps it negligible.</p>
+          </div>
+          <div>
+            <div class="flex items-center justify-between">
+              <p class="font-mono text-xs text-white">Large folders</p>
+              <span class="rounded-full border border-damber/40 bg-damber/10 px-2.5 py-0.5 font-mono text-[11px] text-damber">medium</span>
+            </div>
+            <p class="mt-1 text-sm text-muted">Initial traversal of thousands of files takes minutes; <code class="font-mono text-xs">GET /admin/sync/status</code> shows <code class="font-mono text-xs">running: true</code> meanwhile.</p>
+          </div>
+          <div>
+            <div class="flex items-center justify-between">
+              <p class="font-mono text-xs text-white">Google-native exports</p>
+              <span class="rounded-full border border-damber/40 bg-damber/10 px-2.5 py-0.5 font-mono text-[11px] text-damber">medium</span>
+            </div>
+            <p class="mt-1 text-sm text-muted">Docs/sheets/slides export as PDF and go through the PDF path. Quality depends on export fidelity.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="border-t border-line">
+  <div class="mx-auto max-w-6xl px-6 py-8 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <p class="font-mono text-xs text-muted">Google Drive Sync · design spec · 2026-08-20 · draft</p>
+    <p class="font-mono text-xs text-muted">source: <code class="text-dblue">2026-08-19-google-drive-sync-design.md</code></p>
+  </div>
+</footer>
+
+</body>
+</html>

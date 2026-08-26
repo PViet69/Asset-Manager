@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Storage Sync — System Map</title>
+  <style>
+    :root {
+      --night: #07141b;
+      --panel: #0e232c;
+      --panel-2: #102c36;
+      --line: #27505b;
+      --ink: #edf7f6;
+      --muted: #a7c1c2;
+      --cyan: #54dfd0;
+      --blue: #7cb7ff;
+      --amber: #ffc978;
+      --red: #ff8f91;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background: radial-gradient(circle at 14% 0%, #103c43 0, transparent 31rem), var(--night);
+      font-family: var(--body);
+      line-height: 1.5;
+    }
+    .shell { width: min(1200px, calc(100% - 2rem)); margin: 0 auto; padding: 2.75rem 0 4rem; }
+    .eyebrow, .label { color: var(--cyan); font: 700 .75rem/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+    header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2rem; padding-bottom: 2.5rem; border-bottom: 1px solid var(--line); }
+    h1 { max-width: 800px; margin: .55rem 0 .75rem; font-size: clamp(2.5rem, 6vw, 5.5rem); line-height: .94; letter-spacing: -.065em; }
+    .lead { max-width: 660px; margin: 0; color: var(--muted); font-size: 1.08rem; }
+    .status { align-self: start; color: var(--cyan); border: 1px solid #2b8b89; border-radius: 999px; padding: .45rem .75rem; font: 700 .72rem/1 var(--mono); letter-spacing: .08em; }
+    section { padding-top: 2.7rem; }
+    h2 { margin: 0 0 1.1rem; font-size: clamp(1.5rem, 3vw, 2.25rem); letter-spacing: -.04em; }
+    .caption { max-width: 760px; margin: -.55rem 0 1.5rem; color: var(--muted); }
+
+    .pipeline { position: relative; display: grid; grid-template-columns: 1.22fr repeat(4, minmax(135px, 1fr)); gap: .7rem; padding: 1.15rem 0; }
+    .sources { display: grid; gap: .7rem; }
+    .source { min-height: 97px; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 10px; background: linear-gradient(150deg, rgba(22, 59, 69, .95), rgba(10, 27, 34, .95)); }
+    .source.drive { border-color: #47689b; }
+    .source.dropbox { border-color: #2b8b89; }
+    .source.future { border-style: dashed; opacity: .72; }
+    .source h3 { margin: .25rem 0; font-size: 1rem; letter-spacing: -.025em; }
+    .source p { margin: 0; color: var(--muted); font-size: .77rem; }
+    .stage { position: relative; min-height: 318px; padding: 1.05rem; border: 1px solid var(--line); border-radius: 10px; background: linear-gradient(150deg, rgba(22, 59, 69, .95), rgba(10, 27, 34, .95)); overflow: hidden; }
+    .stage::after { content: ""; position: absolute; width: 7px; height: 7px; right: -5px; top: 50%; z-index: 2; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 14px var(--cyan); }
+    .stage:last-child::after { display: none; }
+    .stage .step { color: var(--blue); font: 700 .7rem/1 var(--mono); letter-spacing: .08em; }
+    .stage h3 { margin: .9rem 0 .5rem; font-size: 1.22rem; letter-spacing: -.035em; }
+    .stage p { margin: 0; color: var(--muted); font-size: .88rem; }
+    .packet { position: absolute; z-index: 4; width: 13px; height: 13px; top: calc(50% - 6px); border: 2px solid var(--night); border-radius: 50%; background: var(--amber); box-shadow: 0 0 20px var(--amber); animation: traverse 6s ease-in-out infinite; }
+    @keyframes traverse { 0%, 12% { left: 2%; opacity: 0; } 15%, 82% { opacity: 1; } 88%, 100% { left: calc(100% - 13px); opacity: 0; } }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .card { padding: 1.35rem; border: 1px solid var(--line); border-radius: 10px; background: rgba(14, 35, 44, .82); }
+    .card h3 { margin: .2rem 0 1rem; font-size: 1.1rem; }
+    .card p, li { color: var(--muted); }
+    .card ul { margin: 0; padding-left: 1.15rem; }
+    .card li + li { margin-top: .4rem; }
+    code { color: var(--amber); font-family: var(--mono); font-size: .86em; }
+    .secret { border-color: #6c5b37; background: linear-gradient(145deg, #2b281d, #14252b); }
+    .secret .label { color: var(--amber); }
+    .routes { display: grid; gap: .6rem; margin-top: .8rem; }
+    .route { padding: .7rem .8rem; border-left: 3px solid var(--blue); background: rgba(7, 20, 27, .55); font: .78rem/1.35 var(--mono); }
+    .test-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: .7rem; list-style: none; padding: 0 !important; }
+    .test-list li { padding: .75rem; border: 1px solid var(--line); border-radius: 7px; background: rgba(7, 20, 27, .35); }
+    .test-list strong { display: block; color: var(--ink); font-size: .82rem; }
+    .test-list span { font-size: .78rem; }
+    footer { margin-top: 2.5rem; padding-top: 1rem; color: var(--muted); border-top: 1px solid var(--line); font: .75rem var(--mono); }
+    :focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; }
+    @media (max-width: 860px) {
+      header, .grid { grid-template-columns: 1fr; }
+      .pipeline { grid-template-columns: 1fr; }
+      .stage { min-height: 0; }
+      .stage::after { top: auto; right: 50%; bottom: -5px; }
+      .packet { display: none; }
+    }
+    @media (max-width: 520px) { .shell { width: min(100% - 1.25rem, 1200px); padding-top: 1.5rem; } .test-list { grid-template-columns: 1fr; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">Asset Tracker / Design Map</div>
+        <h1>Every provider becomes model-ready assets.</h1>
+        <p class="lead">Google Drive, Dropbox, and future sources converge into one extraction, image-description, embedding, and Qdrant pipeline.</p>
+      </div>
+      <div class="status" aria-label="Storage provider registry">● Multi-provider registry</div>
+    </header>
+
+    <section aria-labelledby="flow-heading">
+      <div class="label">Data path</div>
+      <h2 id="flow-heading">Source to searchable vector</h2>
+      <p class="caption">Provider adapters own source auth and download. Administrator triggers one provider at a time; selected provider uses shared reconciliation and model pipeline. No automatic sync runs.</p>
+      <div class="pipeline" aria-label="Multi-provider sync processing pipeline">
+        <div class="packet" aria-hidden="true"></div>
+        <div class="sources">
+          <article class="source drive"><div class="step">REGISTERED / MANUAL</div><h3>Google Drive</h3><p>Drive adapter: service account, folders, metadata, download.</p></article>
+          <article class="source dropbox"><div class="step">REGISTERED / MANUAL</div><h3>Dropbox</h3><p>Dropbox adapter: refresh token, folders, metadata, download.</p></article>
+          <article class="source future"><div class="step">REGISTER IN CODE</div><h3>Future provider</h3><p>Add adapter + registry entry. Keep shared pipeline unchanged.</p></article>
+        </div>
+        <article class="stage"><div class="step">01 / STORAGE PACKAGE</div><h3><code>app/storage/</code></h3><p>Renamed from <code>app/drive/</code>. Shared contracts, registry, scheduler, and reconciliation live here.</p></article>
+        <article class="stage"><div class="step">02 / NORMALIZE + DIFF</div><h3>Contract + scheduler</h3><p>Every adapter emits shared metadata. Per-provider scheduler compares provider-qualified IDs and modified timestamps.</p></article>
+        <article class="stage"><div class="step">03 / PROCESS + MODELS</div><h3>Shared ingestion pipeline</h3><p>Extracts document text. Images pass through description model. Text and descriptions embed.</p></article>
+        <article class="stage"><div class="step">04 / INDEX + OPERATE</div><h3>Qdrant + admin</h3><p>Stores vectors and provider metadata. One protected manual provider card per source.</p></article>
+      </div>
+    </section>
+
+    <section class="grid" aria-label="Implementation constraints">
+      <article class="card secret">
+        <div class="label">Server boundary</div>
+        <h3>Adapters isolate source secrets.</h3>
+        <ul>
+          <li>Provider registry is hard-coded in backend; no provider selector env value exists.</li>
+          <li>Each adapter owns source-specific server credentials and root configuration.</li>
+          <li>Dropbox SDK exchanges refresh token for short-lived access tokens.</li>
+          <li>Shared pipeline never receives credentials; logs/API errors never expose them.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <div class="label">Reconciliation rules</div>
+        <h3>Only changed work reaches models.</h3>
+        <ul>
+          <li>New file → download, process, describe/embed, store.</li>
+          <li>Newer modification time → re-ingest.</li>
+          <li>Unchanged file → no model request.</li>
+          <li>Missing source file → delete linked Qdrant points.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="grid" aria-label="Operations and failure behavior">
+      <article class="card">
+        <div class="label">Admin controls</div>
+        <h3>Protected sync operations</h3>
+        <div class="routes">
+          <div class="route">POST /admin/sync/{provider} <span>— run selected provider only</span></div>
+          <div class="route">GET /admin/sync/status <span>— all provider statuses + latest results</span></div>
+          <div class="route">POST /admin/sync/{provider}/reindex/{storage_file_id} <span>— force provider re-ingest</span></div>
+        </div>
+      </article>
+      <article class="card">
+        <div class="label">Failure isolation</div>
+        <h3>Sync keeps useful work moving.</h3>
+        <ul>
+          <li>Invalid configuration: only that provider card stays disabled.</li>
+          <li>Auth/list/download failure: selected provider reports unavailable; trace stays safe.</li>
+          <li>Single-file ingestion failure: count failure, continue other files.</li>
+          <li>One provider failure cannot block another provider's manual sync.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section aria-labelledby="test-heading">
+      <div class="label">Verification matrix</div>
+      <h2 id="test-heading">What must prove true</h2>
+      <ul class="test-list">
+        <li><strong>Provider adapter</strong><span>Config, paging, recursion, MIME filtering, download, health per source.</span></li>
+        <li><strong>Identity</strong><span>Provider-qualified IDs isolate Drive, Dropbox, and future records.</span></li>
+        <li><strong>Shared pipeline</strong><span>Every downloaded file reaches extraction, description, embeddings, Qdrant.</span></li>
+        <li><strong>Operations</strong><span>Each provider has isolated manual control, status, traces, and safe disabled response.</span></li>
+      </ul>
+    </section>
+
+    <footer>STORAGE PROVIDER FAN-IN DESIGN · 2026-08-21 · Uncommitted visual companion</footer>
+  </main>
+</body>
+</html>

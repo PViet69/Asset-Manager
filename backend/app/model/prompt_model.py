@@ -17,7 +17,8 @@ class ImageDescription(BaseModel):
 
     subjects: tuple[NonBlankText, ...] = Field(
         description=(
-            "Visible people, animals, products, objects, and other primary entities. Just Classify what the subject is(human or dog or cats, etc)"
+            "Visible people, animals, products, objects, and other primary "
+            "entities. Just Classify what the subject is(human or dog or cats, etc)"
         )
     )
     attributes: tuple[NonBlankText, ...] = Field(
@@ -42,7 +43,8 @@ class ImageDescription(BaseModel):
     )
     visible_text: tuple[NonBlankText, ...] = Field(
         description=(
-            "Exactly readable visible text; omit obscured content instead of guessing. If none are present, output no text"
+            "Exactly readable visible text; omit obscured content instead of "
+            "guessing. If none are present, output no text"
         )
     )
 

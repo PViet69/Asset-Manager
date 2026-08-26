@@ -1,6 +1,12 @@
 from typing import Annotated
 
-from pydantic import BeforeValidator, Field, StringConstraints, model_validator
+from pydantic import (
+    AnyHttpUrl,
+    BeforeValidator,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 NonBlankSetting = Annotated[
@@ -16,8 +22,8 @@ OptionalFloatSetting = Annotated[
 ]
 
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+class AdminAuthSettings(BaseSettings):
+    """Admin session settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -26,10 +32,29 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    ADMIN_USERNAME: NonBlankSetting
+    ADMIN_PASSWORD_HASH: NonBlankSetting
+    ADMIN_SESSION_SECRET: NonBlankSetting
+    ADMIN_ALLOWED_ORIGIN: AnyHttpUrl
+
+    @model_validator(mode="after")
+    def _validate_admin_allowed_origin(self) -> "AdminAuthSettings":
+        allowed_origin = self.ADMIN_ALLOWED_ORIGIN
+        if (
+            allowed_origin.path not in {"", "/"}
+            or allowed_origin.query
+            or allowed_origin.fragment
+        ):
+            raise ValueError("ADMIN_ALLOWED_ORIGIN must be an origin without a path")
+        return self
+
+
+class Settings(AdminAuthSettings):
+    """Application settings loaded from environment variables."""
+
     MODEL_ENDPOINT_URL: str
     MODEL_ENDPOINT_API_KEY: str | None = None
     MODEL_REQUEST_TIMEOUT: float = Field(default=30, gt=0)
-    UPLOAD_API_KEY: str | None = None
     DESCRIPTION_MODEL: NonBlankSetting
     DESCRIPTION_ENDPOINT_URL: str | None = None
     DESCRIPTION_ENDPOINT_API_KEY: str | None = None
@@ -41,6 +66,14 @@ class Settings(BaseSettings):
     QDRANT_VECTOR_SIZE: int = Field(gt=0)
     QDRANT_DISTANCE: str = "Cosine"
     SEARCH_THRESHOLD: OptionalFloatSetting = Field(default=None, ge=0, le=1)
+
+    # Registered storage providers are enabled independently by credentials.
+    DRIVE_SERVICE_ACCOUNT_JSON: str | None = None
+    DRIVE_FOLDER_ID: str | None = None
+    DROPBOX_APP_KEY: str | None = None
+    DROPBOX_APP_SECRET: str | None = None
+    DROPBOX_REFRESH_TOKEN: str | None = None
+    DROPBOX_ROOT_PATH: str | None = None
 
     @model_validator(mode="after")
     def _validate_description_endpoint(self) -> "Settings":

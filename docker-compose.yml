@@ -3,13 +3,13 @@ services:
     build: ./frontend
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
-    environment:
-      UPLOAD_API_KEY: "${UPLOAD_API_KEY:-}"
     depends_on:
       - app
 
   app:
     build: .
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:${APP_PORT:-8000}:8000"
     environment:
@@ -20,13 +20,18 @@ services:
       DESCRIPTION_ENDPOINT_URL: "${DESCRIPTION_ENDPOINT_URL:?Set DESCRIPTION_ENDPOINT_URL in .env}"
       DESCRIPTION_ENDPOINT_API_KEY: "${DESCRIPTION_ENDPOINT_API_KEY:-}"
       EMBEDDING_MODEL: "${EMBEDDING_MODEL:?Set EMBEDDING_MODEL in .env}"
-      UPLOAD_API_KEY: "${UPLOAD_API_KEY:-}"
       QDRANT_URL: "http://qdrant:6333"
       QDRANT_API_KEY: "${QDRANT_API_KEY:-}"
       QDRANT_COLLECTION: "${QDRANT_COLLECTION:-file_embeddings}"
       QDRANT_VECTOR_SIZE: "${QDRANT_VECTOR_SIZE:?Set QDRANT_VECTOR_SIZE in .env}"
       QDRANT_DISTANCE: "${QDRANT_DISTANCE:-Cosine}"
       SEARCH_THRESHOLD: "${SEARCH_THRESHOLD:-}"
+      DRIVE_SERVICE_ACCOUNT_JSON: "${DRIVE_SERVICE_ACCOUNT_JSON:-}"
+      DRIVE_FOLDER_ID: "${DRIVE_FOLDER_ID:-}"
+      DROPBOX_APP_KEY: "${DROPBOX_APP_KEY:-}"
+      DROPBOX_APP_SECRET: "${DROPBOX_APP_SECRET:-}"
+      DROPBOX_REFRESH_TOKEN: "${DROPBOX_REFRESH_TOKEN:-}"
+      DROPBOX_ROOT_PATH: "${DROPBOX_ROOT_PATH:-}"
     depends_on:
       qdrant:
         condition: service_healthy

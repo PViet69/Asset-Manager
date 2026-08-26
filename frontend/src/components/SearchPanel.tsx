@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from "react";
+import { useState, type CSSProperties, type FormEvent } from "react";
 import { ApiError, searchVectors } from "../api/client";
 import type { VectorSearchItem } from "../types";
+import { SearchResultThumbnail } from "./SearchResultThumbnail";
 
 const DEFAULT_TOP_K = 10;
 const MIN_TOP_K = 1;
@@ -97,16 +98,44 @@ export function SearchPanel(): JSX.Element {
       {state.kind === "result" && (
         <div className="results">
           <h3>Hits</h3>
-          <ul className="list">
-            {state.items.map((item) => (
-              <li key={item.point_id}>
-                <div className="row-line">
-                  <span className="fname">{item.filename}</span>
-                  <span className="score">{formatScore(item.score)}</span>
-                </div>
-                <div className="snippet">{item.content}</div>
-              </li>
-            ))}
+          <ul className="list search-results--entering" aria-label="Search results">
+            {state.items.map((item, index) => {
+              const sourceUrl = item.source_url ?? null;
+              const animationStyle = { "--result-index": index } as CSSProperties;
+              return (
+                <li key={item.point_id} style={animationStyle}>
+                  <div className="row-line">
+                    <SearchResultThumbnail
+                      thumbnailUrl={item.thumbnail_url}
+                      filename={item.filename}
+                    />
+                    <div className="result-name">
+                      {sourceUrl ? (
+                        <a
+                          href={sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="fname"
+                          style={{
+                            color: "var(--accent-2)",
+                            textDecoration: "none",
+                          }}
+                          title={item.filename}
+                        >
+                          {item.filename} <span style={{ fontSize: "11px" }}>↗</span>
+                        </a>
+                      ) : (
+                        <span className="fname" title={item.filename}>
+                          {item.filename}
+                        </span>
+                      )}
+                    </div>
+                    <span className="score">{formatScore(item.score)}</span>
+                  </div>
+                  <div className="snippet">{item.content}</div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

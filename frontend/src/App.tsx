@@ -1,12 +1,13 @@
-import { useState } from "react";
-import { UploadPanel } from "./components/UploadPanel";
+import { AdminPage } from "./components/AdminPage";
 import { SearchPanel } from "./components/SearchPanel";
 
-type Tab = "upload" | "search";
-
 export function App(): JSX.Element {
-  const [tab, setTab] = useState<Tab>("upload");
+  if (window.location.pathname === "/admin") return <AdminPage />;
+  document.title = "Asset Manager";
+  return <MainPage />;
+}
 
+function MainPage(): JSX.Element {
   return (
     <div className="app">
       <header className="bar">
@@ -26,34 +27,13 @@ export function App(): JSX.Element {
             </svg>
           </div>
           <div>
-            <h1>Embedding UI</h1>
+            <h1>Asset Manager</h1>
             <div className="sub">OpenAI-compatible · quick tester</div>
           </div>
         </div>
       </header>
 
-      <div className="tabs" role="tablist">
-        <button
-          className="tab"
-          role="tab"
-          aria-selected={tab === "upload"}
-          onClick={() => setTab("upload")}
-          type="button"
-        >
-          Upload
-        </button>
-        <button
-          className="tab"
-          role="tab"
-          aria-selected={tab === "search"}
-          onClick={() => setTab("search")}
-          type="button"
-        >
-          Search
-        </button>
-      </div>
-
-      {tab === "upload" ? <UploadPanel /> : <SearchPanel />}
+      <SearchPanel />
     </div>
   );
 }

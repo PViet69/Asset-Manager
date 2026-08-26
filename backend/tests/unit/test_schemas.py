@@ -6,7 +6,7 @@ from backend.app.api.schemas.file_embeddings import (
     FileEmbeddingItem,
     FileEmbeddingResponse,
 )
-from backend.app.api.schemas.health import HealthResponse
+from backend.app.api.schemas.health import HealthResponse, ProviderHealth
 
 
 @pytest.mark.unit
@@ -54,7 +54,20 @@ def test_error_detail_requires_message_and_type() -> None:
 
 
 @pytest.mark.unit
-def test_health_response_contains_dependency_statuses() -> None:
-    response = HealthResponse(status="ok", qdrant="ok", model="ok")
+def test_health_response_contains_provider_statuses() -> None:
+    response = HealthResponse(
+        status="ok",
+        qdrant="ok",
+        model="ok",
+        providers=[ProviderHealth(provider="dropbox", status="disabled")],
+    )
 
     assert response.model == "ok"
+    assert response.providers == [ProviderHealth(provider="dropbox", status="disabled")]
+
+
+@pytest.mark.unit
+def test_health_response_defaults_to_no_registered_providers() -> None:
+    response = HealthResponse(status="ok", qdrant="ok", model="ok")
+
+    assert response.providers == []
