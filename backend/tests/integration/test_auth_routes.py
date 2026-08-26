@@ -61,22 +61,6 @@ def test_invalid_login_has_generic_error_and_no_cookie() -> None:
 
 
 @pytest.mark.integration
-def test_logout_clears_session_and_me_requires_authentication() -> None:
-    with _client() as client:
-        client.post(
-            "/auth/login",
-            json={"username": "admin", "password": "correct-password"},
-            headers={"Origin": TEST_ORIGIN},
-        )
-        logout = client.post("/auth/logout", headers={"Origin": TEST_ORIGIN})
-        restored = client.get("/auth/me")
-
-    assert logout.status_code == 204
-    assert "Max-Age=0" in logout.headers["set-cookie"]
-    assert restored.status_code == 401
-
-
-@pytest.mark.integration
 def test_login_rejects_wrong_origin() -> None:
     with _client() as client:
         response = client.post(

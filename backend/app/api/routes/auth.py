@@ -53,22 +53,6 @@ def login(
     return AdminAccountResponse(username=config.username)
 
 
-@router.post(
-    "/logout",
-    status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_admin_origin)],
-)
-def logout(response: Response) -> None:
-    """Clear browser admin session cookie."""
-    response.delete_cookie(
-        key=ADMIN_SESSION_COOKIE,
-        path="/",
-        httponly=True,
-        secure=True,
-        samesite="strict",
-    )
-
-
 @router.get(
     "/me",
     response_model=AdminAccountResponse,

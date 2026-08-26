@@ -75,15 +75,6 @@ export function loginAdmin(
     credentials: "include",
   });
 }
-
-export async function logoutAdmin(): Promise<void> {
-  const res = await fetch(`${config.apiBase}/auth/logout`, {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!res.ok) await parseError(res);
-}
-
 export async function getAdminSession(): Promise<AdminAccount> {
   const res = await fetch(`${config.apiBase}/auth/me`, { credentials: "include" });
   if (!res.ok) await parseError(res);

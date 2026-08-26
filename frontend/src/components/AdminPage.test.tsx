@@ -8,7 +8,6 @@ import {
   getAdminSession,
   getAdminSyncStatus,
   loginAdmin,
-  logoutAdmin,
   triggerAdminSync,
 } from "../api/client";
 import { AdminPage } from "./AdminPage";
@@ -22,14 +21,12 @@ vi.mock("../api/client", () => ({
   getAdminSession: vi.fn(),
   getAdminSyncStatus: vi.fn(),
   loginAdmin: vi.fn(),
-  logoutAdmin: vi.fn(),
   triggerAdminSync: vi.fn(),
 }));
 
 const mockedGetAdminSession = vi.mocked(getAdminSession);
 const mockedGetAdminSyncStatus = vi.mocked(getAdminSyncStatus);
 const mockedLoginAdmin = vi.mocked(loginAdmin);
-const mockedLogoutAdmin = vi.mocked(logoutAdmin);
 
 afterEach(() => {
   cleanup();
