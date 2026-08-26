@@ -86,7 +86,12 @@ async def refresh_provider(
     provider: str, request: Request
 ) -> AdminProviderRefreshResponse:
     _provider_or_404(request, provider)
-    return await _dashboard_service(request).refresh_provider(provider)
+    try:
+        return await _dashboard_service(request).refresh_provider(provider)
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Unknown storage provider"
+        ) from None
 
 
 @router.post(
@@ -108,6 +113,17 @@ async def stream_sync(provider: str, request: Request) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Content-Encoding": "identity", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post(
+    "/sync/{provider}/stop",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
+)
+async def stop_sync(provider: str, request: Request) -> dict[str, str]:
+    scheduler = _scheduler_or_503(_provider_or_404(request, provider))
+    scheduler.stop_sync()
+    return {"status": "stopping", "provider": provider}
 
 
 @router.post(

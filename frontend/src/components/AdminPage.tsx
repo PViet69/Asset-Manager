@@ -7,6 +7,7 @@ import {
   getAdminSyncStatus,
   loginAdmin,
   refreshAdminProvider,
+  stopAdminSync,
   streamAdminSync,
 } from "../api/client";
 import type {
@@ -115,6 +116,11 @@ export function AdminPage(): JSX.Element {
   }
 
   async function syncProvider(provider: string): Promise<void> {
+    if (syncingProviders.has(provider)) {
+      controllers.current[provider]?.abort();
+      void stopAdminSync(provider).catch(() => {});
+      return;
+    }
     const controller = new AbortController();
     controllers.current = { ...controllers.current, [provider]: controller };
     setSyncingProviders((current) => new Set(current).add(provider));
@@ -124,10 +130,20 @@ export function AdminPage(): JSX.Element {
     try {
       await streamAdminSync(provider, (event) => {
         if (!event.terminal) {
-          setActivityByProvider((current) => ({
-            ...current,
-            [provider]: [event, ...(current[provider] ?? [])],
-          }));
+          setActivityByProvider((current) => {
+            const list = current[provider] ?? [];
+            const index = event.filename
+              ? list.findIndex((item) => item.filename === event.filename)
+              : -1;
+            const nextList =
+              index >= 0
+                ? list.map((item, idx) => (idx === index ? event : item))
+                : [event, ...list];
+            return {
+              ...current,
+              [provider]: nextList,
+            };
+          });
         }
       }, controller.signal);
       await loadDashboard();
@@ -156,7 +172,7 @@ export function AdminPage(): JSX.Element {
           return <article className="admin-dashboard__provider" key={provider.provider}>
             <div className="admin-dashboard__card-head"><h2>{provider.display_name}</h2><span className={`admin-dashboard__status ${provider.health === "ok" ? "" : "admin-dashboard__status--warning"}`}>{statusLabel(provider.health)}</span></div>
             <dl className="admin-dashboard__metrics"><div><dt>Detected</dt><dd>{provider.detected_count ?? "—"}</dd></div><div className="admin-dashboard__embedded"><dt>Embedded</dt><dd>{provider.embedded_count ?? "—"}</dd></div></dl>
-            <div className="admin-dashboard__actions"><button type="button" onClick={() => void refreshProvider(provider.provider)} disabled={isRefreshing} aria-label={`${isRefreshing ? "Refreshing" : "Refresh"} ${provider.display_name}`}>{isRefreshing ? "Refreshing…" : "Refresh"}</button><button className="admin-dashboard__sync" type="button" onClick={() => void syncProvider(provider.provider)} disabled={!provider.enabled || isSyncing} aria-label={`${isSyncing ? "Syncing" : "Sync"} ${provider.display_name}`}>{isSyncing ? "Syncing…" : "Sync"}</button></div>
+            <div className="admin-dashboard__actions"><button type="button" onClick={() => void refreshProvider(provider.provider)} disabled={isRefreshing} aria-label={`${isRefreshing ? "Refreshing" : "Refresh"} ${provider.display_name}`}>{isRefreshing ? "Refreshing…" : "Refresh"}</button><button className={`admin-dashboard__sync ${isSyncing ? "admin-dashboard__sync--stopping" : ""}`} type="button" onClick={() => void syncProvider(provider.provider)} disabled={!provider.enabled && !isSyncing} aria-label={`${isSyncing ? "Stop syncing" : "Sync"} ${provider.display_name}`}>{isSyncing ? "Stop syncing" : "Sync"}</button></div>
             {openActivityProviders.has(provider.provider) ? <section className="admin-dashboard__activity" aria-label={`${provider.display_name} sync activity`} aria-live="polite"><div>Sync activity <span>{events.length} events</span></div><ul className="admin-dashboard__activity-list">{events.map((event) => <li key={event.sequence}><span className={`admin-dashboard__activity-icon admin-dashboard__activity-icon--${event.status}`} aria-hidden="true" /><span>{event.filename ?? event.detail}</span><small>{event.status}</small></li>)}</ul></section> : null}
           </article>;
         })}

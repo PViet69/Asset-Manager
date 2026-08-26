@@ -2,9 +2,11 @@
 
 import asyncio
 import logging
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 from backend.app.api.schemas.admin import SyncTraceItem
 from backend.app.exceptions import QdrantStorageError
@@ -45,21 +47,33 @@ class StorageSyncScheduler:
         self._qdrant_store = qdrant_store
         self._lock = asyncio.Lock()
         self._last_result: SyncTickResult | None = None
+        self._cancel_event = threading.Event()
 
     @property
     def last_result(self) -> SyncTickResult | None:
         return self._last_result
 
+    def stop_sync(self) -> None:
+        """Signal current or upcoming sync operation to stop."""
+        self._cancel_event.set()
+
     async def tick_once(
         self, observer: Callable[[SyncTraceItem], None] | None = None
     ) -> SyncTickResult:
-        async with self._lock:
-            result = await asyncio.to_thread(self._tick_blocking, observer)
-        self._last_result = result
-        return result
+        try:
+            async with self._lock:
+                result = await asyncio.to_thread(
+                    self._tick_blocking, observer, self._cancel_event
+                )
+            self._last_result = result
+            return result
+        finally:
+            self._cancel_event.clear()
 
     def _tick_blocking(
-        self, observer: Callable[[SyncTraceItem], None] | None = None
+        self,
+        observer: Callable[[SyncTraceItem], None] | None = None,
+        cancel_event: Any | None = None,
     ) -> SyncTickResult:
         traces: list[SyncTraceItem] = []
 
@@ -92,10 +106,20 @@ class StorageSyncScheduler:
             return SyncTickResult(self._provider, 0, 0, 0, 1, tuple(traces))
 
         plan = SyncState.seed_from_qdrant(files, stored).diff()
-        upserted = sum(self._upsert(file, trace) for file in plan.to_upsert)
+        upserted = 0
+        for file in plan.to_upsert:
+            if cancel_event is not None and cancel_event.is_set():
+                trace("sync_cancel", "ok", "Sync operation stopped by user")
+                logger.info("Storage sync stopped by user for provider %s", self._provider)
+                break
+            if self._upsert(file, trace):
+                upserted += 1
+
         failed = len(plan.to_upsert) - upserted
         deleted = 0
-        if plan.to_delete_point_ids:
+        if plan.to_delete_point_ids and (
+            cancel_event is None or not cancel_event.is_set()
+        ):
             try:
                 deleted = self._qdrant_store.delete_by_point_ids(
                     plan.to_delete_point_ids

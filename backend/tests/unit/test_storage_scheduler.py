@@ -97,7 +97,7 @@ async def test_tick_once_manually_ingests_new_provider_file() -> None:
     assert all(trace.status == "ok" for trace in result.traces)
     assert ingestion.uploads[0].storage_file_id == "id"
     assert not hasattr(scheduler, "start")
-    assert not hasattr(scheduler, "stop")
+    assert hasattr(scheduler, "stop_sync")
 
 
 @pytest.mark.unit
@@ -107,3 +107,16 @@ async def test_reindex_deletes_selected_provider_identity_only() -> None:
         "dropbox", _Client([]), "/root", _Ingestion([]), _Qdrant([], [])
     )  # type: ignore[arg-type]
     assert await scheduler.delete_for_reindex("id") == 1
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_stop_sync_stops_file_processing() -> None:
+    client = _Client([_file("id1"), _file("id2")])
+    ingestion = _Ingestion([])
+    qdrant = _Qdrant([], [])
+    scheduler = StorageSyncScheduler("dropbox", client, "/root", ingestion, qdrant)  # type: ignore[arg-type]
+    scheduler.stop_sync()
+    result = await scheduler.tick_once()
+    assert result.upserted == 0
+    assert any(trace.step == "sync_cancel" for trace in result.traces)

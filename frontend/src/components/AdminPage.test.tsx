@@ -9,6 +9,7 @@ import {
   getAdminSyncStatus,
   loginAdmin,
   refreshAdminProvider,
+  stopAdminSync,
   streamAdminSync,
 } from "../api/client";
 import { AdminPage } from "./AdminPage";
@@ -23,6 +24,7 @@ vi.mock("../api/client", () => ({
   getAdminSyncStatus: vi.fn(),
   loginAdmin: vi.fn(),
   refreshAdminProvider: vi.fn(),
+  stopAdminSync: vi.fn(),
   streamAdminSync: vi.fn(),
 }));
 
@@ -194,4 +196,43 @@ test("does not show a sign-out button for an authenticated administrator", async
   // Assert
   await screen.findByRole("region", { name: "Storage providers" });
   expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
+});
+
+test("changes sync button to stop syncing while syncing and stops on click", async () => {
+  const user = userEvent.setup();
+  const mockedStopAdminSync = vi.mocked(stopAdminSync);
+  mockedStopAdminSync.mockResolvedValue({ status: "stopping", provider: "google_drive" });
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedStreamAdminSync.mockImplementation(() => new Promise(() => undefined));
+
+  render(<AdminPage />);
+  const syncBtn = await screen.findByRole("button", { name: "Sync Google Drive" });
+  await user.click(syncBtn);
+
+  const stopBtn = screen.getByRole("button", { name: "Stop syncing Google Drive" });
+  expect(stopBtn).toBeEnabled();
+
+  await user.click(stopBtn);
+  expect(mockedStopAdminSync).toHaveBeenCalledWith("google_drive");
+});
+
+test("updates sync activity in place for the same asset instead of rendering 2 cards", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedStreamAdminSync.mockImplementation((provider, onEvent) => {
+    onEvent({ sequence: 1, provider, filename: "photo.jpg", status: "loading", detail: "Loading file", terminal: false });
+    onEvent({ sequence: 2, provider, filename: "photo.jpg", status: "done", detail: "Indexed file", terminal: false });
+    return new Promise(() => undefined);
+  });
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
+
+  const activitySection = screen.getByRole("region", { name: "Google Drive sync activity" });
+  const items = activitySection.querySelectorAll("li");
+  expect(items).toHaveLength(1);
+  expect(items[0]).toHaveTextContent("photo.jpg");
+  expect(items[0]).toHaveTextContent("done");
 });

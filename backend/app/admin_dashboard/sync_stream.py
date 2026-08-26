@@ -36,11 +36,16 @@ class ProviderSyncStream:
         runner = asyncio.create_task(self.scheduler.tick_once(observer))
         sequence = 0
         try:
+            last_ping = loop.time()
             while not runner.done() or not queue.empty():
                 try:
-                    trace = await asyncio.wait_for(queue.get(), timeout=0.05)
+                    trace = await asyncio.wait_for(queue.get(), timeout=0.5)
                 except TimeoutError:
+                    if loop.time() - last_ping >= 10.0:
+                        yield b": keep-alive\n\n"
+                        last_ping = loop.time()
                     continue
+                last_ping = loop.time()
                 event = _activity_event(trace, sequence + 1)
                 if event is None:
                     continue
@@ -52,6 +57,8 @@ class ProviderSyncStream:
             sequence += 1
             yield _frame(_terminal_event(result, status, sequence).model_dump())
         finally:
+            if hasattr(self.scheduler, "stop_sync"):
+                self.scheduler.stop_sync()
             if not runner.done():
                 runner.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

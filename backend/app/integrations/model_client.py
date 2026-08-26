@@ -1,6 +1,8 @@
 """OpenAI-compatible adapter for configured text embeddings."""
 
 import logging
+import threading
+import time
 from typing import Protocol
 
 from backend.app.config import Settings
@@ -8,6 +10,8 @@ from backend.app.exceptions import ModelEndpointError, ModelNotFoundError
 from openai import APIConnectionError, APIError, APITimeoutError, NotFoundError, OpenAI
 
 logger = logging.getLogger(__name__)
+
+GLOBAL_MODEL_LOCK = threading.Lock()
 
 
 class ModelClient(Protocol):
@@ -50,31 +54,40 @@ class OpenAICompatibleModelClient:
 
     def embed_text(self, text: str) -> list[float]:
         """Embed text using configured model and return one numeric vector."""
-        try:
-            response = self._client.embeddings.create(
-                model=self._embedding_model,
-                input=text,
-            )
-        except APITimeoutError as exc:
-            logger.error("Model endpoint timed out during text embedding")
-            raise ModelEndpointError("Model endpoint timed out", exc) from exc
-        except NotFoundError as exc:
-            logger.error("Configured embedding model not found")
-            raise ModelNotFoundError(exc) from exc
-        except (APIConnectionError, APIError) as exc:
-            logger.error("Model endpoint rejected text embedding input")
-            raise ModelEndpointError("Model endpoint rejected input", exc) from exc
-        return self._extract_embedding(response)
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            with GLOBAL_MODEL_LOCK:
+                try:
+                    response = self._client.embeddings.create(
+                        model=self._embedding_model,
+                        input=text,
+                    )
+                    return self._extract_embedding(response)
+                except NotFoundError as exc:
+                    logger.error("Configured embedding model not found")
+                    raise ModelNotFoundError(exc) from exc
+                except (APITimeoutError, APIConnectionError, APIError) as exc:
+                    last_exc = exc
+                    logger.warning("Embedding model attempt %d failed: %s", attempt + 1, exc)
+                    if attempt < 2:
+                        time.sleep(1.0 * (attempt + 1))
+                        continue
+        if last_exc is not None:
+            if isinstance(last_exc, APITimeoutError):
+                raise ModelEndpointError("Model endpoint timed out", last_exc) from last_exc
+            raise ModelEndpointError("Model endpoint rejected input", last_exc) from last_exc
+        raise ModelEndpointError("Model endpoint rejected input")
 
     def check_health(self) -> str:
         """Check endpoint liveness and configured model availability."""
         try:
-            response = self._client.models.list()
-            model_ids = {
-                item.id
-                for item in getattr(response, "data", ())
-                if isinstance(getattr(item, "id", None), str)
-            }
+            with GLOBAL_MODEL_LOCK:
+                response = self._client.models.list()
+                model_ids = {
+                    item.id
+                    for item in getattr(response, "data", ())
+                    if isinstance(getattr(item, "id", None), str)
+                }
         except Exception:  # noqa: BLE001
             return "unavailable"
         return "ok" if self._embedding_model in model_ids else "unavailable"

@@ -140,3 +140,7 @@ export async function streamAdminSync(
 export function triggerAdminSync(provider: string): Promise<AdminSyncResponse> {
   return adminRequest(`/admin/sync/${encodeURIComponent(provider)}`, "POST");
 }
+
+export function stopAdminSync(provider: string): Promise<{ status: string; provider: string }> {
+  return adminRequest(`/admin/sync/${encodeURIComponent(provider)}/stop`, "POST");
+}

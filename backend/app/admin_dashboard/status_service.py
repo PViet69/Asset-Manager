@@ -81,16 +81,33 @@ class AdminDashboardStatusService:
                 embedded_count=None,
             )
 
-        health_task = asyncio.to_thread(
-            entry.health_cache.refresh if force_health else entry.health_cache.get
-        )
-        detected_task = asyncio.to_thread(self._detected_count, entry)
-        embedded_task = asyncio.to_thread(self._embedded_count, entry.name)
-        health, detected_count, embedded_count = await asyncio.gather(
-            health_task,
-            detected_task,
-            embedded_task,
-        )
+        try:
+            health = await asyncio.to_thread(
+                entry.health_cache.refresh if force_health else entry.health_cache.get
+            )
+        except Exception:  # noqa: BLE001
+            health = "unavailable"
+
+        detected_count: int | None = None
+        embedded_count: int | None = None
+
+        if health == "ok":
+            detected_task = asyncio.to_thread(self._detected_count, entry)
+            embedded_task = asyncio.to_thread(self._embedded_count, entry.name)
+            results = await asyncio.gather(
+                detected_task,
+                embedded_task,
+                return_exceptions=True,
+            )
+            detected_count = results[0] if isinstance(results[0], int) else None
+            embedded_count = results[1] if isinstance(results[1], int) else None
+        else:
+            try:
+                res = await asyncio.to_thread(self._embedded_count, entry.name)
+                embedded_count = res if isinstance(res, int) else None
+            except Exception:  # noqa: BLE001
+                embedded_count = None
+
         return ProviderDashboardStatus(
             provider=entry.name,
             display_name=entry.display_name,

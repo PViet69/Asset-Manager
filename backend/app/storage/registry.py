@@ -33,15 +33,18 @@ class ProviderHealthCache:
     def get(self) -> str:
         """Return cached health, refreshing only after cache expiry."""
         with self._lock:
-            if time.monotonic() - self._checked_at >= HEALTH_CACHE_TTL_SECONDS:
-                self._health = self._client.check_health()
-                self._checked_at = time.monotonic()
-            return self._health
+            if time.monotonic() - self._checked_at < HEALTH_CACHE_TTL_SECONDS:
+                return self._health
+        return self.refresh()
 
     def refresh(self) -> str:
         """Run a provider health check and replace cached health."""
+        try:
+            new_health = self._client.check_health()
+        except Exception:  # noqa: BLE001
+            new_health = "unavailable"
         with self._lock:
-            self._health = self._client.check_health()
+            self._health = new_health
             self._checked_at = time.monotonic()
             return self._health
 
