@@ -8,12 +8,12 @@ from typing import Protocol
 import instructor
 import magic
 from instructor.core.exceptions import InstructorRetryException
+from openai import APIConnectionError, APIError, APITimeoutError, NotFoundError, OpenAI
 from pydantic import ValidationError
 
 from backend.app.exceptions import ModelEndpointError, ModelNotFoundError
 from backend.app.model.prompt_model import ImageDescription
 from backend.app.model.prompts import CAPTIONING_PROMPT
-from openai import APIConnectionError, APIError, APITimeoutError, NotFoundError, OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,9 @@ MAX_DESCRIPTION_RETRIES = 0
 
 class ImageDescriptionClient(Protocol):
     """Boundary for converting validated image bytes into structured text."""
+
+    @property
+    def model_name(self) -> str: ...
 
     def describe(self, image_bytes: bytes) -> ImageDescription: ...
     def check_health(self) -> str: ...
@@ -61,6 +64,11 @@ class InstructorImageDescriptionClient:
         self._sdk_client = sdk_client
         self._client = instructor.patch(sdk_client, mode=instructor.Mode.JSON)
         self._description_model = description_model
+
+    @property
+    def model_name(self) -> str:
+        """Return configured description model identity."""
+        return self._description_model
 
     @classmethod
     def from_client(

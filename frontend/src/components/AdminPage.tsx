@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import {
@@ -6,16 +6,36 @@ import {
   getAdminSession,
   getAdminSyncStatus,
   loginAdmin,
-  triggerAdminSync,
+  refreshAdminProvider,
+  streamAdminSync,
 } from "../api/client";
-import type { ProviderSyncStatus } from "../types";
+import type {
+  ModelHealthStatus,
+  ProviderDashboardStatus,
+  SyncActivityEvent,
+} from "../types";
 
-function providerHealthLabel(provider: ProviderSyncStatus): string {
-  return provider.enabled && provider.health === "ok" ? "Connected" : "Unavailable";
+const safeError = "Provider sync failed. Try again.";
+
+type DashboardState = {
+  providers: ProviderDashboardStatus[];
+  embeddingModel: ModelHealthStatus | null;
+  descriptionModel: ModelHealthStatus | null;
+};
+
+function statusLabel(health: string): string {
+  return health === "ok" ? "Ready" : health === "disabled" ? "Not configured" : "Unavailable";
 }
 
-function traceSummary(count: number): string {
-  return `${count} activity ${count === 1 ? "event" : "events"}`;
+function applyDashboard(
+  response: Awaited<ReturnType<typeof getAdminSyncStatus>>,
+  setDashboard: (state: DashboardState) => void
+): void {
+  setDashboard({
+    providers: response.providers,
+    embeddingModel: response.embedding_model,
+    descriptionModel: response.description_model,
+  });
 }
 
 export function AdminPage(): JSX.Element {
@@ -23,27 +43,26 @@ export function AdminPage(): JSX.Element {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [providers, setProviders] = useState<ProviderSyncStatus[]>([]);
-  const [syncingProvider, setSyncingProvider] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardState>({ providers: [], embeddingModel: null, descriptionModel: null });
+  const [refreshingProviders, setRefreshingProviders] = useState<ReadonlySet<string>>(new Set());
+  const [syncingProviders, setSyncingProviders] = useState<ReadonlySet<string>>(new Set());
+  const [activityByProvider, setActivityByProvider] = useState<Readonly<Record<string, readonly SyncActivityEvent[]>>>({});
+  const [openActivityProviders, setOpenActivityProviders] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const controllers = useRef<Record<string, AbortController>>({});
 
-  async function loadProviders(): Promise<void> {
-    const response = await getAdminSyncStatus();
-    setProviders(response.providers);
+  async function loadDashboard(): Promise<void> {
+    applyDashboard(await getAdminSyncStatus(), setDashboard);
   }
 
   function clearSession(): void {
     setIsAuthenticated(false);
-    setProviders([]);
-    setSyncingProvider(null);
+    setDashboard({ providers: [], embeddingModel: null, descriptionModel: null });
+    setSyncingProviders(new Set());
   }
 
-  function handleAdminError(
-    caught: unknown,
-    fallback: string,
-    shouldClearSession: boolean = true
-  ): void {
-    if (shouldClearSession && caught instanceof ApiError && caught.status === 401) {
+  function handleAdminError(caught: unknown, fallback: string, clearOn401 = true): void {
+    if (clearOn401 && caught instanceof ApiError && caught.status === 401) {
       clearSession();
       return;
     }
@@ -51,18 +70,17 @@ export function AdminPage(): JSX.Element {
   }
 
   useEffect(() => {
-    async function restoreSession(): Promise<void> {
+    void (async () => {
       try {
         const account = await getAdminSession();
         setUsername(account.username);
         setIsAuthenticated(true);
-        await loadProviders();
+        await loadDashboard();
       } catch (caught) {
         handleAdminError(caught, "Could not restore session");
       }
-    }
-
-    void restoreSession();
+    })();
+    return () => Object.values(controllers.current).forEach((controller) => controller.abort());
   }, []);
 
   async function submitLogin(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -73,105 +91,78 @@ export function AdminPage(): JSX.Element {
       setUsername(account.username);
       setPassword("");
       setIsAuthenticated(true);
-      await loadProviders();
+      await loadDashboard();
     } catch (caught) {
       handleAdminError(caught, "Could not sign in", false);
     }
   }
 
-  async function syncProvider(provider: string): Promise<void> {
-    setSyncingProvider(provider);
+  async function refreshProvider(provider: string): Promise<void> {
+    setRefreshingProviders((current) => new Set(current).add(provider));
     setError(null);
     try {
-      await triggerAdminSync(provider);
-      await loadProviders();
+      const response = await refreshAdminProvider(provider);
+      setDashboard((current) => ({
+        providers: current.providers.map((item) => item.provider === provider ? response.provider : item),
+        embeddingModel: response.embedding_model,
+        descriptionModel: response.description_model,
+      }));
     } catch (caught) {
-      handleAdminError(caught, "Sync failed");
+      handleAdminError(caught, "Could not refresh provider");
     } finally {
-      setSyncingProvider(null);
+      setRefreshingProviders((current) => new Set([...current].filter((item) => item !== provider)));
     }
   }
 
-  return (
-    <main className="app">
-      <header className="bar">
-        <div className="brand">
-          <div>
-            <h1>Admin Dashboard</h1>
-            <div className="sub">Manual provider controls</div>
-          </div>
-        </div>
-      </header>
-      {!isAuthenticated ? (
-        <form className="glass panel-card" onSubmit={submitLogin}>
-          <label className="field" htmlFor="admin-username">Username</label>
-          <div className="input">
-            <input
-              id="admin-username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              required
-            />
-          </div>
-          <label className="field" htmlFor="admin-password">Password</label>
-          <div className="input">
-            <input
-              id="admin-password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-            />
-          </div>
-          <div className="actions">
-            <button className="primary" type="submit">Sign in</button>
-          </div>
-        </form>
-      ) : (
-        <section className="admin-grid" aria-label="Storage providers">
-          {providers.map((provider) => (
-            <article className="glass provider-card" key={provider.provider}>
-              <div className="provider-card__header">
-                <div>
-                  <h2>{provider.display_name}</h2>
-                  <p className="provider-card__status">
-                    {provider.enabled ? "Configured" : "Not configured"}
-                  </p>
-                </div>
-                <span className={`badge ${provider.enabled && provider.health === "ok" ? "stored" : "error"}`}>
-                  {providerHealthLabel(provider)}
-                </span>
-              </div>
-              <dl className="provider-card__metrics">
-                <div><dt>Indexed</dt><dd>{provider.last_upserted ?? 0}</dd></div>
-                <div><dt>Deleted</dt><dd>{provider.last_deleted ?? 0}</dd></div>
-                <div><dt>Failed</dt><dd>{provider.last_failed ?? 0}</dd></div>
-              </dl>
-              <div className="provider-card__footer">
-                <span className="provider-card__summary">Last sync result</span>
-                <button className="provider-card__sync" type="button" disabled={!provider.enabled || syncingProvider === provider.provider} onClick={() => syncProvider(provider.provider)}>
-                  {syncingProvider === provider.provider ? "Syncing…" : "Sync now"}
-                </button>
-              </div>
-              {provider.last_traces.length > 0 ? (
-                <details className="provider-card__activity">
-                  <summary><span>View activity</span><span>{traceSummary(provider.last_traces.length)}</span></summary>
-                  <ul>
-                    {provider.last_traces.map((trace) => (
-                      <li key={`${trace.timestamp}-${trace.step}-${trace.storage_file_id ?? ""}`}>
-                        <span aria-hidden="true">{trace.status === "failed" ? "!" : "✓"}</span>
-                        <span>{trace.detail}</span>
-                        {trace.filename ? <span className="provider-card__filename">{trace.filename}</span> : null}
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              ) : null}
-            </article>
-          ))}
-        </section>
-      )}
-      {error ? <p className="banner" role="alert">{error}</p> : null}
-    </main>
-  );
+  async function syncProvider(provider: string): Promise<void> {
+    const controller = new AbortController();
+    controllers.current = { ...controllers.current, [provider]: controller };
+    setSyncingProviders((current) => new Set(current).add(provider));
+    setOpenActivityProviders((current) => new Set(current).add(provider));
+    setActivityByProvider((current) => ({ ...current, [provider]: [] }));
+    setError(null);
+    try {
+      await streamAdminSync(provider, (event) => {
+        if (!event.terminal) {
+          setActivityByProvider((current) => ({
+            ...current,
+            [provider]: [event, ...(current[provider] ?? [])],
+          }));
+        }
+      }, controller.signal);
+      await loadDashboard();
+    } catch (caught) {
+      if (!controller.signal.aborted) handleAdminError(caught, safeError);
+    } finally {
+      setSyncingProviders((current) => new Set([...current].filter((item) => item !== provider)));
+      const { [provider]: _, ...rest } = controllers.current;
+      controllers.current = rest;
+    }
+  }
+
+  return <main className="app admin-dashboard">
+    <header className="admin-dashboard__header"><p className="admin-dashboard__brand">Asset Tracker</p><span>Admin</span></header>
+    {!isAuthenticated ? <form className="glass panel-card" onSubmit={submitLogin}>
+      <label className="field" htmlFor="admin-username">Username</label><div className="input"><input id="admin-username" value={username} onChange={(event) => setUsername(event.target.value)} required /></div>
+      <label className="field" htmlFor="admin-password">Password</label><div className="input"><input id="admin-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
+      <div className="actions"><button className="primary" type="submit">Sign in</button></div>
+    </form> : <>
+      <h1>Storage providers</h1><p className="admin-dashboard__subtitle">Detected files and embedded records.</p>
+      <section className="admin-dashboard__providers" aria-label="Storage providers">
+        {dashboard.providers.map((provider) => {
+          const isRefreshing = refreshingProviders.has(provider.provider);
+          const isSyncing = syncingProviders.has(provider.provider);
+          const events = activityByProvider[provider.provider] ?? [];
+          return <article className="admin-dashboard__provider" key={provider.provider}>
+            <div className="admin-dashboard__card-head"><h2>{provider.display_name}</h2><span className={`admin-dashboard__status ${provider.health === "ok" ? "" : "admin-dashboard__status--warning"}`}>{statusLabel(provider.health)}</span></div>
+            <dl className="admin-dashboard__metrics"><div><dt>Detected</dt><dd>{provider.detected_count ?? "—"}</dd></div><div className="admin-dashboard__embedded"><dt>Embedded</dt><dd>{provider.embedded_count ?? "—"}</dd></div></dl>
+            <div className="admin-dashboard__actions"><button type="button" onClick={() => void refreshProvider(provider.provider)} disabled={isRefreshing} aria-label={`${isRefreshing ? "Refreshing" : "Refresh"} ${provider.display_name}`}>{isRefreshing ? "Refreshing…" : "Refresh"}</button><button className="admin-dashboard__sync" type="button" onClick={() => void syncProvider(provider.provider)} disabled={!provider.enabled || isSyncing} aria-label={`${isSyncing ? "Syncing" : "Sync"} ${provider.display_name}`}>{isSyncing ? "Syncing…" : "Sync"}</button></div>
+            {openActivityProviders.has(provider.provider) ? <section className="admin-dashboard__activity" aria-label={`${provider.display_name} sync activity`} aria-live="polite"><div>Sync activity <span>{events.length} events</span></div><ul className="admin-dashboard__activity-list">{events.map((event) => <li key={event.sequence}><span className={`admin-dashboard__activity-icon admin-dashboard__activity-icon--${event.status}`} aria-hidden="true" /><span>{event.filename ?? event.detail}</span><small>{event.status}</small></li>)}</ul></section> : null}
+          </article>;
+        })}
+      </section>
+      <section className="admin-dashboard__models" aria-labelledby="model-health"><h2 id="model-health">Model health</h2><div>{[["Embedding model", dashboard.embeddingModel], ["Description model", dashboard.descriptionModel]].map(([role, model]) => model && <article key={role as string}><p>{role as string}</p><strong>{(model as ModelHealthStatus).name}</strong><span className="admin-dashboard__status">{statusLabel((model as ModelHealthStatus).health)}</span></article>)}</div></section>
+    </>}
+    {error ? <p className="banner" role="alert">{error}</p> : null}
+  </main>;
 }

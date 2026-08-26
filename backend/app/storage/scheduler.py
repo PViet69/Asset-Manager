@@ -50,29 +50,34 @@ class StorageSyncScheduler:
     def last_result(self) -> SyncTickResult | None:
         return self._last_result
 
-    async def tick_once(self) -> SyncTickResult:
+    async def tick_once(
+        self, observer: Callable[[SyncTraceItem], None] | None = None
+    ) -> SyncTickResult:
         async with self._lock:
-            result = await asyncio.to_thread(self._tick_blocking)
+            result = await asyncio.to_thread(self._tick_blocking, observer)
         self._last_result = result
         return result
 
-    def _tick_blocking(self) -> SyncTickResult:
+    def _tick_blocking(
+        self, observer: Callable[[SyncTraceItem], None] | None = None
+    ) -> SyncTickResult:
         traces: list[SyncTraceItem] = []
 
         def trace(
             step: str, status: str, detail: str, file: StorageFile | None = None
         ) -> None:
-            traces.append(
-                SyncTraceItem(
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    provider=self._provider,
-                    step=step,
-                    status=status,
-                    detail=detail,
-                    filename=file.name if file else None,
-                    storage_file_id=file.storage_file_id if file else None,
-                )
+            item = SyncTraceItem(
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                provider=self._provider,
+                step=step,
+                status=status,
+                detail=detail,
+                filename=file.name if file else None,
+                storage_file_id=file.storage_file_id if file else None,
             )
+            traces.append(item)
+            if observer is not None:
+                observer(item)
 
         try:
             files = self._client.list_files(self._root)

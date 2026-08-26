@@ -54,6 +54,52 @@ export type ProviderSyncStatus = {
   last_traces: SyncTraceItem[];
 };
 
+export type ModelHealthStatus = { name: string; health: string };
+
+export type ProviderDashboardStatus = {
+  provider: string;
+  display_name: string;
+  enabled: boolean;
+  health: string;
+  detected_count: number | null;
+  embedded_count: number | null;
+};
+
+export type AdminDashboardStatusResponse = {
+  providers: ProviderDashboardStatus[];
+  embedding_model: ModelHealthStatus;
+  description_model: ModelHealthStatus;
+};
+
+export type AdminProviderRefreshResponse = {
+  provider: ProviderDashboardStatus;
+  embedding_model: ModelHealthStatus;
+  description_model: ModelHealthStatus;
+};
+
+export type SyncActivityEvent = {
+  sequence: number;
+  provider: string;
+  filename: string | null;
+  status: "loading" | "embedding" | "done" | "failed";
+  detail: string;
+  terminal: false;
+};
+
+export type SyncTerminalEvent = {
+  sequence: number;
+  provider: string;
+  detected_count: number | null;
+  embedded_count: number | null;
+  upserted: number;
+  deleted: number;
+  unchanged: number;
+  failed: number;
+  terminal: true;
+};
+
+export type SyncEvent = SyncActivityEvent | SyncTerminalEvent;
+
 export type AdminAccount = { username: string };
 
 export type AdminSyncStatusResponse = { providers: ProviderSyncStatus[] };

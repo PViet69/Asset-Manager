@@ -1,8 +1,10 @@
 import { config } from "../config";
 import type {
   AdminAccount,
+  AdminDashboardStatusResponse,
+  AdminProviderRefreshResponse,
   AdminSyncResponse,
-  AdminSyncStatusResponse,
+  SyncEvent,
   VectorSearchResponse,
 } from "../types";
 
@@ -93,8 +95,46 @@ async function adminRequest<T>(
   return (await res.json()) as T;
 }
 
-export function getAdminSyncStatus(): Promise<AdminSyncStatusResponse> {
+export function getAdminSyncStatus(): Promise<AdminDashboardStatusResponse> {
   return adminRequest("/admin/sync/status");
+}
+
+export function refreshAdminProvider(
+  provider: string
+): Promise<AdminProviderRefreshResponse> {
+  return adminRequest(`/admin/sync/${encodeURIComponent(provider)}/refresh`, "POST");
+}
+
+export async function streamAdminSync(
+  provider: string,
+  onEvent: (event: SyncEvent) => void,
+  signal: AbortSignal
+): Promise<void> {
+  const response = await fetch(
+    `${config.apiBase}/admin/sync/${encodeURIComponent(provider)}/stream`,
+    { method: "POST", credentials: "include", signal }
+  );
+  if (!response.ok) await parseError(response);
+  if (response.body === null) throw new ApiError(response.status, "Sync stream is unavailable");
+
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let pending = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      pending += value ?? "";
+      let separator = pending.indexOf("\n\n");
+      while (separator >= 0) {
+        const frame = pending.slice(0, separator);
+        pending = pending.slice(separator + 2);
+        if (frame.startsWith("data: ")) onEvent(JSON.parse(frame.slice(6)) as SyncEvent);
+        separator = pending.indexOf("\n\n");
+      }
+      if (done) return;
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export function triggerAdminSync(provider: string): Promise<AdminSyncResponse> {

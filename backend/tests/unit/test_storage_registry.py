@@ -39,6 +39,18 @@ def test_registry_keeps_literal_provider_order_when_unconfigured() -> None:
 
 
 @pytest.mark.unit
+def test_registry_maps_each_configured_root_to_its_provider_entry() -> None:
+    registry = build_provider_registry(
+        _settings(DRIVE_FOLDER_ID="folder-1", DROPBOX_ROOT_PATH="/team-assets"),
+        Mock(),
+        Mock(),
+    )
+
+    assert registry.get("google_drive").root == "folder-1"
+    assert registry.get("dropbox").root == "/team-assets"
+
+
+@pytest.mark.unit
 def test_registry_enables_each_configured_provider_independently() -> None:
     drive_client = Mock()
     dropbox_client = Mock()

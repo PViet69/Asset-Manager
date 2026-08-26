@@ -3,12 +3,15 @@
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 
+from backend.app.admin_dashboard.status_service import AdminDashboardStatusService
+from backend.app.admin_dashboard.sync_stream import ProviderSyncStream
 from backend.app.api.schemas.admin import (
+    AdminDashboardStatusResponse,
+    AdminProviderRefreshResponse,
     AdminReindexResponse,
     AdminSyncResponse,
-    AdminSyncStatusResponse,
-    ProviderSyncStatus,
 )
 from backend.app.security import require_admin_access, require_admin_origin
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
@@ -19,6 +22,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 def _registry(request: Request) -> ProviderRegistry:
     return request.app.state.provider_registry
+
+
+def _dashboard_service(request: Request) -> AdminDashboardStatusService:
+    return request.app.state.admin_dashboard_status_service
 
 
 def _provider_or_404(request: Request, provider: str) -> ProviderSync:
@@ -61,28 +68,46 @@ async def trigger_sync(provider: str, request: Request) -> AdminSyncResponse:
 
 @router.get(
     "/sync/status",
-    response_model=AdminSyncStatusResponse,
+    response_model=AdminDashboardStatusResponse,
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(require_admin_access)],
 )
-async def sync_status(request: Request) -> AdminSyncStatusResponse:
-    providers = []
-    for entry in _registry(request).providers:
-        last = entry.scheduler.last_result if entry.scheduler else None
-        providers.append(
-            ProviderSyncStatus(
-                provider=entry.name,
-                display_name=entry.display_name,
-                enabled=entry.scheduler is not None,
-                health=await asyncio.to_thread(entry.health_cache.get),
-                last_upserted=last.upserted if last else None,
-                last_deleted=last.deleted if last else None,
-                last_unchanged=last.unchanged if last else None,
-                last_failed=last.failed if last else None,
-                last_traces=list(last.traces) if last else [],
-            )
-        )
-    return AdminSyncStatusResponse(providers=providers)
+async def sync_status(request: Request) -> AdminDashboardStatusResponse:
+    return await _dashboard_service(request).get_status()
+
+
+@router.post(
+    "/sync/{provider}/refresh",
+    response_model=AdminProviderRefreshResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
+)
+async def refresh_provider(
+    provider: str, request: Request
+) -> AdminProviderRefreshResponse:
+    _provider_or_404(request, provider)
+    return await _dashboard_service(request).refresh_provider(provider)
+
+
+@router.post(
+    "/sync/{provider}/stream",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
+)
+async def stream_sync(provider: str, request: Request) -> StreamingResponse:
+    scheduler = _scheduler_or_503(_provider_or_404(request, provider))
+
+    async def snapshot(selected_provider: str):
+        return (
+            await _dashboard_service(request).refresh_provider(selected_provider)
+        ).provider
+
+    stream = ProviderSyncStream(provider, scheduler, snapshot)
+    return StreamingResponse(
+        stream.run(),
+        media_type="text/event-stream",
+        headers={"Content-Encoding": "identity", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post(

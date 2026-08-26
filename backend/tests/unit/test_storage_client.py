@@ -1,5 +1,7 @@
 """Unit tests for storage provider adapters."""
 
+import logging
+import ssl
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -49,6 +51,26 @@ def test_unconfigured_google_drive_returns_disabled_client() -> None:
     assert isinstance(client, DisabledStorageClient)
     assert client.list_files("root") == []
     assert client.check_health() == "disabled"
+
+
+@pytest.mark.unit
+def test_google_drive_health_failure_logs_without_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client = GoogleDriveClient.__new__(GoogleDriveClient)
+    client._root_folder_id = "root"
+    files = Mock()
+    files.get.return_value = Mock(
+        execute=Mock(side_effect=ssl.SSLError("record layer failure"))
+    )
+    client._service = Mock(files=Mock(return_value=files))
+
+    with caplog.at_level(logging.WARNING):
+        health = client.check_health()
+
+    assert health == "unavailable"
+    assert "Google Drive health check failed" in caplog.text
+    assert "Traceback" not in caplog.text
 
 
 @pytest.mark.unit

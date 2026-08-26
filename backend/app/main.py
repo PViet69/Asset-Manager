@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from backend.app.admin_auth import AdminAuthConfig
+from backend.app.admin_dashboard.status_service import AdminDashboardStatusService
 from backend.app.api.dependencies import get_file_ingestion_service
 from backend.app.api.routes.admin.sync import router as admin_sync_router
 from backend.app.api.routes.auth import router as auth_router
@@ -38,6 +39,10 @@ from backend.app.storage.registry import ProviderRegistry, build_provider_regist
 
 @dataclass(frozen=True)
 class _UnavailableHealthDependency:
+    @property
+    def model_name(self) -> str:
+        return "Unavailable"
+
     def check_health(self) -> str:
         return "unavailable"
 
@@ -115,6 +120,12 @@ def create_app(
         application.state.provider_registry = (
             effective_provider_registry or ProviderRegistry(())
         )
+        application.state.admin_dashboard_status_service = AdminDashboardStatusService(
+            registry=application.state.provider_registry,
+            qdrant_store=effective_health_dependencies.qdrant_store,
+            embedding_client=effective_health_dependencies.model_client,
+            description_client=effective_health_dependencies.description_client,
+        )
         try:
             yield
         finally:
@@ -125,6 +136,7 @@ def create_app(
                 "upload_rate_limiter",
                 "admin_login_rate_limiter",
                 "provider_registry",
+                "admin_dashboard_status_service",
             ):
                 application.state._state.pop(key, None)
 

@@ -5,11 +5,11 @@ import httpx
 import instructor
 import pytest
 from instructor.core.exceptions import InstructorRetryException
+from openai import APITimeoutError, BadRequestError
 
 from backend.app.exceptions import ModelEndpointError
 from backend.app.model.description_client import InstructorImageDescriptionClient
 from backend.app.model.prompt_model import ImageDescription
-from openai import APITimeoutError, BadRequestError
 
 
 def make_description() -> ImageDescription:
@@ -167,6 +167,24 @@ def test_description_retry_failure_logs_cause_details(
     assert any(
         "missing closing brace" in record.getMessage() for record in caplog.records
     )
+
+
+@pytest.mark.unit
+def test_description_client_exposes_configured_model_name_only() -> None:
+    sdk = Mock()
+
+    with patch(
+        "backend.app.model.description_client.instructor.patch",
+        return_value=Mock(),
+    ):
+        client = InstructorImageDescriptionClient.from_client(
+            sdk,
+            description_model="vision-model",
+        )
+
+    assert client.model_name == "vision-model"
+    assert not hasattr(client, "endpoint_url")
+    assert not hasattr(client, "endpoint_api_key")
 
 
 @pytest.mark.unit

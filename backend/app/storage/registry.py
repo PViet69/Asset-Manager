@@ -18,7 +18,6 @@ from backend.app.storage.client import (
 )
 from backend.app.storage.scheduler import StorageSyncScheduler
 
-
 HEALTH_CACHE_TTL_SECONDS = 5 * 60
 
 
@@ -53,6 +52,7 @@ class ProviderSync:
     display_name: str
     client: StorageClient
     scheduler: StorageSyncScheduler | None
+    root: str | None = None
     health_cache: ProviderHealthCache = field(init=False)
 
     def __post_init__(self) -> None:
@@ -100,6 +100,7 @@ def build_provider_registry(
                 ingestion_service,
                 qdrant_store,
             ),
+            settings.DRIVE_FOLDER_ID,
         ),
         ProviderSync(
             DROPBOX_PROVIDER,
@@ -113,6 +114,7 @@ def build_provider_registry(
                 ingestion_service,
                 qdrant_store,
             ),
+            settings.DROPBOX_ROOT_PATH,
         ),
     )
     return ProviderRegistry(entries)

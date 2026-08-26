@@ -256,7 +256,7 @@ class GoogleDriveClient:
                 fileId=self._root_folder_id, fields="id"
             ).execute()
         except Exception:  # noqa: BLE001
-            logger.warning("Google Drive health check failed", exc_info=True)
+            logger.warning("Google Drive health check failed")
             return "unavailable"
         return "ok"
 

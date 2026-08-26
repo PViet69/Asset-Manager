@@ -8,7 +8,8 @@ import {
   getAdminSession,
   getAdminSyncStatus,
   loginAdmin,
-  triggerAdminSync,
+  refreshAdminProvider,
+  streamAdminSync,
 } from "../api/client";
 import { AdminPage } from "./AdminPage";
 
@@ -21,12 +22,24 @@ vi.mock("../api/client", () => ({
   getAdminSession: vi.fn(),
   getAdminSyncStatus: vi.fn(),
   loginAdmin: vi.fn(),
-  triggerAdminSync: vi.fn(),
+  refreshAdminProvider: vi.fn(),
+  streamAdminSync: vi.fn(),
 }));
 
 const mockedGetAdminSession = vi.mocked(getAdminSession);
 const mockedGetAdminSyncStatus = vi.mocked(getAdminSyncStatus);
 const mockedLoginAdmin = vi.mocked(loginAdmin);
+const mockedRefreshAdminProvider = vi.mocked(refreshAdminProvider);
+const mockedStreamAdminSync = vi.mocked(streamAdminSync);
+
+const dashboard = {
+  providers: [
+    { provider: "google_drive", display_name: "Google Drive", enabled: true, health: "ok", detected_count: 20, embedded_count: 18 },
+    { provider: "dropbox", display_name: "Dropbox", enabled: true, health: "ok", detected_count: 3, embedded_count: 2 },
+  ],
+  embedding_model: { name: "nomic-embed-text", health: "ok" },
+  description_model: { name: "llava:latest", health: "ok" },
+};
 
 afterEach(() => {
   cleanup();
@@ -39,7 +52,7 @@ function mockSignedOut(): void {
   );
 }
 
-test("shows Admin Dashboard title", () => {
+test("shows Asset Tracker admin branding", () => {
   // Arrange
   mockSignedOut();
 
@@ -47,7 +60,7 @@ test("shows Admin Dashboard title", () => {
   render(<AdminPage />);
 
   // Assert
-  expect(screen.getByRole("heading", { name: "Admin Dashboard" })).toBeInTheDocument();
+  expect(screen.getByText("Asset Tracker")).toBeInTheDocument();
   expect(document.title).toBe("Admin Dashboard");
 });
 
@@ -56,7 +69,11 @@ test("logs in then loads provider status", async () => {
   const user = userEvent.setup();
   mockSignedOut();
   mockedLoginAdmin.mockResolvedValue({ username: "admin" });
-  mockedGetAdminSyncStatus.mockResolvedValue({ providers: [] });
+  mockedGetAdminSyncStatus.mockResolvedValue({
+    providers: [],
+    embedding_model: { name: "embed-v1", health: "ok" },
+    description_model: { name: "describe-v1", health: "ok" },
+  });
   render(<AdminPage />);
 
   // Act
@@ -93,7 +110,11 @@ test("shows invalid login error", async () => {
 test("restores session on page load", async () => {
   // Arrange
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
-  mockedGetAdminSyncStatus.mockResolvedValue({ providers: [] });
+  mockedGetAdminSyncStatus.mockResolvedValue({
+    providers: [],
+    embedding_model: { name: "embed-v1", health: "ok" },
+    description_model: { name: "describe-v1", health: "ok" },
+  });
 
   // Act
   render(<AdminPage />);
@@ -117,10 +138,55 @@ test("returns to login when provider status returns 401", async () => {
   expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
 });
 
+test("renders detected and embedded counts plus model health", async () => {
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+
+  render(<AdminPage />);
+
+  expect(await screen.findByText("20")).toBeInTheDocument();
+  expect(screen.getByText("18")).toBeInTheDocument();
+  expect(screen.getByText("nomic-embed-text")).toBeInTheDocument();
+});
+
+test("refresh disables only selected provider action", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedRefreshAdminProvider.mockReturnValue(new Promise(() => undefined));
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Refresh Google Drive" }));
+
+  expect(screen.getByRole("button", { name: "Refreshing Google Drive" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Refresh Dropbox" })).toBeEnabled();
+});
+
+test("renders independent panels for concurrent provider streams", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedStreamAdminSync.mockImplementation((provider, onEvent) => {
+    onEvent({ sequence: 1, provider, filename: "asset.png", status: "loading", detail: "Loading file", terminal: false });
+    return new Promise(() => undefined);
+  });
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
+  await user.click(screen.getByRole("button", { name: "Sync Dropbox" }));
+
+  expect(screen.getByLabelText("Google Drive sync activity")).toBeInTheDocument();
+  expect(screen.getByLabelText("Dropbox sync activity")).toBeInTheDocument();
+});
+
 test("does not show a sign-out button for an authenticated administrator", async () => {
   // Arrange
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
-  mockedGetAdminSyncStatus.mockResolvedValue({ providers: [] });
+  mockedGetAdminSyncStatus.mockResolvedValue({
+    providers: [],
+    embedding_model: { name: "embed-v1", health: "ok" },
+    description_model: { name: "describe-v1", health: "ok" },
+  });
 
   // Act
   render(<AdminPage />);
