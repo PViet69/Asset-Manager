@@ -48,7 +48,11 @@ class QdrantStore(Protocol):
     def delete_by_storage_key(self, provider: str, storage_file_id: str) -> int: ...
     def delete_by_point_ids(self, point_ids: list[str]) -> int: ...
     def search(
-        self, vector: list[float], limit: int, score_threshold: float
+        self,
+        vector: list[float],
+        limit: int,
+        score_threshold: float,
+        provider: str | None = None,
     ) -> list[SearchHit]: ...
     def check_health(self) -> str: ...
 
@@ -169,15 +173,22 @@ class QdrantEmbeddingStore:
         return len(point_ids)
 
     def search(
-        self, vector: list[float], limit: int, score_threshold: float
+        self,
+        vector: list[float],
+        limit: int,
+        score_threshold: float,
+        provider: str | None = None,
     ) -> list[SearchHit]:
+        query = {
+            "collection_name": self._collection,
+            "query": vector,
+            "limit": limit,
+            "score_threshold": score_threshold,
+        }
+        if provider is not None:
+            query["query_filter"] = self._key_filter(provider)
         try:
-            points = self._client.query_points(
-                collection_name=self._collection,
-                query=vector,
-                limit=limit,
-                score_threshold=score_threshold,
-            ).points
+            points = self._client.query_points(**query).points
         except Exception as exc:  # noqa: BLE001
             logger.error("Qdrant search failed", exc_info=True)
             raise QdrantStorageError("Qdrant storage failure") from exc

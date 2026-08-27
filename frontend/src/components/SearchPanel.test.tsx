@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, expect, test, vi } from "vitest";
 import { searchVectors } from "../api/client";
 import { SearchPanel } from "./SearchPanel";
 
@@ -28,6 +28,11 @@ const LONG_FILENAME =
   "quarterly-asset-inventory-and-regional-campaign-performance-report-2026-final-final-final.pdf";
 
 const mockedSearchVectors = vi.mocked(searchVectors);
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 test("keeps a long source filename accessible while showing its score", async () => {
   // Arrange
@@ -76,4 +81,28 @@ test("keeps a long source filename accessible while showing its score", async ()
   expect(resultList).toHaveClass("search-results--entering");
   expect(resultList.children[0]).toHaveStyle({ "--result-index": "0" });
   expect(resultList.children[1]).toHaveStyle({ "--result-index": "1" });
+});
+
+test("sends selected provider with search request", async () => {
+  // Arrange
+  mockedSearchVectors.mockResolvedValue({ object: "list", data: [] });
+  render(<SearchPanel />);
+
+  // Act
+  fireEvent.change(screen.getByLabelText("Query"), {
+    target: { value: "campaign report" },
+  });
+  fireEvent.change(screen.getByLabelText("Provider"), {
+    target: { value: "google_drive" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+  // Assert
+  await waitFor(() => {
+    expect(mockedSearchVectors).toHaveBeenCalledWith(
+      "campaign report",
+      10,
+      "google_drive"
+    );
+  });
 });

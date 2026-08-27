@@ -7,6 +7,8 @@ const DEFAULT_TOP_K = 10;
 const MIN_TOP_K = 1;
 const MAX_TOP_K = 100;
 
+type ProviderFilter = "" | "google_drive" | "dropbox";
+
 type SearchState =
   | { kind: "idle" }
   | { kind: "submitting" }
@@ -26,6 +28,7 @@ function clampTopK(raw: string): number {
 export function SearchPanel(): JSX.Element {
   const [query, setQuery] = useState<string>("");
   const [topK, setTopK] = useState<string>(String(DEFAULT_TOP_K));
+  const [provider, setProvider] = useState<ProviderFilter>("");
   const [state, setState] = useState<SearchState>({ kind: "idle" });
 
   async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -34,7 +37,11 @@ export function SearchPanel(): JSX.Element {
     if (trimmed.length === 0) return;
     setState({ kind: "submitting" });
     try {
-      const res = await searchVectors(trimmed, clampTopK(topK));
+      const res = await searchVectors(
+        trimmed,
+        clampTopK(topK),
+        provider || undefined
+      );
       setState({ kind: "result", items: res.data });
     } catch (err) {
       const message =
@@ -74,6 +81,22 @@ export function SearchPanel(): JSX.Element {
                 value={topK}
                 onChange={(e) => setTopK(e.target.value)}
               />
+            </div>
+          </div>
+          <div>
+            <label className="field" htmlFor="search-provider">
+              Provider
+            </label>
+            <div className="input">
+              <select
+                id="search-provider"
+                value={provider}
+                onChange={(e) => setProvider(e.target.value as ProviderFilter)}
+              >
+                <option value="">All providers</option>
+                <option value="google_drive">Google Drive</option>
+                <option value="dropbox">Dropbox</option>
+              </select>
             </div>
           </div>
         </div>

@@ -47,6 +47,12 @@ class ImageDescription(BaseModel):
             "guessing. If none are present, output no text"
         )
     )
+    angles: tuple[NonBlankText, ...]=Field(
+        description=(
+            "analyze the angles of the scene in which the picture is taken"
+            "use the following angles: (frontal, below, above, behind, side)"
+        )
+    )
 
     def to_embedding_text(self) -> str:
         """Return deterministic formatted description text for embedding."""
@@ -58,6 +64,7 @@ class ImageDescription(BaseModel):
             ("Colors", self.colors),
             ("Style", self.style),
             ("Visible text", self.visible_text),
+            ("Angles", self.angles)
         )
         lines = tuple(
             f"{label}: {', '.join(values)}" for label, values in sections if values

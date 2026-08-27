@@ -393,6 +393,32 @@ def test_search_returns_hits_above_threshold() -> None:
 
 
 @pytest.mark.unit
+def test_search_filters_by_provider_when_requested() -> None:
+    client = Mock()
+    store = QdrantEmbeddingStore.from_client(
+        client,
+        vector_size=2,
+        collection=COLLECTION,
+    )
+    client.query_points.return_value = Mock(points=[])
+
+    store.search(
+        [0.1, 0.2],
+        limit=5,
+        score_threshold=0.4,
+        provider="google_drive",
+    )
+
+    client.query_points.assert_called_once_with(
+        collection_name=COLLECTION,
+        query=[0.1, 0.2],
+        limit=5,
+        score_threshold=0.4,
+        query_filter=store._key_filter("google_drive"),
+    )
+
+
+@pytest.mark.unit
 def test_search_without_payload_returns_empty_payload_dict() -> None:
     client = Mock()
     store = QdrantEmbeddingStore.from_client(

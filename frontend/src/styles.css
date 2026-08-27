@@ -259,6 +259,16 @@ label.field {
   width: 100%; padding: 11px 0;
 }
 .input input::placeholder { color: var(--text-muted); }
+.input select {
+  width: 100%;
+  padding: 11px 0;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+}
+.input select option { color: var(--text); background: var(--bg-1); }
 
 .drop {
   margin-top: 14px;
@@ -396,9 +406,6 @@ ul.list li:hover { border-color: var(--border-strong); transform: translateX(2px
 .admin-dashboard h1 { margin: 0; font-size: clamp(30px, 5vw, 42px); letter-spacing: -.045em; }
 .admin-dashboard__subtitle { margin: 10px 0 0; color: #9ca4b2; }
 .admin-dashboard__controls { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-top: 56px; }
-.admin-dashboard__sort { display: flex; align-items: center; gap: 10px; font: 500 12px/1 Inter, sans-serif; color: #9ca4b2; }
-.admin-dashboard__sort select { padding: 8px 12px; border: 1px solid #343944; background: #1d2027; color: #f1f3f7; font: 500 12px Inter, sans-serif; border-radius: 4px; cursor: pointer; }
-.admin-dashboard__sort select:hover, .admin-dashboard__sort select:focus { border-color: #82b5ff; outline: none; }
 .admin-dashboard__providers { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); align-items: start; gap: 16px; margin-top: 24px; }
 .admin-dashboard__provider, .admin-dashboard__models article { overflow: hidden; border: 1px solid #343944; background: #1d2027; }
 .admin-dashboard__card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px; }

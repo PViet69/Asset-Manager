@@ -31,7 +31,11 @@ def search_vectors(
 ) -> VectorSearchResponse:
     """Search stored vectors by embedded query text."""
     try:
-        return service.search(payload.query, limit=payload.limit)
+        return service.search(
+            payload.query,
+            limit=payload.limit,
+            provider=payload.provider,
+        )
     except SettingsError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

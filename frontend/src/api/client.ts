@@ -58,9 +58,11 @@ async function postJson<T>(
 
 export function searchVectors(
   query: string,
-  limit: number = 10
+  limit: number = 10,
+  provider?: "google_drive" | "dropbox"
 ): Promise<VectorSearchResponse> {
-  return postJson<VectorSearchResponse>("/v1/search", { query, limit });
+  const body = provider === undefined ? { query, limit } : { query, limit, provider };
+  return postJson<VectorSearchResponse>("/v1/search", body);
 }
 
 export async function fetchThumbnail(path: string): Promise<Blob> {
