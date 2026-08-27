@@ -39,6 +39,43 @@ function applyDashboard(
   });
 }
 
+type ProviderSortOption =
+  | "name_asc"
+  | "name_desc"
+  | "detected_desc"
+  | "detected_asc"
+  | "embedded_desc"
+  | "embedded_asc"
+  | "health";
+
+function sortProviders(
+  providers: readonly ProviderDashboardStatus[],
+  sortBy: ProviderSortOption
+): ProviderDashboardStatus[] {
+  return [...providers].sort((a, b) => {
+    switch (sortBy) {
+      case "name_asc":
+        return a.display_name.localeCompare(b.display_name);
+      case "name_desc":
+        return b.display_name.localeCompare(a.display_name);
+      case "detected_desc":
+        return (b.detected_count ?? -1) - (a.detected_count ?? -1);
+      case "detected_asc":
+        return (a.detected_count ?? Infinity) - (b.detected_count ?? Infinity);
+      case "embedded_desc":
+        return (b.embedded_count ?? -1) - (a.embedded_count ?? -1);
+      case "embedded_asc":
+        return (a.embedded_count ?? Infinity) - (b.embedded_count ?? Infinity);
+      case "health": {
+        const rank = (health: string) => (health === "ok" ? 0 : health === "unavailable" ? 1 : 2);
+        return rank(a.health) - rank(b.health);
+      }
+      default:
+        return 0;
+    }
+  });
+}
+
 export function AdminPage(): JSX.Element {
   document.title = "Admin Dashboard";
   const [username, setUsername] = useState("");
@@ -50,6 +87,7 @@ export function AdminPage(): JSX.Element {
   const [activityByProvider, setActivityByProvider] = useState<Readonly<Record<string, readonly SyncActivityEvent[]>>>({});
   const [openActivityProviders, setOpenActivityProviders] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<ProviderSortOption>("name_asc");
   const controllers = useRef<Record<string, AbortController>>({});
 
   async function loadDashboard(): Promise<void> {
@@ -104,6 +142,7 @@ export function AdminPage(): JSX.Element {
     try {
       const response = await refreshAdminProvider(provider);
       setDashboard((current) => ({
+        ...current,
         providers: current.providers.map((item) => item.provider === provider ? response.provider : item),
         embeddingModel: response.embedding_model,
         descriptionModel: response.description_model,
@@ -163,9 +202,30 @@ export function AdminPage(): JSX.Element {
       <label className="field" htmlFor="admin-password">Password</label><div className="input"><input id="admin-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
       <div className="actions"><button className="primary" type="submit">Sign in</button></div>
     </form> : <>
-      <h1>Storage providers</h1><p className="admin-dashboard__subtitle">Detected files and embedded records.</p>
+      <div className="admin-dashboard__controls">
+        <div>
+          <h1>Storage providers</h1>
+          <p className="admin-dashboard__subtitle">Detected files and embedded records.</p>
+        </div>
+        <div className="admin-dashboard__sort">
+          <label htmlFor="provider-sort">Sort by</label>
+          <select
+            id="provider-sort"
+            value={sortBy}
+            onChange={(event) => setSortBy(event.target.value as ProviderSortOption)}
+          >
+            <option value="name_asc">Name (A–Z)</option>
+            <option value="name_desc">Name (Z–A)</option>
+            <option value="detected_desc">Detected (High → Low)</option>
+            <option value="detected_asc">Detected (Low → High)</option>
+            <option value="embedded_desc">Embedded (High → Low)</option>
+            <option value="embedded_asc">Embedded (Low → High)</option>
+            <option value="health">Health status</option>
+          </select>
+        </div>
+      </div>
       <section className="admin-dashboard__providers" aria-label="Storage providers">
-        {dashboard.providers.map((provider) => {
+        {sortProviders(dashboard.providers, sortBy).map((provider) => {
           const isRefreshing = refreshingProviders.has(provider.provider);
           const isSyncing = syncingProviders.has(provider.provider);
           const events = activityByProvider[provider.provider] ?? [];

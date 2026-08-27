@@ -236,3 +236,45 @@ test("updates sync activity in place for the same asset instead of rendering 2 c
   expect(items[0]).toHaveTextContent("photo.jpg");
   expect(items[0]).toHaveTextContent("done");
 });
+
+test("allows sorting providers by name, detected, embedded, and health", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue({
+    providers: [
+      { provider: "dropbox", display_name: "Dropbox", enabled: true, health: "unavailable", detected_count: 50, embedded_count: 5 },
+      { provider: "google_drive", display_name: "Google Drive", enabled: true, health: "ok", detected_count: 10, embedded_count: 100 },
+    ],
+    embedding_model: { name: "embed-v1", health: "ok" },
+    description_model: { name: "describe-v1", health: "ok" },
+  });
+
+  render(<AdminPage />);
+  await screen.findByRole("region", { name: "Storage providers" });
+
+  const sortSelect = screen.getByLabelText("Sort by");
+  expect(sortSelect).toHaveValue("name_asc");
+
+  // Default: Name (A-Z) -> Dropbox, Google Drive
+  let headings = screen.getAllByRole("heading", { level: 2 });
+  expect(headings[0]).toHaveTextContent("Dropbox");
+  expect(headings[1]).toHaveTextContent("Google Drive");
+
+  // Sort by Detected (High -> Low) -> Dropbox (50), Google Drive (10)
+  await user.selectOptions(sortSelect, "detected_desc");
+  headings = screen.getAllByRole("heading", { level: 2 });
+  expect(headings[0]).toHaveTextContent("Dropbox");
+  expect(headings[1]).toHaveTextContent("Google Drive");
+
+  // Sort by Embedded (High -> Low) -> Google Drive (100), Dropbox (5)
+  await user.selectOptions(sortSelect, "embedded_desc");
+  headings = screen.getAllByRole("heading", { level: 2 });
+  expect(headings[0]).toHaveTextContent("Google Drive");
+  expect(headings[1]).toHaveTextContent("Dropbox");
+
+  // Sort by Health status -> Google Drive (ok), Dropbox (unavailable)
+  await user.selectOptions(sortSelect, "health");
+  headings = screen.getAllByRole("heading", { level: 2 });
+  expect(headings[0]).toHaveTextContent("Google Drive");
+  expect(headings[1]).toHaveTextContent("Dropbox");
+});
