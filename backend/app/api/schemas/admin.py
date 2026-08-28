@@ -123,3 +123,30 @@ class AdminReindexResponse(BaseModel):
     provider: str
     storage_file_id: str
     deleted: int
+
+
+class AdminDeletePointResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    point_id: str
+    deleted: int
+
+
+class QdrantItemSchema(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    point_id: str
+    filename: str | None = None
+    file_path: str | None = None
+    storage_file_id: str | None = None
+    file_type: str | None = None
+    modified_time: str | None = None
+
+
+class AdminQdrantItemsResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider: str
+    items: list[QdrantItemSchema]
+
+

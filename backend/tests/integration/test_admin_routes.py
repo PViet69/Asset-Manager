@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from backend.app.admin_auth import AdminAuthConfig
 from backend.app.api.schemas.admin import SyncTraceItem
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
+from backend.app.integrations.qdrant_store import SearchHit
 from backend.app.main import create_app
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 from backend.app.storage.scheduler import SyncTickResult
@@ -32,11 +33,27 @@ class _Client:
 
 @dataclass
 class _Qdrant:
-    def find_all_with_storage_key(self, provider: str) -> list[object]:  # noqa: ARG002
-        return [object()]
+    def find_all_with_storage_key(self, provider: str) -> list[SearchHit]:  # noqa: ARG002
+        return [
+            SearchHit(
+                point_id="point-1",
+                score=1.0,
+                payload={
+                    "filename": "photo.png",
+                    "file_path": "photo.png",
+                    "storage_file_id": "file-1",
+                    "file_type": "image/png",
+                },
+            )
+        ]
 
     def ensure_collection(self) -> None:
         return None
+
+    def delete_by_point_ids(self, point_ids: list[str]) -> int:
+        return len(point_ids)
+
+
 
 
 @dataclass(frozen=True)
@@ -327,3 +344,42 @@ def test_reindex_is_scoped_to_requested_provider() -> None:
     }
     assert dropbox.deleted == 1
     assert drive.deleted == 0
+
+
+@pytest.mark.integration
+def test_delete_qdrant_point_removes_point() -> None:
+    registry, _, _ = _registry()
+    with TestClient(_app(registry), base_url="https://testserver") as client:
+        _login(client)
+        response = client.post(
+            "/admin/sync/qdrant/delete/point-123", headers={"Origin": TEST_ORIGIN}
+        )
+    assert response.status_code == 200
+    assert response.json() == {
+        "point_id": "point-123",
+        "deleted": 1,
+    }
+
+
+@pytest.mark.integration
+def test_list_provider_items_returns_items() -> None:
+    registry, _, _ = _registry()
+    with TestClient(_app(registry), base_url="https://testserver") as client:
+        _login(client)
+        response = client.get("/admin/sync/dropbox/items")
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider": "dropbox",
+        "items": [
+            {
+                "point_id": "point-1",
+                "filename": "photo.png",
+                "file_path": "photo.png",
+                "storage_file_id": "file-1",
+                "file_type": "image/png",
+                "modified_time": None,
+            }
+        ],
+    }
+
+

@@ -112,3 +112,30 @@ export type AdminSyncResponse = {
   failed: number;
   traces: SyncTraceItem[];
 };
+
+export type AdminReindexResponse = {
+  provider: string;
+  storage_file_id: string;
+  deleted: number;
+};
+
+export type AdminDeletePointResponse = {
+  point_id: string;
+  deleted: number;
+};
+
+export type QdrantItem = {
+  point_id: string;
+  filename?: string | null;
+  file_path?: string | null;
+  storage_file_id?: string | null;
+  file_type?: string | null;
+  modified_time?: string | null;
+};
+
+export type AdminQdrantItemsResponse = {
+  provider: string;
+  items: QdrantItem[];
+};
+
+

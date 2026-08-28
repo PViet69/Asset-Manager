@@ -31,7 +31,11 @@ function MainPage(): JSX.Element {
             <div className="sub">OpenAI-compatible · quick tester</div>
           </div>
         </div>
+        <a href="/admin" className="pill show" style={{ textDecoration: "none", color: "var(--accent-2)" }}>
+          Admin Panel ↗
+        </a>
       </header>
+
 
       <SearchPanel />
     </div>

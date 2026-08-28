@@ -424,6 +424,13 @@ ul.list li:hover { border-color: var(--border-strong); transform: translateX(2px
 .admin-dashboard__actions button:hover { border-color: #82b5ff; color: #82b5ff; }
 .admin-dashboard__actions .admin-dashboard__sync { border-color: #f1f3f7; color: #14161b; background: #f1f3f7; }
 .admin-dashboard__actions button:disabled { cursor: wait; opacity: .65; }
+.admin-dashboard__delete { padding: 0 20px 20px; }
+.admin-dashboard__delete label { display: block; margin-bottom: 8px; color: #9ca4b2; font: 500 10px/1 "IBM Plex Mono", monospace; text-transform: uppercase; }
+.admin-dashboard__delete > div { display: flex; gap: 8px; }
+.admin-dashboard__delete input { min-width: 0; flex: 1; padding: 9px 10px; border: 1px solid #343944; color: #f1f3f7; background: #14161b; font: 12px "IBM Plex Mono", monospace; }
+.admin-dashboard__delete-button { padding: 9px 13px; border: 1px solid #a74f4f; color: #ffb2b2; background: transparent; cursor: pointer; font: 600 12px Inter, sans-serif; white-space: nowrap; }
+.admin-dashboard__delete-button:hover { border-color: #ff9d9d; color: #ff9d9d; }
+.admin-dashboard__delete-button:disabled { cursor: not-allowed; opacity: .65; }
 .admin-dashboard__activity { border-top: 1px solid #343944; }
 .admin-dashboard__activity > div { display: flex; justify-content: space-between; padding: 14px 20px; color: #9ca4b2; font: 500 10px/1 "IBM Plex Mono", monospace; text-transform: uppercase; }
 .admin-dashboard__activity-list { max-height: 205px; margin: 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-color: #82b5ff #1d2027; }
@@ -440,6 +447,15 @@ ul.list li:hover { border-color: var(--border-strong); transform: translateX(2px
 .admin-dashboard__models p { grid-column: 1; margin: 0; }
 .admin-dashboard__models strong { grid-column: 1; margin-top: -8px; }
 .admin-dashboard__models .admin-dashboard__status { grid-column: 2; grid-row: 1 / span 2; }
-@keyframes admin-pulse { 50% { opacity: .35; } }
-@media (max-width: 640px) { .admin-dashboard__providers { grid-template-columns: 1fr; } }
-@media (prefers-reduced-motion: reduce) { .admin-dashboard__activity-icon--loading, .admin-dashboard__activity-icon--embedding { animation: none; } }
+.admin-dashboard__items-section { padding: 12px 20px 20px; border-top: 1px solid #343944; }
+.admin-dashboard__toggle-items { padding: 7px 12px; border: 1px solid #343944; color: #82b5ff; background: transparent; cursor: pointer; font: 500 12px Inter, sans-serif; }
+.admin-dashboard__toggle-items:hover { border-color: #82b5ff; }
+.admin-dashboard__toggle-items:disabled { cursor: not-allowed; opacity: .6; }
+.admin-dashboard__items-list { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; }
+.admin-dashboard__item-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; background: #14161b; border: 1px solid #343944; border-radius: 4px; }
+.admin-dashboard__item-info { display: flex; flex-direction: column; min-width: 0; }
+.admin-dashboard__item-name { color: #f1f3f7; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-dashboard__item-meta { color: #9ca4b2; font: 400 10px/1 "IBM Plex Mono", monospace; margin-top: 3px; }
+.admin-dashboard__empty-items { color: #9ca4b2; font-size: 12px; margin: 12px 0 0; }
+
+

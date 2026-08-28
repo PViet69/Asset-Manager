@@ -35,6 +35,7 @@ from backend.app.security import (
     reject_oversized_request,
 )
 from backend.app.storage.registry import ProviderRegistry, build_provider_registry
+from backend.app.storage.thumbnail_cache import ThumbnailCache
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,7 @@ def create_app(
         application.state.admin_auth_config = effective_admin_auth_config
         application.state.upload_rate_limiter = InMemoryRateLimiter()
         application.state.admin_login_rate_limiter = AdminLoginRateLimiter()
+        application.state.thumbnail_cache = ThumbnailCache()
         application.state.provider_registry = (
             effective_provider_registry or ProviderRegistry(())
         )
@@ -135,6 +137,7 @@ def create_app(
                 "admin_auth_config",
                 "upload_rate_limiter",
                 "admin_login_rate_limiter",
+                "thumbnail_cache",
                 "provider_registry",
                 "admin_dashboard_status_service",
             ):

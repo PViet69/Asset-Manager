@@ -9,10 +9,14 @@ from backend.app.admin_dashboard.status_service import AdminDashboardStatusServi
 from backend.app.admin_dashboard.sync_stream import ProviderSyncStream
 from backend.app.api.schemas.admin import (
     AdminDashboardStatusResponse,
+    AdminDeletePointResponse,
     AdminProviderRefreshResponse,
+    AdminQdrantItemsResponse,
     AdminReindexResponse,
     AdminSyncResponse,
+    QdrantItemSchema,
 )
+from backend.app.exceptions import QdrantStorageError
 from backend.app.security import require_admin_access, require_admin_origin
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 from backend.app.storage.scheduler import StorageSyncScheduler
@@ -140,3 +144,62 @@ async def reindex_storage_file(
     return AdminReindexResponse(
         provider=provider, storage_file_id=storage_file_id, deleted=deleted
     )
+
+
+@router.get(
+    "/sync/{provider}/items",
+    response_model=AdminQdrantItemsResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access)],
+)
+async def list_provider_items(
+    provider: str, request: Request
+) -> AdminQdrantItemsResponse:
+    _provider_or_404(request, provider)
+    qdrant_store = request.app.state.health_dependencies.qdrant_store
+    try:
+        hits = await asyncio.to_thread(
+            qdrant_store.find_all_with_storage_key, provider
+        )
+    except QdrantStorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.safe_message
+        ) from exc
+
+    items = [
+        QdrantItemSchema(
+            point_id=hit.point_id,
+            filename=hit.payload.get("filename")
+            or hit.payload.get("file_path")
+            or hit.point_id,
+            file_path=hit.payload.get("file_path"),
+            storage_file_id=hit.payload.get("storage_file_id"),
+            file_type=hit.payload.get("file_type"),
+            modified_time=hit.payload.get("modified_time"),
+        )
+        for hit in hits
+    ]
+    return AdminQdrantItemsResponse(provider=provider, items=items)
+
+
+@router.post(
+    "/sync/qdrant/delete/{point_id}",
+    response_model=AdminDeletePointResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
+)
+async def delete_qdrant_point(
+    point_id: str, request: Request
+) -> AdminDeletePointResponse:
+    qdrant_store = request.app.state.health_dependencies.qdrant_store
+    try:
+        deleted = await asyncio.to_thread(
+            qdrant_store.delete_by_point_ids, [point_id]
+        )
+    except QdrantStorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.safe_message
+        ) from exc
+    return AdminDeletePointResponse(point_id=point_id, deleted=deleted)
+
+

@@ -2,10 +2,14 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import {
   ApiError,
+  deleteAdminQdrantPoint,
   fetchThumbnail,
+  getAdminProviderItems,
   refreshAdminProvider,
   streamAdminSync,
 } from "./client";
+
+
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -91,3 +95,50 @@ test("maps a failed thumbnail response to ApiError", async () => {
     })
   );
 });
+
+test("posts delete embedded Qdrant item request", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        point_id: "point-123",
+        deleted: 1,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    )
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const result = await deleteAdminQdrantPoint("point-123");
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/admin/sync/qdrant/delete/point-123",
+    expect.objectContaining({ method: "POST", credentials: "include" })
+  );
+  expect(result).toEqual({ point_id: "point-123", deleted: 1 });
+});
+
+test("fetches embedded items for a provider", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        provider: "dropbox",
+        items: [{ point_id: "point-1", filename: "photo.png" }],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    )
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const result = await getAdminProviderItems("dropbox");
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/admin/sync/dropbox/items",
+    expect.objectContaining({ method: "GET", credentials: "include" })
+  );
+  expect(result).toEqual({
+    provider: "dropbox",
+    items: [{ point_id: "point-1", filename: "photo.png" }],
+  });
+});
+
+

@@ -29,7 +29,11 @@ def get_thumbnail(
     ingestion_service: FileIngestionService = Depends(get_file_ingestion_service),
 ) -> Response:
     """Return a validated provider thumbnail without exposing source bytes."""
-    service = ThumbnailService(request.app.state.provider_registry, ingestion_service)
+    service = ThumbnailService(
+        request.app.state.provider_registry,
+        ingestion_service,
+        request.app.state.thumbnail_cache,
+    )
     try:
         thumbnail = service.get_thumbnail(provider, storage_file_id)
     except ThumbnailSourceNotFound as exc:

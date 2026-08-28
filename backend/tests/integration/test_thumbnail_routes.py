@@ -41,16 +41,19 @@ def _app(
 
 
 @pytest.mark.integration
-def test_thumbnail_returns_private_image_bytes_for_indexed_image() -> None:
-    app, _ = _app()
+def test_thumbnail_returns_cached_private_image_bytes_for_indexed_image() -> None:
+    app, provider_client = _app()
 
     with TestClient(app) as client:
-        response = client.get(THUMBNAIL_PATH)
+        first_response = client.get(THUMBNAIL_PATH)
+        second_response = client.get(THUMBNAIL_PATH)
 
-    assert response.status_code == 200
-    assert response.content == b"small-image"
-    assert response.headers["content-type"] == "image/jpeg"
-    assert response.headers["cache-control"] == "private, max-age=300"
+    assert first_response.status_code == 200
+    assert first_response.content == b"small-image"
+    assert first_response.headers["content-type"] == "image/jpeg"
+    assert first_response.headers["cache-control"] == "private, max-age=300"
+    assert second_response.content == first_response.content
+    provider_client.get_thumbnail.assert_called_once_with("id:photo")
 
 
 @pytest.mark.integration

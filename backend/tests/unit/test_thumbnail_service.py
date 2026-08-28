@@ -111,12 +111,13 @@ def test_thumbnail_service_returns_provider_thumbnail_for_indexed_image() -> Non
     )
     client = Mock()
     client.get_thumbnail.return_value = Thumbnail(b"image", "image/jpeg")
+    service = ThumbnailService(_registry(client), ingestion)
 
-    thumbnail = ThumbnailService(_registry(client), ingestion).get_thumbnail(
-        "dropbox", "id:photo"
-    )
+    first_thumbnail = service.get_thumbnail("dropbox", "id:photo")
+    second_thumbnail = service.get_thumbnail("dropbox", "id:photo")
 
-    assert thumbnail == Thumbnail(b"image", "image/jpeg")
+    assert first_thumbnail == Thumbnail(b"image", "image/jpeg")
+    assert second_thumbnail == first_thumbnail
     client.get_thumbnail.assert_called_once_with("id:photo")
 
 

@@ -10,6 +10,7 @@ from backend.app.storage.client import (
     StorageThumbnailUnavailable,
     Thumbnail,
 )
+from backend.app.storage.thumbnail_cache import ThumbnailCache
 
 if TYPE_CHECKING:
     from backend.app.file_embeddings.ingestion_service import FileIngestionService
@@ -59,10 +60,14 @@ class ThumbnailService:
     """Authorize indexed thumbnail lookup before provider dispatch."""
 
     def __init__(
-        self, registry: ProviderRegistry, ingestion_service: "FileIngestionService"
+        self,
+        registry: ProviderRegistry,
+        ingestion_service: "FileIngestionService",
+        thumbnail_cache: ThumbnailCache | None = None,
     ) -> None:
         self._registry = registry
         self._ingestion_service = ingestion_service
+        self._thumbnail_cache = thumbnail_cache or ThumbnailCache()
 
     def get_thumbnail(self, provider: str, storage_file_id: str) -> Thumbnail:
         source = self._ingestion_service.find_indexed_thumbnail_source(
@@ -77,8 +82,13 @@ class ThumbnailService:
             raise ThumbnailSourceNotFound()
         if entry.scheduler is None:
             raise ThumbnailProviderDisabled()
+        cached_thumbnail = self._thumbnail_cache.get(provider, storage_file_id)
+        if cached_thumbnail is not None:
+            return cached_thumbnail
         try:
-            return entry.client.get_thumbnail(storage_file_id)
+            thumbnail = entry.client.get_thumbnail(storage_file_id)
+            self._thumbnail_cache.set(provider, storage_file_id, thumbnail)
+            return thumbnail
         except StorageThumbnailNotFound as exc:
             raise ThumbnailSourceNotFound() from exc
         except StorageThumbnailUnavailable as exc:

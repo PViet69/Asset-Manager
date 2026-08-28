@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Asset Tracker API endpoints</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root { --paper:#f5f5f5; --ink:#2d3142; --muted:#4f5d75; --soft:#7a8399; --rule:rgba(45,49,66,.12); --accent:#eb6c36; --accent-tint:rgba(235,108,54,.08); --link:#2e5aa8; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font-family:Geist, sans-serif; }
+    main { max-width:1200px; margin:0 auto; padding:48px 32px 32px; }
+    .eyebrow, .footer { color:var(--muted); font:500 12px 'Geist Mono', monospace; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font:400 44px 'Instrument Serif', serif; letter-spacing:-.02em; }
+    .subtitle { max-width:720px; margin:0 0 32px; color:var(--muted); font-size:16px; line-height:1.55; }
+    svg { display:block; width:100%; height:auto; }
+    .summary { display:grid; grid-template-columns:1.2fr 1fr .8fr; gap:16px; margin-top:24px; }
+    .card { padding:20px; border:1px solid var(--rule); border-radius:6px; background:#fff; }
+    .card h2 { margin:8px 0; font-size:16px; }
+    .card p, .card li { margin:0; color:var(--muted); font-size:14px; line-height:1.5; }
+    .card ul { margin:8px 0 0; padding-left:18px; }
+    .dot { display:inline-block; width:8px; height:8px; margin-right:8px; border-radius:50%; background:var(--accent); }
+    .footer { margin-top:32px; padding-top:16px; border-top:1px solid var(--rule); font-size:10px; }
+    @media (max-width:760px) { main { padding:32px 16px; } h1 { font-size:36px; } .summary { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">Application architecture · endpoint map</p>
+  <h1>Asset Tracker API endpoints</h1>
+  <p class="subtitle">Browser client reaches public, search, ingestion, media, and admin endpoint families. Search and ingestion share model embedding plus Qdrant vector storage.</p>
+
+  <svg viewBox="0 0 1120 668" role="img" aria-labelledby="endpoint-architecture-title endpoint-architecture-desc">
+    <title id="endpoint-architecture-title">Asset Tracker API endpoint architecture</title>
+    <desc id="endpoint-architecture-desc">Architecture map showing browser client calling Asset Tracker endpoint families, which use authentication, ingestion services, storage providers, model embedding, and Qdrant vector storage.</desc>
+    <defs>
+      <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+      <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+    </defs>
+
+    <rect width="1120" height="668" fill="#f5f5f5"/>
+
+    <!-- Zones -->
+    <rect x="24" y="80" width="176" height="464" rx="8" fill="rgba(45,49,66,.02)" stroke="rgba(45,49,66,.12)" stroke-width=".8"/>
+    <rect x="40" y="84" width="72" height="16" rx="4" fill="#f5f5f5"/>
+    <text x="48" y="96" fill="#7a8399" font-size="8" font-family="Geist Mono, monospace" letter-spacing="1.2">CLIENT</text>
+
+    <rect x="232" y="80" width="392" height="464" rx="8" fill="rgba(45,49,66,.02)" stroke="rgba(45,49,66,.12)" stroke-width=".8"/>
+    <rect x="248" y="84" width="104" height="16" rx="4" fill="#f5f5f5"/>
+    <text x="256" y="96" fill="#7a8399" font-size="8" font-family="Geist Mono, monospace" letter-spacing="1.2">FASTAPI API</text>
+
+    <rect x="656" y="80" width="440" height="464" rx="8" fill="rgba(45,49,66,.02)" stroke="rgba(45,49,66,.12)" stroke-width=".8"/>
+    <rect x="672" y="84" width="136" height="16" rx="4" fill="#f5f5f5"/>
+    <text x="680" y="96" fill="#7a8399" font-size="8" font-family="Geist Mono, monospace" letter-spacing="1.2">SERVICE LAYER</text>
+
+    <!-- Connectors: browser to endpoint families -->
+    <path d="M 184 216 H 232" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+    <path d="M 184 264 H 208 Q 216 264 216 272 V 320 Q 216 328 224 328 H 232" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+    <path d="M 184 312 H 200 Q 208 312 208 320 V 432 Q 208 440 216 440 H 232" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+
+    <!-- API to services -->
+    <path d="M 408 216 H 656" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+    <path d="M 608 328 H 656" fill="none" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+    <path d="M 408 440 H 632 Q 640 440 640 432 V 392 Q 640 384 648 384 H 656" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+    <!-- Service to external store/model -->
+    <path d="M 832 272 H 856 Q 864 272 864 280 V 328 Q 864 336 872 336 H 880" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+    <path d="M 832 384 H 880" fill="none" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+    <path d="M 832 408 H 848 Q 856 408 856 416 V 464 Q 856 472 864 472 H 880" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+    <!-- Arrow labels with masks -->
+    <rect x="188" y="196" width="48" height="12" rx="4" fill="#f5f5f5"/>
+    <text x="212" y="205" fill="#2e5aa8" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">HTTPS</text>
+    <rect x="504" y="308" width="56" height="12" rx="4" fill="#f5f5f5"/>
+    <text x="532" y="317" fill="#7a8399" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">PROCESS</text>
+    <rect x="836" y="364" width="40" height="12" rx="4" fill="#f5f5f5"/>
+    <text x="856" y="373" fill="#eb6c36" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">EMBED</text>
+
+    <!-- Nodes -->
+    <rect x="48" y="192" width="136" height="144" rx="6" fill="#fff" stroke="#2d3142" stroke-width="1"/>
+    <rect x="60" y="204" width="48" height="16" rx="4" fill="transparent" stroke="rgba(45,49,66,.4)" stroke-width=".8"/>
+    <text x="84" y="216" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">WEB</text>
+    <text x="116" y="256" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, sans-serif" text-anchor="middle">Browser client</text>
+    <text x="116" y="280" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">React application</text>
+    <text x="116" y="300" fill="#7a8399" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">admin session cookie</text>
+
+    <rect x="264" y="160" width="144" height="112" rx="6" fill="#fff" stroke="#2d3142" stroke-width="1"/>
+    <rect x="276" y="172" width="56" height="16" rx="4" fill="transparent" stroke="rgba(45,49,66,.4)" stroke-width=".8"/>
+    <text x="304" y="184" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">PUBLIC</text>
+    <text x="336" y="220" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, sans-serif" text-anchor="middle">Health</text>
+    <text x="336" y="244" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">GET /health</text>
+
+    <rect x="448" y="272" width="160" height="112" rx="6" fill="#fff" stroke="#2d3142" stroke-width="1"/>
+    <rect x="460" y="284" width="56" height="16" rx="4" fill="transparent" stroke="rgba(45,49,66,.4)" stroke-width=".8"/>
+    <text x="488" y="296" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">SEARCH</text>
+    <text x="528" y="332" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, sans-serif" text-anchor="middle">Vector search</text>
+    <text x="528" y="356" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">POST /v1/search</text>
+
+    <rect x="264" y="400" width="144" height="144" rx="6" fill="#fff" stroke="#2d3142" stroke-width="1"/>
+    <rect x="276" y="412" width="64" height="16" rx="4" fill="transparent" stroke="rgba(45,49,66,.4)" stroke-width=".8"/>
+    <text x="308" y="424" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">INGEST</text>
+    <text x="336" y="464" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, sans-serif" text-anchor="middle">File embeddings</text>
+    <text x="336" y="488" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">POST /v1/file-embeddings</text>
+    <text x="336" y="512" fill="#7a8399" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">multipart upload</text>
+
+    <rect x="448" y="400" width="160" height="144" rx="6" fill="rgba(235,108,54,.08)" stroke="#eb6c36" stroke-width="1.2"/>
+    <rect x="460" y="412" width="56" height="16" rx="4" fill="transparent" stroke="rgba(235,108,54,.5)" stroke-width=".8"/>
+    <text x="488" y="424" fill="#eb6c36" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">ADMIN</text>
+    <text x="528" y="460" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, sans-serif" text-anchor="middle">Admin control</text>
+    <text x="528" y="484" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">/auth · /admin/sync/*</text>
+    <text x="528" y="508" fill="#7a8399" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">storage, sync, reindex</text>
+
+    <rect x="688" y="160" width="144" height="112" rx="6" fill="#fff" stroke="#2d3142" stroke-width="1"/>
+    <rect x="700" y="172" width="72" height="16" rx="4" fill="transparent" stroke="rgba(45,49,66,.4)" stroke-width=".8"/>
+    <text x="736" y="184" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">SERVICE</text>
+    <text x="760" y="220" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, sans-serif" text-anchor="middle">Health checks</text>
+    <text x="760" y="244" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">provider + Qdrant</text>
+
+    <rect x="688" y="328" width="144" height="112" rx="6" fill="rgba(235,108,54,.08)" stroke="#eb6c36" stroke-width="1.2"/>
+    <rect x="700" y="340" width="72" height="16" rx="4" fill="transparent" stroke="rgba(235,108,54,.5)" stroke-width=".8"/>
+    <text x="736" y="352" fill="#eb6c36" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">SERVICE</text>
+    <text x="760" y="388" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, sans-serif" text-anchor="middle">Ingestion</text>
+    <text x="760" y="412" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">embed · index · search</text>
+
+    <rect x="880" y="280" width="168" height="112" rx="6" fill="rgba(45,49,66,.05)" stroke="#4f5d75" stroke-width="1"/>
+    <rect x="892" y="292" width="64" height="16" rx="4" fill="transparent" stroke="rgba(45,49,66,.4)" stroke-width=".8"/>
+    <text x="924" y="304" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">STORE</text>
+    <text x="964" y="340" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, sans-serif" text-anchor="middle">Qdrant</text>
+    <text x="964" y="364" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">vectors + metadata</text>
+
+    <rect x="880" y="440" width="168" height="112" rx="6" fill="rgba(45,49,66,.03)" stroke="rgba(45,49,66,.3)" stroke-width="1"/>
+    <rect x="892" y="452" width="72" height="16" rx="4" fill="transparent" stroke="rgba(45,49,66,.4)" stroke-width=".8"/>
+    <text x="928" y="464" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle" letter-spacing=".6">EXTERNAL</text>
+    <text x="964" y="500" fill="#2d3142" font-size="16" font-weight="600" font-family="Geist, sans-serif" text-anchor="middle">Model + providers</text>
+    <text x="964" y="524" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" text-anchor="middle">embedding · thumbnails</text>
+
+    <!-- Legend -->
+    <line x1="24" y1="592" x2="1096" y2="592" stroke="rgba(45,49,66,.12)" stroke-width=".8"/>
+    <text x="24" y="620" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace" letter-spacing="1.2">LEGEND</text>
+    <line x1="120" y1="616" x2="152" y2="616" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+    <text x="168" y="620" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace">HTTP REQUEST</text>
+    <line x1="336" y1="616" x2="368" y2="616" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+    <text x="384" y="620" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace">INTERNAL CALL</text>
+    <rect x="560" y="608" width="16" height="16" rx="4" fill="rgba(235,108,54,.08)" stroke="#eb6c36" stroke-width="1"/>
+    <text x="592" y="620" fill="#4f5d75" font-size="8" font-family="Geist Mono, monospace">FOCAL PATH</text>
+  </svg>
+
+  <section class="summary" aria-label="Endpoint details">
+    <article class="card">
+      <p class="eyebrow"><span class="dot"></span>Endpoint families</p>
+      <h2>Public application API</h2>
+      <ul><li><code>GET /health</code> checks service dependencies.</li><li><code>POST /v1/search</code> embeds query then searches vectors.</li><li><code>POST /v1/file-embeddings</code> validates direct uploads and indexes files.</li><li><code>GET /v1/storage/{provider}/{id}/thumbnail</code> returns validated provider thumbnail.</li></ul>
+    </article>
+    <article class="card">
+      <p class="eyebrow">Admin family</p>
+      <h2>Session-protected operations</h2>
+      <ul><li><code>POST /auth/login</code> sets secure strict session cookie.</li><li><code>/admin/sync/*</code> triggers, streams, stops, and reports synchronization.</li><li>Provider refresh, item inspection, reindex, and Qdrant-point deletion sit under admin controls.</li></ul>
+    </article>
+    <article class="card">
+      <p class="eyebrow">Shared core</p>
+      <h2>Search and ingestion</h2>
+      <p>Both flows use ingestion service. Model endpoint creates embeddings. Qdrant stores and retrieves vector records.</p>
+    </article>
+  </section>
+
+  <p class="footer">Generated from current route handlers and service call paths · static documentation artifact</p>
+</main>
+</body>
+</html>

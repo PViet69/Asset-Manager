@@ -2,11 +2,23 @@ import { config } from "../config";
 import type {
   AdminAccount,
   AdminDashboardStatusResponse,
+  AdminDeletePointResponse,
   AdminProviderRefreshResponse,
+  AdminQdrantItemsResponse,
+  AdminReindexResponse,
   AdminSyncResponse,
   SyncEvent,
   VectorSearchResponse,
 } from "../types";
+
+export function getAdminProviderItems(
+  provider: string
+): Promise<AdminQdrantItemsResponse> {
+  return adminRequest(`/admin/sync/${encodeURIComponent(provider)}/items`);
+}
+
+
+
 
 export class ApiError extends Error {
   public readonly status: number;
@@ -107,6 +119,16 @@ export function refreshAdminProvider(
   return adminRequest(`/admin/sync/${encodeURIComponent(provider)}/refresh`, "POST");
 }
 
+export function reindexAdminStorageFile(
+  provider: string,
+  storageFileId: string
+): Promise<AdminReindexResponse> {
+  return adminRequest(
+    `/admin/sync/${encodeURIComponent(provider)}/reindex/${encodeURIComponent(storageFileId)}`,
+    "POST"
+  );
+}
+
 export async function streamAdminSync(
   provider: string,
   onEvent: (event: SyncEvent) => void,
@@ -146,3 +168,13 @@ export function triggerAdminSync(provider: string): Promise<AdminSyncResponse> {
 export function stopAdminSync(provider: string): Promise<{ status: string; provider: string }> {
   return adminRequest(`/admin/sync/${encodeURIComponent(provider)}/stop`, "POST");
 }
+
+export function deleteAdminQdrantPoint(
+  pointId: string
+): Promise<AdminDeletePointResponse> {
+  return adminRequest(
+    `/admin/sync/qdrant/delete/${encodeURIComponent(pointId)}`,
+    "POST"
+  );
+}
+
