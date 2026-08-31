@@ -35,6 +35,7 @@ def search_vectors(
             payload.query,
             limit=payload.limit,
             provider=payload.provider,
+            mode=payload.mode,
         )
     except SettingsError as exc:
         raise HTTPException(

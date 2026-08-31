@@ -71,9 +71,15 @@ async function postJson<T>(
 export function searchVectors(
   query: string,
   limit: number = 10,
-  provider?: "google_drive" | "dropbox"
+  provider?: "google_drive" | "dropbox",
+  mode: "semantic" | "filename" = "semantic"
 ): Promise<VectorSearchResponse> {
-  const body = provider === undefined ? { query, limit } : { query, limit, provider };
+  const body = {
+    query,
+    limit,
+    mode,
+    ...(provider !== undefined && { provider }),
+  };
   return postJson<VectorSearchResponse>("/v1/search", body);
 }
 

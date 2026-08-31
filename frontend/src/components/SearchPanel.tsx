@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { ApiError, searchVectors } from "../api/client";
 import type { VectorSearchItem } from "../types";
 import { SearchResultThumbnail } from "./SearchResultThumbnail";
@@ -8,6 +8,7 @@ const MIN_TOP_K = 1;
 const MAX_TOP_K = 100;
 
 type ProviderFilter = "" | "google_drive" | "dropbox";
+type SearchMode = "semantic" | "filename";
 
 type SearchState =
   | { kind: "idle" }
@@ -25,11 +26,59 @@ function clampTopK(raw: string): number {
   return Math.max(MIN_TOP_K, Math.min(MAX_TOP_K, parsed));
 }
 
-export function SearchPanel(): JSX.Element {
+export type SearchPanelProps = {
+  externalTopK?: string;
+  onTopKChange?: (topK: string) => void;
+};
+
+export function SearchPanel({
+  externalTopK,
+  onTopKChange,
+}: SearchPanelProps = {}): JSX.Element {
   const [query, setQuery] = useState<string>("");
-  const [topK, setTopK] = useState<string>(String(DEFAULT_TOP_K));
+  const [internalTopK, setInternalTopK] = useState<string>(String(DEFAULT_TOP_K));
+  const topK = externalTopK !== undefined ? externalTopK : internalTopK;
+  const setTopK = onTopKChange || setInternalTopK;
   const [provider, setProvider] = useState<ProviderFilter>("");
+  const [searchMode, setSearchMode] = useState<SearchMode>("semantic");
+  const [showSettings, setShowSettings] = useState<boolean>(false);
   const [state, setState] = useState<SearchState>({ kind: "idle" });
+
+  useEffect(() => {
+    if (searchMode !== "filename") return;
+
+    const trimmed = query.trim();
+    if (trimmed.length === 0) {
+      setState({ kind: "idle" });
+      return;
+    }
+
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await searchVectors(
+          trimmed,
+          MAX_TOP_K,
+          provider || undefined,
+          "filename"
+        );
+        if (isMounted) {
+          setState({ kind: "result", items: res.data });
+        }
+      } catch (err) {
+        if (isMounted) {
+          const message =
+            err instanceof ApiError ? err.message : "Search failed";
+          setState({ kind: "error", message });
+        }
+      }
+    }, 150);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [query, provider, searchMode]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -39,8 +88,9 @@ export function SearchPanel(): JSX.Element {
     try {
       const res = await searchVectors(
         trimmed,
-        clampTopK(topK),
-        provider || undefined
+        searchMode === "semantic" ? clampTopK(topK) : MAX_TOP_K,
+        provider || undefined,
+        searchMode
       );
       setState({ kind: "result", items: res.data });
     } catch (err) {
@@ -52,6 +102,65 @@ export function SearchPanel(): JSX.Element {
 
   return (
     <section className="glass panel-card" role="tabpanel">
+      {externalTopK === undefined && (
+        <div className="settings-wrapper">
+          <button
+            type="button"
+            className="settings-btn"
+            onClick={() => setShowSettings(!showSettings)}
+            aria-label="Settings"
+            title="Settings"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+          {showSettings && (
+            <div className="settings-popover glass" role="dialog" aria-label="Settings popover">
+              <div className="popover-header">
+                <h3>Settings</h3>
+                <button
+                  type="button"
+                  className="popover-close-btn"
+                  onClick={() => setShowSettings(false)}
+                  aria-label="Close settings"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="field-group">
+                <label className="field" htmlFor="search-k">
+                  Top K
+                </label>
+                <div className="input">
+                  <input
+                    id="search-k"
+                    type="number"
+                    min={MIN_TOP_K}
+                    max={MAX_TOP_K}
+                    value={topK}
+                    onChange={(e) => setTopK(e.target.value)}
+                  />
+                </div>
+                <small className="field-hint">
+                  Number of similarity search results for Semantic Search.
+                </small>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <form onSubmit={onSubmit}>
         <div className="grid-2">
           <div>
@@ -62,25 +171,29 @@ export function SearchPanel(): JSX.Element {
               <input
                 id="search-q"
                 type="text"
-                placeholder="describe what you're looking for"
+                placeholder={
+                  searchMode === "semantic"
+                    ? "describe what you're looking for"
+                    : "enter filename or extension (e.g. invoice.pdf)"
+                }
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
           </div>
           <div>
-            <label className="field" htmlFor="search-k">
-              Top K
+            <label className="field" htmlFor="search-mode">
+              Search Mode
             </label>
             <div className="input">
-              <input
-                id="search-k"
-                type="number"
-                min={MIN_TOP_K}
-                max={MAX_TOP_K}
-                value={topK}
-                onChange={(e) => setTopK(e.target.value)}
-              />
+              <select
+                id="search-mode"
+                value={searchMode}
+                onChange={(e) => setSearchMode(e.target.value as SearchMode)}
+              >
+                <option value="semantic">Semantic Search (AI)</option>
+                <option value="filename">Filename Search</option>
+              </select>
             </div>
           </div>
           <div>

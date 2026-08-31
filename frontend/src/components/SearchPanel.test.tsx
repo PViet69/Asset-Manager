@@ -102,7 +102,45 @@ test("sends selected provider with search request", async () => {
     expect(mockedSearchVectors).toHaveBeenCalledWith(
       "campaign report",
       10,
-      "google_drive"
+      "google_drive",
+      "semantic"
+    );
+  });
+});
+
+test("hides Top K input and triggers real-time search on typing in filename mode", async () => {
+  // Arrange
+  mockedSearchVectors.mockResolvedValue({ object: "list", data: [] });
+  render(<SearchPanel />);
+
+  // Initially Top K is hidden inside settings popover
+  expect(screen.queryByLabelText("Top K")).not.toBeInTheDocument();
+
+  // Open Settings popover
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect(screen.getByLabelText("Top K")).toBeInTheDocument();
+
+  // Close Settings popover
+  fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+  expect(screen.queryByLabelText("Top K")).not.toBeInTheDocument();
+
+  // Switch to filename mode
+  fireEvent.change(screen.getByLabelText("Search Mode"), {
+    target: { value: "filename" },
+  });
+
+  // Act: type query
+  fireEvent.change(screen.getByLabelText("Query"), {
+    target: { value: "report.pdf" },
+  });
+
+  // Assert real-time debounced trigger
+  await waitFor(() => {
+    expect(mockedSearchVectors).toHaveBeenCalledWith(
+      "report.pdf",
+      100,
+      undefined,
+      "filename"
     );
   });
 });

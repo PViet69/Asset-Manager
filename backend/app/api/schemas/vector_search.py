@@ -25,6 +25,7 @@ class VectorSearchRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     query: SearchQuery
+    mode: Literal["semantic", "filename"] = "semantic"
     limit: int = Field(
         default=DEFAULT_SEARCH_LIMIT, ge=MIN_SEARCH_LIMIT, le=MAX_SEARCH_LIMIT
     )

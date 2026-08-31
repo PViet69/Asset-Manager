@@ -453,3 +453,27 @@ def test_search_failure_becomes_safe_chained_error() -> None:
 
     assert str(exc_info.value) == "Qdrant storage failure"
     assert exc_info.value.__cause__ is failure
+
+
+@pytest.mark.unit
+def test_find_by_filename_filters_case_insensitively() -> None:
+    client = Mock()
+    store = QdrantEmbeddingStore.from_client(
+        client,
+        vector_size=2,
+        collection=COLLECTION,
+    )
+    p1 = Mock()
+    p1.id = "point-1"
+    p1.payload = {"filename": "Q3_Report_Final.pdf"}
+    p2 = Mock()
+    p2.id = "point-2"
+    p2.payload = {"filename": "photo_sunset.jpg"}
+
+    client.scroll.return_value = ([p1, p2], None)
+
+    hits = store.find_by_filename("report", limit=5)
+
+    assert len(hits) == 1
+    assert hits[0].point_id == "point-1"
+    assert hits[0].payload["filename"] == "Q3_Report_Final.pdf"

@@ -68,7 +68,9 @@ def test_search_returns_hits(app: FastAPI) -> None:
             }
         ],
     }
-    service.search.assert_called_once_with("red car", limit=10, provider=None)
+    service.search.assert_called_once_with(
+        "red car", limit=10, provider=None, mode="semantic"
+    )
 
 
 @pytest.mark.integration
@@ -82,7 +84,9 @@ def test_search_passes_custom_limit(app: FastAPI) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"object": "list", "data": []}
-    service.search.assert_called_once_with("red car", limit=3, provider=None)
+    service.search.assert_called_once_with(
+        "red car", limit=3, provider=None, mode="semantic"
+    )
 
 
 @pytest.mark.integration
@@ -99,7 +103,25 @@ def test_search_passes_provider_filter(app: FastAPI) -> None:
 
     assert response.status_code == 200
     service.search.assert_called_once_with(
-        "red car", limit=10, provider="google_drive"
+        "red car", limit=10, provider="google_drive", mode="semantic"
+    )
+
+
+@pytest.mark.integration
+def test_search_passes_filename_mode(app: FastAPI) -> None:
+    service = make_search_service()
+    service.search.return_value = VectorSearchResponse(data=[])
+    override_ingestion_service(app, service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/search",
+            json={"query": "photo.png", "mode": "filename"},
+        )
+
+    assert response.status_code == 200
+    service.search.assert_called_once_with(
+        "photo.png", limit=10, provider=None, mode="filename"
     )
 
 

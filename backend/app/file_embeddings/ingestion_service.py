@@ -103,16 +103,22 @@ class FileIngestionService:
         query: str,
         limit: int,
         provider: str | None = None,
+        mode: str = "semantic",
     ) -> VectorSearchResponse:
-        """Search stored vectors by embedded query text and optional provider."""
-        threshold = self._settings.SEARCH_THRESHOLD if self._settings else None
-        if threshold is None:
-            raise SettingsError("Search is not configured")
-        vector = self._model_client.embed_text(query)
-        search_kwargs = {"limit": limit, "score_threshold": threshold}
-        if provider is not None:
-            search_kwargs["provider"] = provider
-        hits = self._qdrant_store.search(vector, **search_kwargs)
+        """Search stored files by embedded query text or filename matching."""
+        if mode == "filename":
+            hits = self._qdrant_store.find_by_filename(
+                query, limit=limit, provider=provider
+            )
+        else:
+            threshold = self._settings.SEARCH_THRESHOLD if self._settings else None
+            if threshold is None:
+                raise SettingsError("Search is not configured")
+            vector = self._model_client.embed_text(query)
+            search_kwargs = {"limit": limit, "score_threshold": threshold}
+            if provider is not None:
+                search_kwargs["provider"] = provider
+            hits = self._qdrant_store.search(vector, **search_kwargs)
         items = [
             self._to_search_item(hit) for hit in hits if self._has_full_payload(hit)
         ]

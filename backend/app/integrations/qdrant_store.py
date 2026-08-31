@@ -54,6 +54,12 @@ class QdrantStore(Protocol):
         score_threshold: float,
         provider: str | None = None,
     ) -> list[SearchHit]: ...
+    def find_by_filename(
+        self,
+        filename_query: str,
+        limit: int,
+        provider: str | None = None,
+    ) -> list[SearchHit]: ...
     def check_health(self) -> str: ...
 
 
@@ -125,7 +131,7 @@ class QdrantEmbeddingStore:
             )
         return Filter(must=conditions)
 
-    def _scroll(self, filter_: Filter) -> list[SearchHit]:
+    def _scroll(self, filter_: Filter | None = None) -> list[SearchHit]:
         try:
             points = self._client.scroll(
                 collection_name=self._collection,
@@ -138,6 +144,23 @@ class QdrantEmbeddingStore:
             logger.error("Qdrant scroll failed", exc_info=True)
             raise QdrantStorageError("Qdrant storage failure") from exc
         return [SearchHit(str(point.id), 1.0, point.payload or {}) for point in points]
+
+    def find_by_filename(
+        self,
+        filename_query: str,
+        limit: int,
+        provider: str | None = None,
+    ) -> list[SearchHit]:
+        filter_ = self._key_filter(provider) if provider is not None else None
+        hits = self._scroll(filter_)
+        q = filename_query.lower()
+        matched = [
+            hit
+            for hit in hits
+            if isinstance(hit.payload.get("filename"), str)
+            and q in hit.payload["filename"].lower()
+        ]
+        return matched[:limit]
 
     def find_by_storage_key(
         self, provider: str, storage_file_id: str
