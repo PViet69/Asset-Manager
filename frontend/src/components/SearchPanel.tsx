@@ -120,7 +120,7 @@ export function SearchPanel(): JSX.Element {
 
       {state.kind === "result" && (
         <div className="results">
-          <h3>Hits</h3>
+          <h3>Result</h3>
           <ul className="list search-results--entering" aria-label="Search results">
             {state.items.map((item, index) => {
               const sourceUrl = item.source_url ?? null;

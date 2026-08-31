@@ -111,12 +111,49 @@ async def test_reindex_deletes_selected_provider_identity_only() -> None:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_stop_sync_stops_file_processing() -> None:
+async def test_stop_sync_stops_file_processing_and_subsequent_sync_resets() -> None:
     client = _Client([_file("id1"), _file("id2")])
     ingestion = _Ingestion([])
     qdrant = _Qdrant([], [])
     scheduler = StorageSyncScheduler("dropbox", client, "/root", ingestion, qdrant)  # type: ignore[arg-type]
     scheduler.stop_sync()
+    result1 = await scheduler.tick_once()
+    assert result1.upserted == 0
+    assert any(trace.step == "sync_cancel" for trace in result1.traces)
+
+    result2 = await scheduler.tick_once()
+    assert result2.upserted == 2
+    assert not any(trace.step == "sync_cancel" for trace in result2.traces)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_ingestion_failure_retries_and_allows_subsequent_sync_retry() -> None:
+    client = _Client([_file("id1")])
+    call_count = 0
+
+    class _FailingIngestion:
+        def process_files(self, files: tuple[FileUpload, ...]) -> FileEmbeddingResponse:
+            nonlocal call_count
+            call_count += 1
+            from backend.app.api.schemas.file_embeddings import FileEmbeddingItem
+
+            if call_count < 2:
+                raise RuntimeError("Transient ingestion failure")
+            return FileEmbeddingResponse(
+                data=[
+                    FileEmbeddingItem(
+                        filename=files[0].filename,
+                        content_type=files[0].content_type,
+                        status="success",
+                        reason=None,
+                    )
+                ]
+            )
+
+    scheduler = StorageSyncScheduler("dropbox", client, "/root", _FailingIngestion(), _Qdrant([], []))  # type: ignore[arg-type]
     result = await scheduler.tick_once()
-    assert result.upserted == 0
-    assert any(trace.step == "sync_cancel" for trace in result.traces)
+    assert result.upserted == 1
+    assert call_count == 2
+    assert any(trace.status == "retry" for trace in result.traces)
+

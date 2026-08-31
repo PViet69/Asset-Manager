@@ -57,9 +57,9 @@ class ProviderSyncStream:
             sequence += 1
             yield _frame(_terminal_event(result, status, sequence).model_dump())
         finally:
-            if hasattr(self.scheduler, "stop_sync"):
-                self.scheduler.stop_sync()
             if not runner.done():
+                if hasattr(self.scheduler, "stop_sync"):
+                    self.scheduler.stop_sync()
                 runner.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await runner
@@ -82,6 +82,14 @@ def _activity_event(trace: SyncTraceItem, sequence: int) -> SyncActivityEvent | 
             status="done",
             detail="Indexed file",
         )
+    if trace.step == "file_ingestion" and trace.status == "retry":
+        return SyncActivityEvent(
+            sequence=sequence,
+            provider=trace.provider,
+            filename=trace.filename,
+            status="loading",
+            detail=trace.detail,
+        )
     if trace.step == "file_ingestion" and trace.status == "failed":
         return SyncActivityEvent(
             sequence=sequence,
@@ -90,6 +98,7 @@ def _activity_event(trace: SyncTraceItem, sequence: int) -> SyncActivityEvent | 
             status="failed",
             detail="File processing failed",
         )
+
     if trace.step in {"provider_traversal", "qdrant_read", "qdrant_delete"}:
         return SyncActivityEvent(
             sequence=sequence,

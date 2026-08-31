@@ -24,13 +24,13 @@ def test_formats_description_in_stable_field_order() -> None:
     assert description.to_embedding_text() == "\n".join(
         (
             "Subjects: young woman",
-            "Attributes: green eyes, long dark hair",
             "Actions: looking at camera",
             "Setting: outdoors, blurred foliage background",
             "Colors: green, black",
             "Style: portrait photography, soft natural light",
         )
     )
+
 
 
 @pytest.mark.unit

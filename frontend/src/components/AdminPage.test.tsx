@@ -5,14 +5,18 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import {
   ApiError,
+  deleteAdminQdrantPoint,
+  getAdminProviderItems,
   getAdminSession,
   getAdminSyncStatus,
   loginAdmin,
   refreshAdminProvider,
+  reindexAdminStorageFile,
   stopAdminSync,
   streamAdminSync,
 } from "../api/client";
 import { AdminPage } from "./AdminPage";
+
 
 vi.mock("../api/client", () => ({
   ApiError: class ApiError extends Error {
@@ -20,19 +24,27 @@ vi.mock("../api/client", () => ({
       super(message);
     }
   },
+  deleteAdminQdrantPoint: vi.fn(),
+  getAdminProviderItems: vi.fn(),
   getAdminSession: vi.fn(),
   getAdminSyncStatus: vi.fn(),
   loginAdmin: vi.fn(),
   refreshAdminProvider: vi.fn(),
+  reindexAdminStorageFile: vi.fn(),
   stopAdminSync: vi.fn(),
   streamAdminSync: vi.fn(),
 }));
 
+const mockedDeleteAdminQdrantPoint = vi.mocked(deleteAdminQdrantPoint);
+const mockedGetAdminProviderItems = vi.mocked(getAdminProviderItems);
 const mockedGetAdminSession = vi.mocked(getAdminSession);
 const mockedGetAdminSyncStatus = vi.mocked(getAdminSyncStatus);
 const mockedLoginAdmin = vi.mocked(loginAdmin);
 const mockedRefreshAdminProvider = vi.mocked(refreshAdminProvider);
+const mockedReindexAdminStorageFile = vi.mocked(reindexAdminStorageFile);
 const mockedStreamAdminSync = vi.mocked(streamAdminSync);
+
+
 
 const dashboard = {
   providers: [
@@ -237,6 +249,47 @@ test("updates sync activity in place for the same asset instead of rendering 2 c
   expect(items[0]).toHaveTextContent("done");
 });
 
+test("deletes indexed vectors after confirmation and refreshes provider metrics", async () => {
+  // Arrange
+  const user = userEvent.setup();
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedReindexAdminStorageFile.mockResolvedValue({
+    provider: "google_drive",
+    storage_file_id: "file-123",
+    deleted: 4,
+  });
+  render(<AdminPage />);
+
+  // Act
+  await user.type(await screen.findByLabelText("Google Drive storage file ID"), "file-123");
+  await user.click(screen.getByRole("button", { name: "Delete indexed file Google Drive" }));
+
+  // Assert
+  expect(confirmSpy).toHaveBeenCalledWith("Delete indexed vectors for Google Drive file file-123? Cloud file stays unchanged.");
+  expect(mockedReindexAdminStorageFile).toHaveBeenCalledWith("google_drive", "file-123");
+  expect(await screen.findByText("Deleted 4 indexed records.")).toBeInTheDocument();
+  expect(screen.getByLabelText("Google Drive storage file ID")).toHaveValue("");
+  expect(mockedGetAdminSyncStatus).toHaveBeenCalledTimes(2);
+});
+
+test("does not call delete endpoint when confirmation is declined", async () => {
+  // Arrange
+  const user = userEvent.setup();
+  vi.spyOn(window, "confirm").mockReturnValue(false);
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  render(<AdminPage />);
+
+  // Act
+  await user.type(await screen.findByLabelText("Google Drive storage file ID"), "file-123");
+  await user.click(screen.getByRole("button", { name: "Delete indexed file Google Drive" }));
+
+  // Assert
+  expect(mockedReindexAdminStorageFile).not.toHaveBeenCalled();
+});
+
 test("does not show provider search filters in the admin dashboard", async () => {
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
   mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
@@ -246,3 +299,39 @@ test("does not show provider search filters in the admin dashboard", async () =>
 
   expect(screen.queryByLabelText("Sort by")).not.toBeInTheDocument();
 });
+
+
+
+test("loads and displays embedded provider items and allows deleting an item", async () => {
+  const user = userEvent.setup();
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedGetAdminProviderItems.mockResolvedValue({
+    provider: "dropbox",
+    items: [
+      { point_id: "p1", filename: "dropbox-file-1.pdf", file_type: "application/pdf" },
+      { point_id: "p2", filename: "dropbox-file-2.png", file_type: "image/png" },
+    ],
+  });
+  mockedDeleteAdminQdrantPoint.mockResolvedValue({ point_id: "p1", deleted: 1 });
+
+  render(<AdminPage />);
+
+  const viewBtn = await screen.findByRole("button", { name: "View embedded items for Dropbox" });
+  await user.click(viewBtn);
+
+  expect(mockedGetAdminProviderItems).toHaveBeenCalledWith("dropbox");
+  expect(await screen.findByText("dropbox-file-1.pdf")).toBeInTheDocument();
+  expect(screen.getByText("dropbox-file-2.png")).toBeInTheDocument();
+
+  const deleteBtn = screen.getByRole("button", { name: "Delete dropbox-file-1.pdf" });
+  await user.click(deleteBtn);
+
+  expect(confirmSpy).toHaveBeenCalledWith('Delete embedded Qdrant item "dropbox-file-1.pdf"?');
+  expect(mockedDeleteAdminQdrantPoint).toHaveBeenCalledWith("p1");
+  expect(await screen.findByText('Deleted embedded item "dropbox-file-1.pdf".')).toBeInTheDocument();
+  expect(screen.queryByText("dropbox-file-1.pdf")).not.toBeInTheDocument();
+});
+
+

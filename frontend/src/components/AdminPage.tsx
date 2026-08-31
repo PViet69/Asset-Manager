@@ -34,6 +34,13 @@ function statusLabel(health: string): string {
   return health === "ok" ? "Ready" : health === "disabled" ? "Not configured" : "Unavailable";
 }
 
+function statusClassName(health: string): string {
+  if (health === "ok") return "admin-dashboard__status--ready";
+  if (health === "disabled") return "admin-dashboard__status--disabled";
+  return "admin-dashboard__status--unavailable";
+}
+
+
 function applyDashboard(
   response: Awaited<ReturnType<typeof getAdminSyncStatus>>,
   setDashboard: (state: DashboardState) => void
@@ -257,7 +264,7 @@ export function AdminPage(): JSX.Element {
           const isOpenItems = openItemsProviders.has(provider.provider);
           const isLoadingItems = loadingItemsProviders.has(provider.provider);
           return <article className="admin-dashboard__provider" key={provider.provider}>
-            <div className="admin-dashboard__card-head"><h2>{provider.display_name}</h2><span className={`admin-dashboard__status ${provider.health === "ok" ? "" : "admin-dashboard__status--warning"}`}>{statusLabel(provider.health)}</span></div>
+            <div className="admin-dashboard__card-head"><h2>{provider.display_name}</h2><span className={`admin-dashboard__status ${statusClassName(provider.health)}`}>{statusLabel(provider.health)}</span></div>
             <dl className="admin-dashboard__metrics"><div><dt>Detected</dt><dd>{provider.detected_count ?? "—"}</dd></div><div className="admin-dashboard__embedded"><dt>Embedded</dt><dd>{provider.embedded_count ?? "—"}</dd></div></dl>
             <div className="admin-dashboard__actions"><button type="button" onClick={() => void refreshProvider(provider.provider)} disabled={isRefreshing} aria-label={`${isRefreshing ? "Refreshing" : "Refresh"} ${provider.display_name}`}>{isRefreshing ? "Refreshing…" : "Refresh"}</button><button className={`admin-dashboard__sync ${isSyncing ? "admin-dashboard__sync--stopping" : ""}`} type="button" onClick={() => void syncProvider(provider.provider)} disabled={!provider.enabled && !isSyncing} aria-label={`${isSyncing ? "Stop syncing" : "Sync"} ${provider.display_name}`}>{isSyncing ? "Stop syncing" : "Sync"}</button></div>
             <div className="admin-dashboard__delete"><label htmlFor={`storage-file-id-${provider.provider}`}>{provider.display_name} storage file ID</label><div><input id={`storage-file-id-${provider.provider}`} value={storageFileId} onChange={(event) => setStorageFileIds((current) => ({ ...current, [provider.provider]: event.target.value }))} placeholder="Storage file ID" /><button type="button" className="admin-dashboard__delete-button" onClick={() => void deleteIndexedFile(provider.provider, provider.display_name)} disabled={!provider.enabled || !storageFileId.trim() || isDeleting} aria-label={`Delete indexed file ${provider.display_name}`}>{isDeleting ? "Deleting…" : "Delete indexed file"}</button></div></div>
@@ -308,7 +315,8 @@ export function AdminPage(): JSX.Element {
 
       </section>
 
-      <section className="admin-dashboard__models" aria-labelledby="model-health"><h2 id="model-health">Model health</h2><div>{[["Embedding model", dashboard.embeddingModel], ["Description model", dashboard.descriptionModel]].map(([role, model]) => model && <article key={role as string}><p>{role as string}</p><strong>{(model as ModelHealthStatus).name}</strong><span className="admin-dashboard__status">{statusLabel((model as ModelHealthStatus).health)}</span></article>)}</div></section>
+      <section className="admin-dashboard__models" aria-labelledby="model-health"><h2 id="model-health">Model health</h2><div>{[["Embedding model", dashboard.embeddingModel], ["Description model", dashboard.descriptionModel]].map(([role, model]) => model && <article key={role as string}><p>{role as string}</p><strong>{(model as ModelHealthStatus).name}</strong><span className={`admin-dashboard__status ${statusClassName((model as ModelHealthStatus).health)}`}>{statusLabel((model as ModelHealthStatus).health)}</span></article>)}</div></section>
+
 
 
     </>}

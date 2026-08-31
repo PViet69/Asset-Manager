@@ -410,9 +410,13 @@ ul.list li:hover { border-color: var(--border-strong); transform: translateX(2px
 .admin-dashboard__provider, .admin-dashboard__models article { overflow: hidden; border: 1px solid #343944; background: #1d2027; }
 .admin-dashboard__card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px; }
 .admin-dashboard__card-head h2, .admin-dashboard__models h2 { margin: 0; font-size: 16px; }
-.admin-dashboard__status { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; color: #82b5ff; background: #1e3458; font: 500 10px/1 "IBM Plex Mono", monospace; text-transform: uppercase; }
+.admin-dashboard__status { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; color: #9ca4b2; background: #262930; font: 500 10px/1 "IBM Plex Mono", monospace; text-transform: uppercase; }
 .admin-dashboard__status::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; content: ""; }
+.admin-dashboard__status--ready { color: #4ade80; background: #132e1f; }
+.admin-dashboard__status--unavailable { color: #f87171; background: #381414; }
+.admin-dashboard__status--disabled { color: #9ca4b2; background: #262930; }
 .admin-dashboard__status--warning { color: #edc95d; background: #4a3c16; }
+
 .admin-dashboard__metrics { display: grid; grid-template-columns: 1fr 1fr; margin: 0; border-top: 1px solid #343944; border-bottom: 1px solid #343944; }
 .admin-dashboard__metrics div { padding: 20px; }
 .admin-dashboard__metrics div + div { border-left: 1px solid #343944; }

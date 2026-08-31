@@ -90,8 +90,8 @@ class InstructorImageDescriptionClient:
         data_url = self._build_data_url(image_bytes)
         last_exc: Exception | None = None
         for attempt in range(3):
-            with GLOBAL_MODEL_LOCK:
-                try:
+            try:
+                with GLOBAL_MODEL_LOCK:
                     description = self._client.chat.completions.create(
                         model=self._description_model,
                         response_model=ImageDescription,
@@ -109,27 +109,28 @@ class InstructorImageDescriptionClient:
                             }
                         ],
                     )
-                    if isinstance(description, ImageDescription):
-                        return description
-                except NotFoundError as exc:
-                    logger.error("Configured description model not found")
-                    raise ModelNotFoundError(exc) from exc
-                except (
-                    APITimeoutError,
-                    APIConnectionError,
-                    APIError,
-                    InstructorRetryException,
-                    ValidationError,
-                ) as exc:
-                    last_exc = exc
-                    logger.warning(
-                        "Model endpoint attempt %d failed to describe image: %s",
-                        attempt + 1,
-                        _failure_detail(exc),
-                    )
-                    if attempt < 2:
-                        time.sleep(1.0 * (attempt + 1))
-                        continue
+                if isinstance(description, ImageDescription):
+                    return description
+            except NotFoundError as exc:
+                logger.error("Configured description model not found")
+                raise ModelNotFoundError(exc) from exc
+            except (
+                APITimeoutError,
+                APIConnectionError,
+                APIError,
+                InstructorRetryException,
+                ValidationError,
+            ) as exc:
+                last_exc = exc
+                logger.warning(
+                    "Model endpoint attempt %d failed to describe image: %s",
+                    attempt + 1,
+                    _failure_detail(exc),
+                )
+                if attempt < 2:
+                    time.sleep(1.0 * (attempt + 1))
+                    continue
+
         if last_exc is not None:
             logger.error(
                 "Model endpoint failed to describe image: %s",

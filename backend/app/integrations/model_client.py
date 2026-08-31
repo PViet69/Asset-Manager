@@ -56,22 +56,23 @@ class OpenAICompatibleModelClient:
         """Embed text using configured model and return one numeric vector."""
         last_exc: Exception | None = None
         for attempt in range(3):
-            with GLOBAL_MODEL_LOCK:
-                try:
+            try:
+                with GLOBAL_MODEL_LOCK:
                     response = self._client.embeddings.create(
                         model=self._embedding_model,
                         input=text,
                     )
-                    return self._extract_embedding(response)
-                except NotFoundError as exc:
-                    logger.error("Configured embedding model not found")
-                    raise ModelNotFoundError(exc) from exc
-                except (APITimeoutError, APIConnectionError, APIError) as exc:
-                    last_exc = exc
-                    logger.warning("Embedding model attempt %d failed: %s", attempt + 1, exc)
-                    if attempt < 2:
-                        time.sleep(1.0 * (attempt + 1))
-                        continue
+                return self._extract_embedding(response)
+            except NotFoundError as exc:
+                logger.error("Configured embedding model not found")
+                raise ModelNotFoundError(exc) from exc
+            except (APITimeoutError, APIConnectionError, APIError) as exc:
+                last_exc = exc
+                logger.warning("Embedding model attempt %d failed: %s", attempt + 1, exc)
+                if attempt < 2:
+                    time.sleep(1.0 * (attempt + 1))
+                    continue
+
         if last_exc is not None:
             if isinstance(last_exc, APITimeoutError):
                 raise ModelEndpointError("Model endpoint timed out", last_exc) from last_exc

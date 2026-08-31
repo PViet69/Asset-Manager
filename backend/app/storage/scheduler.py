@@ -70,6 +70,7 @@ class StorageSyncScheduler:
         finally:
             self._cancel_event.clear()
 
+
     def _tick_blocking(
         self,
         observer: Callable[[SyncTraceItem], None] | None = None,
@@ -141,29 +142,59 @@ class StorageSyncScheduler:
         self,
         file: StorageFile,
         trace: Callable[[str, str, str, StorageFile | None], None],
+        max_retries: int = 2,
     ) -> int:
-        try:
-            downloaded = self._client.download(file.storage_file_id)
-            trace("file_download", "ok", "Downloaded file", file)
-            upload = FileUpload(
-                filename=downloaded.file.name,
-                content_type=downloaded.export_mime_type or downloaded.file.mime_type,
-                content=downloaded.content,
-                file_path=downloaded.file.name,
-                modified_time=downloaded.file.modified_time,
-                provider=self._provider,
-                storage_file_id=downloaded.file.storage_file_id,
-                source_url=downloaded.file.source_url,
-            )
-            response = self._ingestion_service.process_files((upload,))
-            if response.data and response.data[0].status == "success":
-                trace("file_ingestion", "ok", "Indexed file", file)
-                return 1
-            trace("file_ingestion", "failed", "File ingestion failed", file)
-        except Exception:  # noqa: BLE001
-            logger.exception("Storage file ingestion failed")
-            trace("file_ingestion", "failed", "File ingestion failed", file)
+        for attempt in range(max_retries + 1):
+            try:
+                downloaded = self._client.download(file.storage_file_id)
+                trace("file_download", "ok", "Downloaded file", file)
+                upload = FileUpload(
+                    filename=downloaded.file.name,
+                    content_type=downloaded.export_mime_type or downloaded.file.mime_type,
+                    content=downloaded.content,
+                    file_path=downloaded.file.name,
+                    modified_time=downloaded.file.modified_time,
+                    provider=self._provider,
+                    storage_file_id=downloaded.file.storage_file_id,
+                    source_url=downloaded.file.source_url,
+                )
+                response = self._ingestion_service.process_files((upload,))
+                if response.data and response.data[0].status == "success":
+                    trace("file_ingestion", "ok", "Indexed file", file)
+                    return 1
+                if attempt < max_retries:
+                    logger.warning(
+                        "File ingestion attempt %d failed for %s, retrying...",
+                        attempt + 1,
+                        file.name,
+                    )
+                    trace(
+                        "file_ingestion",
+                        "retry",
+                        f"Ingestion attempt {attempt + 1} failed, retrying...",
+                        file,
+                    )
+                    continue
+                trace("file_ingestion", "failed", "File ingestion failed", file)
+            except Exception as exc:  # noqa: BLE001
+                if attempt < max_retries:
+                    logger.warning(
+                        "Storage file ingestion attempt %d failed for %s (%s), retrying...",
+                        attempt + 1,
+                        file.name,
+                        exc,
+                    )
+                    trace(
+                        "file_ingestion",
+                        "retry",
+                        f"Attempt {attempt + 1} failed: {exc}",
+                        file,
+                    )
+                    continue
+                logger.exception("Storage file ingestion failed for %s", file.name)
+                trace("file_ingestion", "failed", "File ingestion failed", file)
         return 0
+
 
     async def delete_for_reindex(self, storage_file_id: str) -> int:
         async with self._lock:
