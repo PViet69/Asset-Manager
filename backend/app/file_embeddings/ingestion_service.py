@@ -10,6 +10,7 @@ from backend.app.api.schemas.file_embeddings import (
     FileEmbeddingResponse,
 )
 from backend.app.api.schemas.vector_search import (
+    MAX_SEARCH_QUERY_LENGTH,
     VectorSearchItem,
     VectorSearchResponse,
 )
@@ -105,7 +106,11 @@ class FileIngestionService:
         provider: str | None = None,
         mode: str = "semantic",
     ) -> VectorSearchResponse:
-        """Search stored files by embedded query text or filename matching."""
+        query = query.strip()
+        if len(query) > MAX_SEARCH_QUERY_LENGTH:
+            raise ValueError(
+                f"Search query exceeds maximum allowed length of {MAX_SEARCH_QUERY_LENGTH} characters"
+            )
         if mode == "filename":
             hits = self._qdrant_store.find_by_filename(
                 query, limit=limit, provider=provider
@@ -173,6 +178,7 @@ class FileIngestionService:
         provider = payload.get("provider")
         storage_file_id = payload.get("storage_file_id")
         source_url = payload.get("source_url")
+        modified_time = payload.get("modified_time")
         return VectorSearchItem(
             point_id=hit.point_id,
             score=hit.score,
@@ -189,6 +195,11 @@ class FileIngestionService:
             ),
             thumbnail_url=FileIngestionService._thumbnail_url(
                 provider, storage_file_id, payload["file_type"]
+            ),
+            modified_time=(
+                str(modified_time)
+                if isinstance(modified_time, str) and modified_time
+                else None
             ),
         )
 

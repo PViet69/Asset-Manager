@@ -25,6 +25,7 @@ export type VectorSearchItem = {
   provider?: string | null;
   storage_file_id?: string | null;
   thumbnail_url?: string | null;
+  modified_time?: string | null;
 };
 
 export type VectorSearchResponse = {

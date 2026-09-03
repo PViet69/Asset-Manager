@@ -510,6 +510,7 @@ def test_search_embeds_query_and_maps_hits() -> None:
                 "provider": None,
                 "storage_file_id": None,
                 "thumbnail_url": None,
+                "modified_time": None,
             }
         ],
     }
@@ -566,4 +567,5 @@ def test_search_drops_hits_without_complete_payload() -> None:
         "provider": None,
         "storage_file_id": None,
         "thumbnail_url": None,
+        "modified_time": None,
     }

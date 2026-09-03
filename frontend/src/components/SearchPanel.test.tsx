@@ -92,6 +92,7 @@ test("sends selected provider with search request", async () => {
   fireEvent.change(screen.getByLabelText("Query"), {
     target: { value: "campaign report" },
   });
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   fireEvent.change(screen.getByLabelText("Provider"), {
     target: { value: "google_drive" },
   });
@@ -113,16 +114,9 @@ test("hides Top K input and triggers real-time search on typing in filename mode
   mockedSearchVectors.mockResolvedValue({ object: "list", data: [] });
   render(<SearchPanel />);
 
-  // Initially Top K is hidden inside settings popover
-  expect(screen.queryByLabelText("Top K")).not.toBeInTheDocument();
-
   // Open Settings popover
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   expect(screen.getByLabelText("Top K")).toBeInTheDocument();
-
-  // Close Settings popover
-  fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
-  expect(screen.queryByLabelText("Top K")).not.toBeInTheDocument();
 
   // Switch to filename mode
   fireEvent.change(screen.getByLabelText("Search Mode"), {
@@ -144,3 +138,87 @@ test("hides Top K input and triggers real-time search on typing in filename mode
     );
   });
 });
+
+test("sorts search results by date in filename search mode (newest and oldest first)", async () => {
+  mockedSearchVectors.mockResolvedValue({
+    object: "list",
+    data: [
+      {
+        point_id: "point-1",
+        score: 0.9,
+        filename: "old-doc.pdf",
+        file_path: "/old-doc.pdf",
+        file_type: "application/pdf",
+        content: "Old document",
+        modified_time: "2025-01-15T10:00:00Z",
+      },
+      {
+        point_id: "point-2",
+        score: 0.8,
+        filename: "new-doc.pdf",
+        file_path: "/new-doc.pdf",
+        file_type: "application/pdf",
+        content: "New document",
+        modified_time: "2026-08-20T10:00:00Z",
+      },
+    ],
+  });
+  render(<SearchPanel />);
+
+  // Open Settings popover and switch to filename mode
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.change(screen.getByLabelText("Search Mode"), {
+    target: { value: "filename" },
+  });
+
+  fireEvent.change(screen.getByLabelText("Query"), {
+    target: { value: "doc.pdf" },
+  });
+
+  await screen.findByText("old-doc.pdf");
+
+  // Score is omitted in filename search mode
+  expect(screen.queryByText("0.900")).not.toBeInTheDocument();
+  expect(screen.queryByText("0.800")).not.toBeInTheDocument();
+
+  // Default order
+  let resultList = screen.getByRole("list", { name: "Search results" });
+  expect(resultList.children[0]).toHaveTextContent("old-doc.pdf");
+  expect(resultList.children[1]).toHaveTextContent("new-doc.pdf");
+
+  // Sort by date (Newest first)
+  const sortSelect = screen.getByLabelText("Sort by date");
+  fireEvent.change(sortSelect, { target: { value: "date_desc" } });
+
+  resultList = screen.getByRole("list", { name: "Search results" });
+  expect(resultList.children[0]).toHaveTextContent("new-doc.pdf");
+  expect(resultList.children[1]).toHaveTextContent("old-doc.pdf");
+
+  // Sort by date (Oldest first)
+  fireEvent.change(sortSelect, { target: { value: "date_asc" } });
+
+  resultList = screen.getByRole("list", { name: "Search results" });
+  expect(resultList.children[0]).toHaveTextContent("old-doc.pdf");
+  expect(resultList.children[1]).toHaveTextContent("new-doc.pdf");
+});
+
+test("closes search options popover when clicking outside but keeps open when clicking inside", () => {
+  render(<SearchPanel />);
+
+  const settingsButton = screen.getByRole("button", { name: "Settings" });
+  fireEvent.click(settingsButton);
+
+  const popover = screen.getByRole("dialog", { name: "Settings popover" });
+  expect(popover).toBeInTheDocument();
+
+  // Click inside popover (e.g. on Search Mode dropdown)
+  const searchModeSelect = screen.getByLabelText("Search Mode");
+  fireEvent.mouseDown(searchModeSelect);
+  expect(screen.getByRole("dialog", { name: "Settings popover" })).toBeInTheDocument();
+
+  // Click outside (e.g. on document body)
+  fireEvent.mouseDown(document.body);
+  expect(screen.queryByRole("dialog", { name: "Settings popover" })).not.toBeInTheDocument();
+});
+
+

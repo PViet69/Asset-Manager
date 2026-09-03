@@ -2,12 +2,12 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 DEFAULT_SEARCH_LIMIT = 10
 MIN_SEARCH_LIMIT = 1
 MAX_SEARCH_LIMIT = 100
-MAX_SEARCH_QUERY_LENGTH = 8_192
+MAX_SEARCH_QUERY_LENGTH = 4_190
 
 SearchQuery = Annotated[
     str,
@@ -47,6 +47,7 @@ class VectorSearchItem(BaseModel):
     provider: str | None = None
     storage_file_id: str | None = None
     thumbnail_url: str | None = None
+    modified_time: str | None = None
 
 
 class VectorSearchResponse(BaseModel):

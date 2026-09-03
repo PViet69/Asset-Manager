@@ -65,6 +65,7 @@ def test_search_returns_hits(app: FastAPI) -> None:
                 "provider": None,
                 "storage_file_id": None,
                 "thumbnail_url": None,
+                "modified_time": None,
             }
         ],
     }
@@ -145,6 +146,19 @@ def test_search_rejects_blank_query(app: FastAPI) -> None:
 
     with TestClient(app) as client:
         response = client.post("/v1/search", json={"query": "   "})
+
+    assert response.status_code == 422
+    service.search.assert_not_called()
+
+
+@pytest.mark.integration
+def test_search_rejects_long_query(app: FastAPI) -> None:
+    service = make_search_service()
+    override_ingestion_service(app, service)
+
+    long_query = "a" * 12_000
+    with TestClient(app) as client:
+        response = client.post("/v1/search", json={"query": long_query})
 
     assert response.status_code == 422
     service.search.assert_not_called()
