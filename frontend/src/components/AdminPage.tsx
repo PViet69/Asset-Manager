@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import {
@@ -8,6 +8,7 @@ import {
   getAdminSession,
   getAdminSyncStatus,
   loginAdmin,
+  logoutAdmin,
   refreshAdminProvider,
   reindexAdminStorageFile,
   stopAdminSync,
@@ -52,12 +53,32 @@ function applyDashboard(
   });
 }
 
+const INITIAL_PROVIDERS: ProviderDashboardStatus[] = [
+  { provider: "google_drive", display_name: "Google Drive", enabled: true, health: "ok", detected_count: null, embedded_count: null },
+  { provider: "dropbox", display_name: "Dropbox", enabled: true, health: "ok", detected_count: null, embedded_count: null },
+];
+
+const INITIAL_EMBEDDING_MODEL: ModelHealthStatus = {
+  name: "embeddinggemma:latest",
+  health: "ok",
+};
+
+const INITIAL_DESCRIPTION_MODEL: ModelHealthStatus = {
+  name: "deepseek-v4-flash-vision-exp",
+  health: "ok",
+};
+
 export function AdminPage(): JSX.Element {
   document.title = "Admin Dashboard";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [dashboard, setDashboard] = useState<DashboardState>({ providers: [], embeddingModel: null, descriptionModel: null });
+  const isDashboardPath = typeof window !== "undefined" && (window.location.pathname === "/admin/dashboard" || window.location.pathname === "/admin");
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(isDashboardPath);
+  const [dashboard, setDashboard] = useState<DashboardState>({
+    providers: INITIAL_PROVIDERS,
+    embeddingModel: INITIAL_EMBEDDING_MODEL,
+    descriptionModel: INITIAL_DESCRIPTION_MODEL,
+  });
   const [refreshingProviders, setRefreshingProviders] = useState<ReadonlySet<string>>(new Set());
   const [syncingProviders, setSyncingProviders] = useState<ReadonlySet<string>>(new Set());
   const [activityByProvider, setActivityByProvider] = useState<Readonly<Record<string, readonly SyncActivityEvent[]>>>({});
@@ -67,19 +88,64 @@ export function AdminPage(): JSX.Element {
   const [itemsByProvider, setItemsByProvider] = useState<Readonly<Record<string, readonly QdrantItem[] | null>>>({});
   const [openItemsProviders, setOpenItemsProviders] = useState<ReadonlySet<string>>(new Set());
   const [loadingItemsProviders, setLoadingItemsProviders] = useState<ReadonlySet<string>>(new Set());
-  const [deleteResult, setDeleteResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState<boolean>(true);
+  const [showAdminMenu, setShowAdminMenu] = useState<boolean>(false);
+  const [toasts, setToasts] = useState<readonly { id: string; type: "status" | "error"; message: string; isDismissing?: boolean }[]>([]);
+
+  const addToast = useCallback((message: string, type: "status" | "error") => {
+    const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
+    setToasts((prev) => [...prev, { id, type, message }]);
+
+    setTimeout(() => {
+      setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, isDismissing: true } : t)));
+    }, 4500);
+
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4900);
+  }, []);
+
+  function setError(message: string | null): void {
+    if (message) addToast(message, "error");
+  }
+
+  function setDeleteResult(message: string | null): void {
+    if (message) addToast(message, "status");
+  }
 
   const controllers = useRef<Record<string, AbortController>>({});
 
   async function loadDashboard(): Promise<void> {
-    applyDashboard(await getAdminSyncStatus(), setDashboard);
+    setIsLoadingDashboard(true);
+    try {
+      applyDashboard(await getAdminSyncStatus(), setDashboard);
+    } finally {
+      setIsLoadingDashboard(false);
+    }
   }
 
   function clearSession(): void {
     setIsAuthenticated(false);
-    setDashboard({ providers: [], embeddingModel: null, descriptionModel: null });
+    setDashboard({
+      providers: INITIAL_PROVIDERS,
+      embeddingModel: INITIAL_EMBEDDING_MODEL,
+      descriptionModel: INITIAL_DESCRIPTION_MODEL,
+    });
     setSyncingProviders(new Set());
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) {
+      window.history.replaceState({}, "", "/admin/login");
+    }
+  }
+
+  async function handleLogout(): Promise<void> {
+    setShowAdminMenu(false);
+    try {
+      await logoutAdmin();
+    } catch {
+      // Ignore API errors during logout
+    } finally {
+      clearSession();
+    }
   }
 
   function handleAdminError(caught: unknown, fallback: string, clearOn401 = true): void {
@@ -96,8 +162,14 @@ export function AdminPage(): JSX.Element {
         const account = await getAdminSession();
         setUsername(account.username);
         setIsAuthenticated(true);
+        if (window.location.pathname === "/admin" || window.location.pathname === "/admin/login") {
+          window.history.replaceState({}, "", "/admin/dashboard");
+        }
         await loadDashboard();
       } catch (caught) {
+        if (window.location.pathname === "/admin" || window.location.pathname === "/admin/dashboard") {
+          window.history.replaceState({}, "", "/admin/login");
+        }
         handleAdminError(caught, "Could not restore session");
       }
     })();
@@ -112,6 +184,7 @@ export function AdminPage(): JSX.Element {
       setUsername(account.username);
       setPassword("");
       setIsAuthenticated(true);
+      window.history.pushState({}, "", "/admin/dashboard");
       await loadDashboard();
     } catch (caught) {
       handleAdminError(caught, "Could not sign in", false);
@@ -134,6 +207,18 @@ export function AdminPage(): JSX.Element {
     } finally {
       setRefreshingProviders((current) => new Set([...current].filter((item) => item !== provider)));
     }
+  }
+
+  function toggleActivity(provider: string): void {
+    setOpenActivityProviders((current) => {
+      const next = new Set(current);
+      if (next.has(provider)) {
+        next.delete(provider);
+      } else {
+        next.add(provider);
+      }
+      return next;
+    });
   }
 
   async function toggleProviderItems(provider: string): Promise<void> {
@@ -240,87 +325,355 @@ export function AdminPage(): JSX.Element {
     }
   }
 
-  return <main className="app admin-dashboard">
-    <header className="admin-dashboard__header"><p className="admin-dashboard__brand">Asset Tracker</p><span>Admin</span></header>
-    {!isAuthenticated ? <form className="glass panel-card" onSubmit={submitLogin}>
-      <label className="field" htmlFor="admin-username">Username</label><div className="input"><input id="admin-username" value={username} onChange={(event) => setUsername(event.target.value)} required /></div>
-      <label className="field" htmlFor="admin-password">Password</label><div className="input"><input id="admin-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
-      <div className="actions"><button className="primary" type="submit">Sign in</button></div>
-    </form> : <>
-      <div className="admin-dashboard__controls">
-        <div>
-          <h1>Storage providers</h1>
-          <p className="admin-dashboard__subtitle">Detected files and embedded records.</p>
+  return (
+    <div className="app">
+      <header className="bar">
+        <div className="brand">
+          <div className="logo" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#0a0d14"
+              strokeWidth={2.4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 2L3 7l9 5 9-5-9-5z" />
+              <path d="M3 12l9 5 9-5" />
+              <path d="M3 17l9 5 9-5" />
+            </svg>
+          </div>
+          <div>
+            <h1>Asset Manager</h1>
+          </div>
         </div>
-      </div>
-      <section className="admin-dashboard__providers" aria-label="Storage providers">
-        {dashboard.providers.map((provider) => {
-          const isRefreshing = refreshingProviders.has(provider.provider);
-          const isSyncing = syncingProviders.has(provider.provider);
-          const events = activityByProvider[provider.provider] ?? [];
-          const storageFileId = storageFileIds[provider.provider] ?? "";
-          const isDeleting = deletingProviders.has(provider.provider);
-          const items = itemsByProvider[provider.provider];
-          const isOpenItems = openItemsProviders.has(provider.provider);
-          const isLoadingItems = loadingItemsProviders.has(provider.provider);
-          return <article className="admin-dashboard__provider" key={provider.provider}>
-            <div className="admin-dashboard__card-head"><h2>{provider.display_name}</h2><span className={`admin-dashboard__status ${statusClassName(provider.health)}`}>{statusLabel(provider.health)}</span></div>
-            <dl className="admin-dashboard__metrics"><div><dt>Detected</dt><dd>{provider.detected_count ?? "—"}</dd></div><div className="admin-dashboard__embedded"><dt>Embedded</dt><dd>{provider.embedded_count ?? "—"}</dd></div></dl>
-            <div className="admin-dashboard__actions"><button type="button" onClick={() => void refreshProvider(provider.provider)} disabled={isRefreshing} aria-label={`${isRefreshing ? "Refreshing" : "Refresh"} ${provider.display_name}`}>{isRefreshing ? "Refreshing…" : "Refresh"}</button><button className={`admin-dashboard__sync ${isSyncing ? "admin-dashboard__sync--stopping" : ""}`} type="button" onClick={() => void syncProvider(provider.provider)} disabled={!provider.enabled && !isSyncing} aria-label={`${isSyncing ? "Stop syncing" : "Sync"} ${provider.display_name}`}>{isSyncing ? "Stop syncing" : "Sync"}</button></div>
-            <div className="admin-dashboard__delete"><label htmlFor={`storage-file-id-${provider.provider}`}>{provider.display_name} storage file ID</label><div><input id={`storage-file-id-${provider.provider}`} value={storageFileId} onChange={(event) => setStorageFileIds((current) => ({ ...current, [provider.provider]: event.target.value }))} placeholder="Storage file ID" /><button type="button" className="admin-dashboard__delete-button" onClick={() => void deleteIndexedFile(provider.provider, provider.display_name)} disabled={!provider.enabled || !storageFileId.trim() || isDeleting} aria-label={`Delete indexed file ${provider.display_name}`}>{isDeleting ? "Deleting…" : "Delete indexed file"}</button></div></div>
-            <div className="admin-dashboard__items-section">
+
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {isAuthenticated && (
+            <div className="admin-menu-wrapper">
               <button
                 type="button"
-                className="admin-dashboard__toggle-items"
-                onClick={() => void toggleProviderItems(provider.provider)}
-                disabled={isLoadingItems || !provider.enabled}
-                aria-label={`View embedded items for ${provider.display_name}`}
+                className={`badge admin-menu-btn ${showAdminMenu ? "active" : ""}`}
+                onClick={() => setShowAdminMenu((prev) => !prev)}
+                aria-label="Admin menu"
+                aria-expanded={showAdminMenu}
               >
-                {isLoadingItems
-                  ? "Loading items…"
-                  : isOpenItems
-                  ? "Hide embedded items"
-                  : `View embedded items (${provider.embedded_count ?? 0})`}
+                Admin <span style={{ fontSize: "10px", marginLeft: "2px" }}>▾</span>
               </button>
-              {isOpenItems && items && items.length > 0 ? (
-                <ul className="admin-dashboard__items-list" aria-label={`Embedded items for ${provider.display_name}`}>
-                  {items.map((item) => (
-                    <li key={item.point_id} className="admin-dashboard__item-row">
-                      <div className="admin-dashboard__item-info">
-                        <span className="admin-dashboard__item-name" title={item.filename || item.point_id}>
-                          {item.filename || item.point_id}
-                        </span>
-                        <small className="admin-dashboard__item-meta">
-                          {item.file_type ? `${item.file_type} · ` : ""}ID: {item.point_id.slice(0, 8)}…
-                        </small>
+
+              {showAdminMenu && (
+                <div className="admin-menu-popover" role="menu">
+                  {username && (
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "8px", paddingBottom: "6px", borderBottom: "1px solid var(--border)" }}>
+                      Signed in as <strong style={{ color: "var(--text)" }}>{username}</strong>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="logout-btn"
+                    onClick={() => {
+                      void handleLogout();
+                    }}
+                    aria-label="Log out"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                    Log out
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </header>
+
+      <main className="app-content admin-dashboard">
+        {!isAuthenticated ? (
+          <section className="glass panel-card" style={{ maxWidth: "420px", margin: "40px auto 30px" }}>
+            <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: "1px solid var(--border)", textAlign: "center" }}>
+              <h2 style={{ fontSize: "20px", fontWeight: 600, margin: "0 auto", letterSpacing: "-0.01em" }}>
+                Admin Dashboard
+              </h2>
+            </div>
+
+            <form onSubmit={submitLogin}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <div>
+                  <label className="field" htmlFor="admin-username">
+                    Username
+                  </label>
+                  <div className="input">
+                    <input
+                      id="admin-username"
+                      value={username}
+                      onChange={(event) => setUsername(event.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="field" htmlFor="admin-password">
+                    Password
+                  </label>
+                  <div className="input">
+                    <input
+                      id="admin-password"
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="actions" style={{ justifyContent: "flex-end", marginTop: "4px" }}>
+                  <button className="primary" type="submit">
+                    Sign in
+                  </button>
+                </div>
+              </div>
+            </form>
+          </section>
+        ) : (
+          <>
+            <div className="page-header" style={{ marginBottom: "24px" }}>
+              <h2 style={{ fontSize: "22px", fontWeight: 600, margin: 0, letterSpacing: "-0.01em" }}>
+                Admin Dashboard
+              </h2>
+            </div>
+            <div className="admin-dashboard__controls">
+              <div>
+                <h2 style={{ fontSize: "18px", fontWeight: 600, margin: "0 0 4px 0" }}>
+                  Storage providers
+                </h2>
+              </div>
+            </div>
+
+            <section className="admin-dashboard__providers" aria-label="Storage providers">
+              {dashboard.providers.map((provider) => {
+                const isRefreshing = refreshingProviders.has(provider.provider);
+                const isSyncing = syncingProviders.has(provider.provider);
+                const events = activityByProvider[provider.provider] ?? [];
+                const storageFileId = storageFileIds[provider.provider] ?? "";
+                const isDeleting = deletingProviders.has(provider.provider);
+                const items = itemsByProvider[provider.provider];
+                const isOpenItems = openItemsProviders.has(provider.provider);
+                const isLoadingItems = loadingItemsProviders.has(provider.provider);
+                return (
+                  <article className="admin-dashboard__provider glass" key={provider.provider}>
+                    <div className="admin-dashboard__card-head">
+                      <h2>{provider.display_name}</h2>
+                      <span className={`admin-dashboard__status ${statusClassName(provider.health)}`}>
+                        {statusLabel(provider.health)}
+                      </span>
+                    </div>
+                    <dl className="admin-dashboard__metrics">
+                      <div>
+                        <dt>Detected</dt>
+                        <dd>
+                          {provider.detected_count !== null && provider.detected_count !== undefined ? (
+                            provider.detected_count
+                          ) : (
+                            <span className="skeleton-box" style={{ display: "inline-block", width: "40px", height: "24px", borderRadius: "4px" }} />
+                          )}
+                        </dd>
                       </div>
+                      <div className="admin-dashboard__embedded">
+                        <dt>Embedded</dt>
+                        <dd>
+                          {provider.embedded_count !== null && provider.embedded_count !== undefined ? (
+                            provider.embedded_count
+                          ) : (
+                            <span className="skeleton-box" style={{ display: "inline-block", width: "40px", height: "24px", borderRadius: "4px" }} />
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                    <div className="admin-dashboard__actions">
                       <button
                         type="button"
-                        className="admin-dashboard__delete-button"
-                        onClick={() => void deleteEmbeddedItem(provider.provider, item)}
-                        aria-label={`Delete ${item.filename || item.point_id}`}
+                        onClick={() => void refreshProvider(provider.provider)}
+                        disabled={isRefreshing}
+                        aria-label={`${isRefreshing ? "Refreshing" : "Refresh"} ${provider.display_name}`}
                       >
-                        Delete
+                        {isRefreshing ? "Refreshing…" : "Refresh"}
                       </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : isOpenItems && items ? (
-                <p className="admin-dashboard__empty-items">No embedded items found.</p>
-              ) : null}
+                      <button
+                        className={`admin-dashboard__sync ${isSyncing ? "admin-dashboard__sync--stopping" : ""}`}
+                        type="button"
+                        onClick={() => void syncProvider(provider.provider)}
+                        disabled={!provider.enabled && !isSyncing}
+                        aria-label={`${isSyncing ? "Stop syncing" : "Sync"} ${provider.display_name}`}
+                      >
+                        {isSyncing ? "Stop syncing" : "Sync"}
+                      </button>
+                    </div>
+                    <div className="admin-dashboard__delete">
+                      <label htmlFor={`storage-file-id-${provider.provider}`}>
+                        {provider.display_name} storage file ID
+                      </label>
+                      <div>
+                        <input
+                          id={`storage-file-id-${provider.provider}`}
+                          value={storageFileId}
+                          onChange={(event) =>
+                            setStorageFileIds((current) => ({
+                              ...current,
+                              [provider.provider]: event.target.value,
+                            }))
+                          }
+                          placeholder="Storage file ID"
+                        />
+                        <button
+                          type="button"
+                          className="admin-dashboard__delete-button"
+                          onClick={() => void deleteIndexedFile(provider.provider, provider.display_name)}
+                          disabled={!provider.enabled || !storageFileId.trim() || isDeleting}
+                          aria-label={`Delete indexed file ${provider.display_name}`}
+                        >
+                          {isDeleting ? "Deleting…" : "Delete indexed file"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="admin-dashboard__items-section">
+                      <button
+                        type="button"
+                        className="admin-dashboard__toggle-items"
+                        onClick={() => void toggleProviderItems(provider.provider)}
+                        disabled={isLoadingItems || !provider.enabled}
+                        aria-label={`View embedded items for ${provider.display_name}`}
+                      >
+                        {isLoadingItems
+                          ? "Loading items…"
+                          : isOpenItems
+                          ? "Hide embedded items"
+                          : `View embedded items (${provider.embedded_count ?? 0})`}
+                      </button>
+                      {isOpenItems && items && items.length > 0 ? (
+                        <ul
+                          className="admin-dashboard__items-list"
+                          aria-label={`Embedded items for ${provider.display_name}`}
+                        >
+                          {items.map((item) => (
+                            <li key={item.point_id} className="admin-dashboard__item-row">
+                              <div className="admin-dashboard__item-info">
+                                <span
+                                  className="admin-dashboard__item-name"
+                                  title={item.filename || item.point_id}
+                                >
+                                  {item.filename || item.point_id}
+                                </span>
+                                <small className="admin-dashboard__item-meta">
+                                  {item.file_type ? `${item.file_type} · ` : ""}ID:{" "}
+                                  {item.point_id.slice(0, 8)}…
+                                </small>
+                              </div>
+                              <button
+                                type="button"
+                                className="admin-dashboard__delete-button"
+                                onClick={() => void deleteEmbeddedItem(provider.provider, item)}
+                                aria-label={`Delete ${item.filename || item.point_id}`}
+                              >
+                                Delete
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : isOpenItems && items ? (
+                        <p className="admin-dashboard__empty-items">No embedded items found.</p>
+                      ) : null}
+                    </div>
+                    {openActivityProviders.has(provider.provider) ? (
+                      <section
+                        className="admin-dashboard__activity"
+                        aria-label={`${provider.display_name} sync activity`}
+                        aria-live="polite"
+                      >
+                        <div>
+                          <span>
+                            Sync activity <small style={{ color: "var(--text-muted)", marginLeft: "4px" }}>({events.length} events)</small>
+                          </span>
+                          <button
+                            type="button"
+                            className="admin-dashboard__close-activity"
+                            onClick={() => toggleActivity(provider.provider)}
+                            aria-label={`Close ${provider.display_name} sync activity`}
+                          >
+                            Close activity ✕
+                          </button>
+                        </div>
+                        <ul className="admin-dashboard__activity-list">
+                          {events.map((event) => (
+                            <li key={event.sequence}>
+                              <span
+                                className={`admin-dashboard__activity-icon admin-dashboard__activity-icon--${event.status}`}
+                                aria-hidden="true"
+                              />
+                              <span>{event.filename ?? event.detail}</span>
+                              <small>{event.status}</small>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : events.length > 0 ? (
+                      <div className="admin-dashboard__items-section" style={{ borderTop: "1px solid var(--border)" }}>
+                        <button
+                          type="button"
+                          className="admin-dashboard__toggle-items"
+                          onClick={() => toggleActivity(provider.provider)}
+                          aria-label={`View sync activity for ${provider.display_name}`}
+                        >
+                          View sync activity ({events.length})
+                        </button>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </section>
+
+            <section className="admin-dashboard__models" aria-labelledby="model-health">
+              <h2 id="model-health" style={{ fontSize: "18px", fontWeight: 600 }}>
+                Model health
+              </h2>
+              <div>
+                {[
+                  ["Embedding model", dashboard.embeddingModel],
+                  ["Description model", dashboard.descriptionModel],
+                ].map(
+                  ([role, model]) =>
+                    model && (
+                      <article key={role as string} className="glass">
+                        <p>{role as string}</p>
+                        <strong>{(model as ModelHealthStatus).name}</strong>
+                        <span
+                          className={`admin-dashboard__status ${statusClassName(
+                            (model as ModelHealthStatus).health
+                          )}`}
+                        >
+                          {statusLabel((model as ModelHealthStatus).health)}
+                        </span>
+                      </article>
+                    )
+                )}
+              </div>
+            </section>
+          </>
+        )}
+        <div className="toast-container" aria-live="polite">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`banner ${toast.type === "status" ? "banner--status" : ""} ${toast.isDismissing ? "banner--dismissing" : ""}`}
+              role={toast.type === "status" ? "status" : "alert"}
+            >
+              {toast.message}
             </div>
-            {openActivityProviders.has(provider.provider) ? <section className="admin-dashboard__activity" aria-label={`${provider.display_name} sync activity`} aria-live="polite"><div>Sync activity <span>{events.length} events</span></div><ul className="admin-dashboard__activity-list">{events.map((event) => <li key={event.sequence}><span className={`admin-dashboard__activity-icon admin-dashboard__activity-icon--${event.status}`} aria-hidden="true" /><span>{event.filename ?? event.detail}</span><small>{event.status}</small></li>)}</ul></section> : null}
-          </article>;
-        })}
-
-      </section>
-
-      <section className="admin-dashboard__models" aria-labelledby="model-health"><h2 id="model-health">Model health</h2><div>{[["Embedding model", dashboard.embeddingModel], ["Description model", dashboard.descriptionModel]].map(([role, model]) => model && <article key={role as string}><p>{role as string}</p><strong>{(model as ModelHealthStatus).name}</strong><span className={`admin-dashboard__status ${statusClassName((model as ModelHealthStatus).health)}`}>{statusLabel((model as ModelHealthStatus).health)}</span></article>)}</div></section>
-
-
-
-    </>}
-    {deleteResult ? <p className="banner" role="status">{deleteResult}</p> : null}
-    {error ? <p className="banner" role="alert">{error}</p> : null}
-  </main>;
+          ))}
+        </div>
+      </main>
+    </div>
+  );
 }

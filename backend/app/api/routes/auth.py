@@ -66,3 +66,20 @@ def current_admin(request: Request) -> AdminAccountResponse:
     username = get_session_username(config, token, datetime.now(UTC))
     assert username is not None
     return AdminAccountResponse(username=username)
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_origin)],
+)
+def logout(response: Response) -> dict[str, str]:
+    """Clear administrator browser session cookie."""
+    response.delete_cookie(
+        key=ADMIN_SESSION_COOKIE,
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="strict",
+    )
+    return {"status": "ok"}

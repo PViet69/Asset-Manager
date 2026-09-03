@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Asset Tracker architecture</title>
+  <title>Asset Manager architecture</title>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -17,10 +17,10 @@
 </head>
 <body>
   <main class="frame">
-    <p class="eyebrow">Architecture · Asset Tracker</p>
+    <p class="eyebrow">Architecture · Asset Manager</p>
     <h1>Operational map</h1>
     <svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="asset-tracker-architecture-title asset-tracker-architecture-desc">
-      <title id="asset-tracker-architecture-title">Asset Tracker operational architecture</title>
+      <title id="asset-tracker-architecture-title">Asset Manager operational architecture</title>
       <desc id="asset-tracker-architecture-desc">React search and admin interfaces call a FastAPI backend, which searches Qdrant and coordinates storage provider synchronization, embedding, and streamed admin status.</desc>
       <defs>
         <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>

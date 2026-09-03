@@ -66,7 +66,7 @@ function mockSignedOut(): void {
   );
 }
 
-test("shows Asset Tracker admin branding", () => {
+test("shows Asset Manager admin branding", () => {
   // Arrange
   mockSignedOut();
 
@@ -74,7 +74,7 @@ test("shows Asset Tracker admin branding", () => {
   render(<AdminPage />);
 
   // Assert
-  expect(screen.getByText("Asset Tracker")).toBeInTheDocument();
+  expect(screen.getByText("Asset Manager")).toBeInTheDocument();
   expect(document.title).toBe("Admin Dashboard");
 });
 

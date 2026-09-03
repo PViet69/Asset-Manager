@@ -103,6 +103,14 @@ export async function getAdminSession(): Promise<AdminAccount> {
   return (await res.json()) as AdminAccount;
 }
 
+export async function logoutAdmin(): Promise<void> {
+  await fetch(`${config.apiBase}/auth/logout`, {
+    method: "POST",
+    headers: buildHeaders(),
+    credentials: "include",
+  });
+}
+
 async function adminRequest<T>(
   path: string,
   method: "GET" | "POST" = "GET"

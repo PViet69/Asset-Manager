@@ -86,3 +86,19 @@ def test_login_rate_limits_sixth_attempt() -> None:
         ]
 
     assert [response.status_code for response in responses] == [401] * 5 + [429]
+
+
+@pytest.mark.integration
+def test_logout_clears_admin_session_cookie() -> None:
+    with _client() as client:
+        client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "correct-password"},
+            headers={"Origin": TEST_ORIGIN},
+        )
+        logout = client.post("/auth/logout", headers={"Origin": TEST_ORIGIN})
+        restored = client.get("/auth/me")
+
+    assert logout.status_code == 200
+    assert logout.json() == {"status": "ok"}
+    assert restored.status_code == 401
