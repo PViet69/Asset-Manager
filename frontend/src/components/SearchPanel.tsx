@@ -299,7 +299,7 @@ export function SearchPanel({
                 {searchMode === "semantic" && (
                   <div>
                     <label className="field" htmlFor="search-k">
-                      Top K
+                      Search Results
                     </label>
                     <div className="input">
                       <input

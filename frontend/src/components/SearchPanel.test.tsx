@@ -109,14 +109,14 @@ test("sends selected provider with search request", async () => {
   });
 });
 
-test("hides Top K input and triggers real-time search on typing in filename mode", async () => {
+test("hides Search Results input and triggers real-time search on typing in filename mode", async () => {
   // Arrange
   mockedSearchVectors.mockResolvedValue({ object: "list", data: [] });
   render(<SearchPanel />);
 
   // Open Settings popover
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  expect(screen.getByLabelText("Top K")).toBeInTheDocument();
+  expect(screen.getByLabelText("Search Results")).toBeInTheDocument();
 
   // Switch to filename mode
   fireEvent.change(screen.getByLabelText("Search Mode"), {
