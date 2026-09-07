@@ -8,8 +8,11 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 from backend.app.config import Settings
 from backend.app.exceptions import QdrantStorageError
 from backend.app.integrations.qdrant_store import QdrantEmbeddingStore, SearchHit
+from backend.app.storage import StorageProvider
 
 COLLECTION = "configured_embeddings"
+
+
 
 
 @pytest.mark.unit
@@ -406,7 +409,7 @@ def test_search_filters_by_provider_when_requested() -> None:
         [0.1, 0.2],
         limit=5,
         score_threshold=0.4,
-        provider="google_drive",
+        provider=StorageProvider.GOOGLE_DRIVE,
     )
 
     client.query_points.assert_called_once_with(
@@ -414,8 +417,10 @@ def test_search_filters_by_provider_when_requested() -> None:
         query=[0.1, 0.2],
         limit=5,
         score_threshold=0.4,
-        query_filter=store._key_filter("google_drive"),
+        query_filter=store._key_filter(StorageProvider.GOOGLE_DRIVE),
     )
+
+
 
 
 @pytest.mark.unit

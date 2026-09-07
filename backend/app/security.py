@@ -16,6 +16,7 @@ MAX_REQUEST_SIZE = 250 * 1024 * 1024
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_REQUESTS = 60
 ADMIN_LOGIN_RATE_LIMIT_REQUESTS = 5
+ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS = 5
 
 
 @dataclass
@@ -46,7 +47,10 @@ class AdminLoginRateLimiter(InMemoryRateLimiter):
     """Limit admin login attempts per client address."""
 
     def __init__(self) -> None:
-        super().__init__(request_limit=ADMIN_LOGIN_RATE_LIMIT_REQUESTS)
+        super().__init__(
+            request_limit=ADMIN_LOGIN_RATE_LIMIT_REQUESTS,
+            window_seconds=ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+        )
 
 
 def reject_oversized_request(request: Request) -> None:

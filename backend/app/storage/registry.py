@@ -7,9 +7,8 @@ from dataclasses import dataclass, field
 from backend.app.config import Settings
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.integrations.qdrant_store import QdrantStore
+from backend.app.storage import StorageProvider
 from backend.app.storage.client import (
-    DROPBOX_PROVIDER,
-    GOOGLE_DRIVE_PROVIDER,
     StorageClient,
     build_dropbox_client,
     build_google_drive_client,
@@ -92,11 +91,11 @@ def build_provider_registry(
     dropbox_client = build_dropbox_client(settings)
     entries = (
         ProviderSync(
-            GOOGLE_DRIVE_PROVIDER,
-            "Google Drive",
+            StorageProvider.GOOGLE_DRIVE,
+            StorageProvider.GOOGLE_DRIVE.display_name,
             drive_client,
             _build_scheduler(
-                GOOGLE_DRIVE_PROVIDER,
+                StorageProvider.GOOGLE_DRIVE,
                 drive_client,
                 settings.DRIVE_FOLDER_ID,
                 is_google_drive_configured(settings),
@@ -106,11 +105,11 @@ def build_provider_registry(
             settings.DRIVE_FOLDER_ID,
         ),
         ProviderSync(
-            DROPBOX_PROVIDER,
-            "Dropbox",
+            StorageProvider.DROPBOX,
+            StorageProvider.DROPBOX.display_name,
             dropbox_client,
             _build_scheduler(
-                DROPBOX_PROVIDER,
+                StorageProvider.DROPBOX,
                 dropbox_client,
                 settings.DROPBOX_ROOT_PATH,
                 is_dropbox_configured(settings),
@@ -120,4 +119,5 @@ def build_provider_registry(
             settings.DROPBOX_ROOT_PATH,
         ),
     )
+
     return ProviderRegistry(entries)

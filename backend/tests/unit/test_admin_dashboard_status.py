@@ -8,6 +8,7 @@ import pytest
 from backend.app.admin_dashboard.status_service import AdminDashboardStatusService
 from backend.app.exceptions import QdrantStorageError
 from backend.app.integrations.qdrant_store import SearchHit
+from backend.app.storage import StorageProvider
 from backend.app.storage.client import StorageFile
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 
@@ -50,7 +51,7 @@ class _Model:
 
 def _file() -> StorageFile:
     return StorageFile(
-        provider="google_drive",
+        provider=StorageProvider.GOOGLE_DRIVE,
         storage_file_id="file-1",
         name="asset.png",
         mime_type="image/png",
@@ -63,7 +64,7 @@ def _registry(client: _Client, *, enabled: bool = True) -> ProviderRegistry:
     return ProviderRegistry(
         (
             ProviderSync(
-                name="google_drive",
+                name=StorageProvider.GOOGLE_DRIVE,
                 display_name="Google Drive",
                 client=client,
                 scheduler=object() if enabled else None,  # type: ignore[arg-type]
@@ -71,6 +72,8 @@ def _registry(client: _Client, *, enabled: bool = True) -> ProviderRegistry:
             ),
         )
     )
+
+
 
 
 def _service(
@@ -133,8 +136,10 @@ async def test_refresh_rechecks_only_selected_provider_health_and_counts() -> No
     client = _Client([_file()])
     service = _service(client=client)
 
-    response = await service.refresh_provider("google_drive")
+    response = await service.refresh_provider(StorageProvider.GOOGLE_DRIVE)
 
     assert response.provider.health == "ok"
     assert response.provider.detected_count == 1
     assert client.list_count == 1
+
+

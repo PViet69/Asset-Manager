@@ -15,6 +15,7 @@ from backend.app.api.schemas.file_embeddings import (
     FileEmbeddingResponse,
 )
 from backend.app.api.schemas.health import HealthResponse, ProviderHealth
+from backend.app.storage import StorageProvider
 
 
 @pytest.mark.unit
@@ -67,11 +68,17 @@ def test_health_response_contains_provider_statuses() -> None:
         status="ok",
         qdrant="ok",
         model="ok",
-        providers=[ProviderHealth(provider="dropbox", status="disabled")],
+        providers=[
+            ProviderHealth(provider=StorageProvider.DROPBOX, status="disabled")
+        ],
     )
 
     assert response.model == "ok"
-    assert response.providers == [ProviderHealth(provider="dropbox", status="disabled")]
+    assert response.providers == [
+        ProviderHealth(provider=StorageProvider.DROPBOX, status="disabled")
+    ]
+
+
 
 
 @pytest.mark.unit
@@ -84,7 +91,7 @@ def test_health_response_defaults_to_no_registered_providers() -> None:
 @pytest.mark.unit
 def test_dashboard_contract_dtos_serialize_expected_fields() -> None:
     provider = ProviderDashboardStatus(
-        provider="google_drive",
+        provider=StorageProvider.GOOGLE_DRIVE,
         display_name="Google Drive",
         enabled=True,
         health="ok",
@@ -106,14 +113,14 @@ def test_dashboard_contract_dtos_serialize_expected_fields() -> None:
     )
     activity = SyncActivityEvent(
         sequence=1,
-        provider="google_drive",
+        provider=StorageProvider.GOOGLE_DRIVE,
         filename="asset.png",
         status="loading",
         detail="Downloading file",
     )
     terminal = SyncTerminalEvent(
         sequence=2,
-        provider="google_drive",
+        provider=StorageProvider.GOOGLE_DRIVE,
         detected_count=3,
         embedded_count=2,
         upserted=2,
@@ -135,7 +142,7 @@ def test_dashboard_contract_dtos_serialize_expected_fields() -> None:
         (ModelHealthStatus(name="embed-v1", health="ok"), "health", "unavailable"),
         (
             ProviderDashboardStatus(
-                provider="google_drive",
+                provider=StorageProvider.GOOGLE_DRIVE,
                 display_name="Google Drive",
                 enabled=True,
                 health="ok",
@@ -148,7 +155,7 @@ def test_dashboard_contract_dtos_serialize_expected_fields() -> None:
         (
             SyncActivityEvent(
                 sequence=1,
-                provider="google_drive",
+                provider=StorageProvider.GOOGLE_DRIVE,
                 filename=None,
                 status="failed",
                 detail="Sync failed",
@@ -159,7 +166,7 @@ def test_dashboard_contract_dtos_serialize_expected_fields() -> None:
         (
             SyncTerminalEvent(
                 sequence=2,
-                provider="google_drive",
+                provider=StorageProvider.GOOGLE_DRIVE,
                 detected_count=None,
                 embedded_count=None,
                 upserted=0,
@@ -172,6 +179,7 @@ def test_dashboard_contract_dtos_serialize_expected_fields() -> None:
         ),
     ],
 )
+
 def test_dashboard_contract_dtos_are_immutable(
     dto: object, field: str, value: object
 ) -> None:

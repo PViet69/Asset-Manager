@@ -20,6 +20,7 @@ from backend.app.file_embeddings.ingestion_service import (
 from backend.app.file_processing.types import ProcessedInput
 from backend.app.integrations.qdrant_store import SearchHit
 from backend.app.model.prompt_model import ImageDescription
+from backend.app.storage import StorageProvider
 
 
 def make_description() -> ImageDescription:
@@ -80,7 +81,7 @@ def make_storage_upload(
         content=content,
         file_path=file_path,
         modified_time=modified_time,
-        provider="google_drive",
+        provider=StorageProvider.GOOGLE_DRIVE,
         storage_file_id=storage_file_id,
         source_url=f"https://drive.google.com/file/d/{storage_file_id}/view",
     )
@@ -102,9 +103,9 @@ def test_file_upload_is_immutable() -> None:
 @pytest.mark.parametrize(
     ("provider", "storage_file_id", "source_url"),
     [
-        ("dropbox", None, "https://www.dropbox.com/home/note.txt"),
+        (StorageProvider.DROPBOX, None, "https://www.dropbox.com/home/note.txt"),
         (None, "id:example", "https://drive.google.com/file/d/id:example/view"),
-        ("dropbox", "id:example", None),
+        (StorageProvider.DROPBOX, "id:example", None),
     ],
 )
 def test_file_upload_requires_complete_provider_source_identity(
@@ -152,12 +153,13 @@ def test_image_description_text_is_embedded_and_only_vector_is_stored() -> None:
             "file_type": "image/png",
             "content": description.to_embedding_text(),
             "modified_time": TEST_MODIFIED_TIME.isoformat(),
-            "provider": "google_drive",
+            "provider": StorageProvider.GOOGLE_DRIVE,
             "storage_file_id": "drive-id-1",
             "source_url": "https://drive.google.com/file/d/drive-id-1/view",
         },
         point_id=ANY,
     )
+
     assert response.data[0].model_dump() == {
         "filename": "photo.png",
         "content_type": "image/png",
@@ -380,37 +382,47 @@ def test_find_indexed_thumbnail_source_requires_exact_stored_identity() -> None:
             point_id="point-1",
             score=1.0,
             payload={
-                "provider": "dropbox",
+                "provider": StorageProvider.DROPBOX,
                 "storage_file_id": "id:photo",
                 "file_type": "image/png",
             },
+
         )
     ]
 
-    source = service.find_indexed_thumbnail_source("dropbox", "id:photo")
+    source = service.find_indexed_thumbnail_source(StorageProvider.DROPBOX, "id:photo")
 
     assert source is not None
-    assert source.provider == "dropbox"
+    assert source.provider == StorageProvider.DROPBOX
     assert source.storage_file_id == "id:photo"
     assert source.file_type == "image/png"
-    qdrant_store.find_by_storage_key.assert_called_once_with("dropbox", "id:photo")
+    qdrant_store.find_by_storage_key.assert_called_once_with(
+        StorageProvider.DROPBOX, "id:photo"
+    )
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("file_type", "provider", "storage_file_id", "thumbnail_url"),
     [
-        ("image/png", "dropbox", "id:one", "/v1/storage/dropbox/id:one/thumbnail"),
+        (
+            "image/png",
+            StorageProvider.DROPBOX,
+            "id:one",
+            f"/v1/storage/{StorageProvider.DROPBOX}/id:one/thumbnail",
+        ),
         (
             "image/jpeg",
-            "google_drive",
+            StorageProvider.GOOGLE_DRIVE,
             "drive-1",
-            "/v1/storage/google_drive/drive-1/thumbnail",
+            f"/v1/storage/{StorageProvider.GOOGLE_DRIVE}/drive-1/thumbnail",
         ),
-        ("application/pdf", "dropbox", "id:pdf", None),
+        ("application/pdf", StorageProvider.DROPBOX, "id:pdf", None),
         ("image/webp", None, None, None),
     ],
 )
+
+
 def test_search_thumbnail_url_requires_image_type_and_complete_source_identity(
     file_type: str,
     provider: str | None,
@@ -454,7 +466,7 @@ def test_search_returns_stored_source_metadata() -> None:
                 "file_path": "photo.png",
                 "file_type": "image/png",
                 "content": "description text",
-                "provider": "dropbox",
+                "provider": StorageProvider.DROPBOX,
                 "storage_file_id": "id:abc123",
                 "source_url": "https://www.dropbox.com/home/team/photo.png",
             },
@@ -464,8 +476,9 @@ def test_search_returns_stored_source_metadata() -> None:
     response = service_with_settings.search("red car", limit=5)
 
     assert response.data[0].source_url == "https://www.dropbox.com/home/team/photo.png"
-    assert response.data[0].provider == "dropbox"
+    assert response.data[0].provider == StorageProvider.DROPBOX
     assert response.data[0].storage_file_id == "id:abc123"
+
 
 
 @pytest.mark.unit

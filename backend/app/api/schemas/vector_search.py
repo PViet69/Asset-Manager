@@ -2,7 +2,9 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+from backend.app.storage import StorageProvider
 
 DEFAULT_SEARCH_LIMIT = 10
 MIN_SEARCH_LIMIT = 1
@@ -29,7 +31,9 @@ class VectorSearchRequest(BaseModel):
     limit: int = Field(
         default=DEFAULT_SEARCH_LIMIT, ge=MIN_SEARCH_LIMIT, le=MAX_SEARCH_LIMIT
     )
-    provider: Literal["google_drive", "dropbox"] | None = None
+    provider: StorageProvider | None = None
+
+
 
 
 class VectorSearchItem(BaseModel):
@@ -57,3 +61,13 @@ class VectorSearchResponse(BaseModel):
 
     object: Literal["list"] = "list"
     data: list[VectorSearchItem]
+
+
+class StorageProviderInfo(BaseModel):
+    """Storage provider metadata returned to clients."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    display_name: str
+

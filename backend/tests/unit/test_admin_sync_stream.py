@@ -9,6 +9,7 @@ import pytest
 
 from backend.app.admin_dashboard.sync_stream import ProviderSyncStream
 from backend.app.api.schemas.admin import ProviderDashboardStatus, SyncTraceItem
+from backend.app.storage import StorageProvider
 from backend.app.storage.scheduler import SyncTickResult
 
 
@@ -30,7 +31,7 @@ class _Scheduler:
 def _trace(step: str, status: str, filename: str | None) -> SyncTraceItem:
     return SyncTraceItem(
         timestamp="2026-08-26T00:00:00+00:00",
-        provider="dropbox",
+        provider=StorageProvider.DROPBOX,
         step=step,
         status=status,
         detail="internal failure" if status == "failed" else "completed",
@@ -53,7 +54,7 @@ async def _snapshot(provider: str) -> ProviderDashboardStatus:
 @pytest.mark.asyncio
 async def test_stream_emits_ordered_safe_events_then_terminal() -> None:
     scheduler = _Scheduler(
-        "dropbox",
+        StorageProvider.DROPBOX,
         (
             _trace("file_download", "ok", "asset.png"),
             _trace("file_ingestion", "ok", "asset.png"),
@@ -62,7 +63,9 @@ async def test_stream_emits_ordered_safe_events_then_terminal() -> None:
 
     frames = [
         frame
-        async for frame in ProviderSyncStream("dropbox", scheduler, _snapshot).run()
+        async for frame in ProviderSyncStream(
+            StorageProvider.DROPBOX, scheduler, _snapshot
+        ).run()
     ]
     events = [
         json.loads(frame.removeprefix(b"data: ").removesuffix(b"\n\n"))
@@ -79,16 +82,29 @@ async def test_stream_emits_ordered_safe_events_then_terminal() -> None:
 @pytest.mark.asyncio
 async def test_two_provider_streams_keep_events_isolated() -> None:
     drive = ProviderSyncStream(
-        "google_drive", _Scheduler("google_drive", ()), _snapshot
+        StorageProvider.GOOGLE_DRIVE,
+        _Scheduler(StorageProvider.GOOGLE_DRIVE, ()),
+        _snapshot,
     )
-    dropbox = ProviderSyncStream("dropbox", _Scheduler("dropbox", ()), _snapshot)
+    dropbox = ProviderSyncStream(
+        StorageProvider.DROPBOX, _Scheduler(StorageProvider.DROPBOX, ()), _snapshot
+    )
 
     drive_frames, dropbox_frames = await asyncio.gather(
         _collect(drive), _collect(dropbox)
     )
 
-    assert all(b'"provider":"google_drive"' in frame for frame in drive_frames)
-    assert all(b'"provider":"dropbox"' in frame for frame in dropbox_frames)
+    assert all(
+        f'"provider":"{StorageProvider.GOOGLE_DRIVE}"'.encode() in frame
+        for frame in drive_frames
+    )
+    assert all(
+        f'"provider":"{StorageProvider.DROPBOX}"'.encode() in frame
+        for frame in dropbox_frames
+    )
+
+
+
 
 
 async def _collect(stream: ProviderSyncStream) -> list[bytes]:

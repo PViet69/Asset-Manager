@@ -5,9 +5,10 @@ import threading
 import time
 from typing import Protocol
 
+from openai import APIConnectionError, APIError, APITimeoutError, NotFoundError, OpenAI
+
 from backend.app.config import Settings
 from backend.app.exceptions import ModelEndpointError, ModelNotFoundError
-from openai import APIConnectionError, APIError, APITimeoutError, NotFoundError, OpenAI
 
 logger = logging.getLogger(__name__)
 

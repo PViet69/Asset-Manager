@@ -8,21 +8,25 @@ from fastapi.testclient import TestClient
 
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.main import create_app
-from backend.app.storage.client import StorageThumbnailUnavailable, Thumbnail
+from backend.app.storage import StorageProvider
+from backend.app.storage.client import (
+    StorageThumbnailUnavailable,
+    Thumbnail,
+)
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 from backend.app.storage.thumbnail_service import IndexedThumbnailSource
 
-THUMBNAIL_PATH = "/v1/storage/dropbox/id:photo/thumbnail"
+THUMBNAIL_PATH = f"/v1/storage/{StorageProvider.DROPBOX}/id:photo/thumbnail"
 
 
 @dataclass(frozen=True)
 class _Scheduler:
-    provider: str = "dropbox"
+    provider: str = StorageProvider.DROPBOX
 
 
 def _app(
     source: IndexedThumbnailSource | None = IndexedThumbnailSource(
-        "dropbox", "id:photo", "image/png"
+        StorageProvider.DROPBOX, "id:photo", "image/png"
     ),
     thumbnail: Thumbnail | None = Thumbnail(b"small-image", "image/jpeg"),
     enabled: bool = True,
@@ -35,9 +39,18 @@ def _app(
     else:
         client.get_thumbnail.side_effect = StorageThumbnailUnavailable()
     registry = ProviderRegistry(
-        (ProviderSync("dropbox", "Dropbox", client, _Scheduler() if enabled else None),)
+        (
+            ProviderSync(
+                StorageProvider.DROPBOX,
+                "Dropbox",
+                client,
+                _Scheduler() if enabled else None,
+            ),
+        )
     )
     return create_app(service=service, provider_registry=registry), client
+
+
 
 
 @pytest.mark.integration
@@ -70,8 +83,13 @@ def test_thumbnail_does_not_call_provider_for_unknown_indexed_source() -> None:
 @pytest.mark.integration
 def test_thumbnail_rejects_indexed_non_image() -> None:
     app, provider_client = _app(
-        source=IndexedThumbnailSource("dropbox", "id:photo", "application/pdf")
+        source=IndexedThumbnailSource(
+            StorageProvider.DROPBOX, "id:photo", "application/pdf"
+        )
     )
+
+
+
 
     with TestClient(app) as client:
         response = client.get(THUMBNAIL_PATH)

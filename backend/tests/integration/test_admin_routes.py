@@ -14,6 +14,7 @@ from backend.app.api.schemas.admin import SyncTraceItem
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.integrations.qdrant_store import SearchHit
 from backend.app.main import create_app
+from backend.app.storage import StorageProvider
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 from backend.app.storage.scheduler import SyncTickResult
 
@@ -96,30 +97,32 @@ class _Scheduler:
 def _registry(
     drive_enabled: bool = True, dropbox_enabled: bool = True
 ) -> tuple[ProviderRegistry, _Scheduler, _Scheduler]:
-    drive = _Scheduler("google_drive")
-    dropbox = _Scheduler("dropbox")
+    drive = _Scheduler(StorageProvider.GOOGLE_DRIVE)
+    dropbox = _Scheduler(StorageProvider.DROPBOX)
     return (
         ProviderRegistry(
             (
                 ProviderSync(
-                    "google_drive",
+                    StorageProvider.GOOGLE_DRIVE,
                     "Google Drive",
                     _Client(),
                     drive if drive_enabled else None,
                     "drive-root" if drive_enabled else None,
                 ),
                 ProviderSync(
-                    "dropbox",
+                    StorageProvider.DROPBOX,
                     "Dropbox",
                     _Client(),
                     dropbox if dropbox_enabled else None,
                     "/dropbox-root" if dropbox_enabled else None,
                 ),
+
             )
         ),
         drive,
         dropbox,
     )
+
 
 
 TEST_ORIGIN = "https://admin.example.test"
@@ -198,7 +201,7 @@ def test_selected_provider_runs_without_triggering_other_provider() -> None:
         _login(client)
         response = client.post("/admin/sync/dropbox", headers={"Origin": TEST_ORIGIN})
     assert response.status_code == 200
-    assert response.json()["provider"] == "dropbox"
+    assert response.json()["provider"] == StorageProvider.DROPBOX
     assert dropbox.trigger_count == 1
     assert drive.trigger_count == 0
 
@@ -211,8 +214,8 @@ def test_status_returns_all_registered_providers() -> None:
         response = client.get("/admin/sync/status")
     assert response.status_code == 200
     assert [item["provider"] for item in response.json()["providers"]] == [
-        "google_drive",
-        "dropbox",
+        StorageProvider.GOOGLE_DRIVE,
+        StorageProvider.DROPBOX,
     ]
     assert response.json()["providers"][1]["enabled"] is False
 
@@ -247,7 +250,9 @@ def test_refresh_requires_allowed_origin_and_refreshes_one_provider() -> None:
 
     assert rejected.status_code == 403
     assert accepted.status_code == 200
-    assert accepted.json()["provider"]["provider"] == "dropbox"
+    assert accepted.json()["provider"]["provider"] == StorageProvider.DROPBOX
+
+
 
 
 @pytest.mark.integration
@@ -299,7 +304,7 @@ def test_stream_emits_identity_encoded_terminal_event() -> None:
     assert response.status_code == 200
     assert response.headers["content-encoding"] == "identity"
     assert events[-1]["terminal"] is True
-    assert all(event["provider"] == "dropbox" for event in events)
+    assert all(event["provider"] == StorageProvider.DROPBOX for event in events)
 
 
 @pytest.mark.integration
@@ -338,7 +343,7 @@ def test_reindex_is_scoped_to_requested_provider() -> None:
         )
     assert response.status_code == 200
     assert response.json() == {
-        "provider": "dropbox",
+        "provider": StorageProvider.DROPBOX,
         "storage_file_id": "id-1",
         "deleted": 1,
     }
@@ -369,7 +374,9 @@ def test_list_provider_items_returns_items() -> None:
         response = client.get("/admin/sync/dropbox/items")
     assert response.status_code == 200
     assert response.json() == {
-        "provider": "dropbox",
+        "provider": StorageProvider.DROPBOX,
+
+
         "items": [
             {
                 "point_id": "point-1",
@@ -377,6 +384,7 @@ def test_list_provider_items_returns_items() -> None:
                 "file_path": "photo.png",
                 "storage_file_id": "file-1",
                 "file_type": "image/png",
+                "thumbnail_url": "/v1/storage/dropbox/file-1/thumbnail",
                 "modified_time": None,
             }
         ],

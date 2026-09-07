@@ -10,11 +10,11 @@ from typing import Any, Protocol
 from urllib.parse import quote
 
 from backend.app.config import Settings
+from backend.app.storage import StorageProvider
 
 logger = logging.getLogger(__name__)
 
-GOOGLE_DRIVE_PROVIDER = "google_drive"
-DROPBOX_PROVIDER = "dropbox"
+
 _GOOGLE_NATIVE_MIMES: dict[str, str] = {
     "application/vnd.google-apps.document": (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -130,7 +130,7 @@ def is_dropbox_configured(settings: Settings) -> bool:
 
 def build_google_drive_client(settings: Settings) -> StorageClient:
     if not is_google_drive_configured(settings):
-        return DisabledStorageClient(GOOGLE_DRIVE_PROVIDER)
+        return DisabledStorageClient(StorageProvider.GOOGLE_DRIVE)
     return GoogleDriveClient(
         json.loads(settings.DRIVE_SERVICE_ACCOUNT_JSON), settings.DRIVE_FOLDER_ID
     )  # type: ignore[arg-type]
@@ -138,13 +138,14 @@ def build_google_drive_client(settings: Settings) -> StorageClient:
 
 def build_dropbox_client(settings: Settings) -> StorageClient:
     if not is_dropbox_configured(settings):
-        return DisabledStorageClient(DROPBOX_PROVIDER)
+        return DisabledStorageClient(StorageProvider.DROPBOX)
     return DropboxClient(
         settings.DROPBOX_APP_KEY,
         settings.DROPBOX_APP_SECRET,
         settings.DROPBOX_REFRESH_TOKEN,
         settings.DROPBOX_ROOT_PATH,
     )  # type: ignore[arg-type]
+
 
 
 def _parse_modified_time(raw: str | None) -> datetime:
@@ -284,9 +285,10 @@ class GoogleDriveClient:
 def _to_google_file(item: dict[str, Any]) -> StorageFile:
     storage_file_id = str(item["id"])
     return StorageFile(
-        GOOGLE_DRIVE_PROVIDER,
+        StorageProvider.GOOGLE_DRIVE,
         storage_file_id,
         str(item.get("name", "")),
+
         str(item.get("mimeType", "")),
         _parse_modified_time(item.get("modifiedTime")),
         int(item.get("size") or 0),
@@ -384,8 +386,9 @@ def _to_dropbox_file(entry: Any, require_supported: bool = True) -> StorageFile 
     if modified_time.tzinfo is None:
         modified_time = modified_time.replace(tzinfo=timezone.utc)
     return StorageFile(
-        DROPBOX_PROVIDER,
+        StorageProvider.DROPBOX,
         file_id,
+
         str(getattr(entry, "name", PurePosixPath(path).name)),
         mime_type or "application/octet-stream",
         modified_time,

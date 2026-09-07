@@ -140,6 +140,7 @@ class QdrantItemSchema(BaseModel):
     file_path: str | None = None
     storage_file_id: str | None = None
     file_type: str | None = None
+    thumbnail_url: str | None = None
     modified_time: str | None = None
 
 

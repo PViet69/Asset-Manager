@@ -18,6 +18,7 @@ from backend.app.exceptions import (
     SettingsError,
 )
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
+from backend.app.storage import StorageProvider
 
 
 def override_ingestion_service(app: FastAPI, service: Mock) -> None:
@@ -99,13 +100,15 @@ def test_search_passes_provider_filter(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/v1/search",
-            json={"query": "red car", "provider": "google_drive"},
+            json={"query": "red car", "provider": StorageProvider.GOOGLE_DRIVE},
         )
 
     assert response.status_code == 200
     service.search.assert_called_once_with(
-        "red car", limit=10, provider="google_drive", mode="semantic"
+        "red car", limit=10, provider=StorageProvider.GOOGLE_DRIVE, mode="semantic"
     )
+
+
 
 
 @pytest.mark.integration
@@ -214,3 +217,22 @@ def test_search_returns_502_when_qdrant_fails(app: FastAPI) -> None:
 
     assert response.status_code == 502
     assert response.json()["detail"] == "Qdrant storage failure"
+
+
+@pytest.mark.integration
+def test_list_providers_returns_all_storage_providers(app: FastAPI) -> None:
+    with TestClient(app) as client:
+        response = client.get("/v1/providers")
+
+    assert response.status_code == 200
+    providers = response.json()
+    assert any(
+        p["id"] == "google_drive" and p["display_name"] == "Google Drive"
+        for p in providers
+    )
+    assert any(
+        p["id"] == "dropbox" and p["display_name"] == "Dropbox"
+        for p in providers
+    )
+
+

@@ -7,6 +7,7 @@ import pytest
 from backend.app.config import Settings
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.integrations.qdrant_store import QdrantStore
+from backend.app.storage import StorageProvider
 from backend.app.storage.client import DisabledStorageClient
 from backend.app.storage.registry import build_provider_registry
 
@@ -29,8 +30,8 @@ def test_registry_keeps_literal_provider_order_when_unconfigured() -> None:
     registry = build_provider_registry(_settings(), Mock(), Mock())
 
     assert [(entry.name, entry.display_name) for entry in registry.providers] == [
-        ("google_drive", "Google Drive"),
-        ("dropbox", "Dropbox"),
+        (StorageProvider.GOOGLE_DRIVE, "Google Drive"),
+        (StorageProvider.DROPBOX, "Dropbox"),
     ]
     assert all(entry.scheduler is None for entry in registry.providers)
     assert all(
@@ -46,8 +47,10 @@ def test_registry_maps_each_configured_root_to_its_provider_entry() -> None:
         Mock(),
     )
 
-    assert registry.get("google_drive").root == "folder-1"
-    assert registry.get("dropbox").root == "/team-assets"
+    assert registry.get(StorageProvider.GOOGLE_DRIVE).root == "folder-1"
+    assert registry.get(StorageProvider.DROPBOX).root == "/team-assets"
+
+
 
 
 @pytest.mark.unit
@@ -80,6 +83,8 @@ def test_registry_enables_each_configured_provider_independently() -> None:
         )
 
     assert all(entry.scheduler is not None for entry in registry.providers)
-    assert registry.get("google_drive") is registry.providers[0]
-    assert registry.get("dropbox") is registry.providers[1]
+    assert registry.get(StorageProvider.GOOGLE_DRIVE) is registry.providers[0]
+    assert registry.get(StorageProvider.DROPBOX) is registry.providers[1]
     assert registry.get("unknown") is None
+
+

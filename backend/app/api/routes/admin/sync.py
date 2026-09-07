@@ -17,6 +17,7 @@ from backend.app.api.schemas.admin import (
     QdrantItemSchema,
 )
 from backend.app.exceptions import QdrantStorageError
+from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.security import require_admin_access, require_admin_origin
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 from backend.app.storage.scheduler import StorageSyncScheduler
@@ -175,6 +176,11 @@ async def list_provider_items(
             file_path=hit.payload.get("file_path"),
             storage_file_id=hit.payload.get("storage_file_id"),
             file_type=hit.payload.get("file_type"),
+            thumbnail_url=FileIngestionService._thumbnail_url(
+                provider,
+                hit.payload.get("storage_file_id"),
+                hit.payload.get("file_type"),
+            ),
             modified_time=hit.payload.get("modified_time"),
         )
         for hit in hits
