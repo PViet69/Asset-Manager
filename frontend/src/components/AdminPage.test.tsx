@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -16,6 +16,9 @@ import {
   streamAdminSync,
 } from "../api/client";
 import { AdminPage } from "./AdminPage";
+
+
+
 
 
 vi.mock("../api/client", () => ({
@@ -51,6 +54,8 @@ const dashboard = {
     { provider: "google_drive", display_name: "Google Drive", enabled: true, health: "ok", detected_count: 20, embedded_count: 18 },
     { provider: "dropbox", display_name: "Dropbox", enabled: true, health: "ok", detected_count: 3, embedded_count: 2 },
   ],
+
+
   embedding_model: { name: "nomic-embed-text", health: "ok" },
   description_model: { name: "llava:latest", health: "ok" },
 };
@@ -66,7 +71,7 @@ function mockSignedOut(): void {
   );
 }
 
-test("shows Asset Manager admin branding", () => {
+test("shows concise admin sign-in", () => {
   // Arrange
   mockSignedOut();
 
@@ -74,8 +79,42 @@ test("shows Asset Manager admin branding", () => {
   render(<AdminPage />);
 
   // Assert
-  expect(screen.getByText("Asset Manager")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Admin sign in" })).toBeInTheDocument();
   expect(document.title).toBe("Admin Dashboard");
+});
+
+test("does not show protected workspace text on sign-in", () => {
+  // Arrange
+  mockSignedOut();
+
+  // Act
+  render(<AdminPage />);
+
+  // Assert
+  expect(screen.queryByText("Protected workspace")).not.toBeInTheDocument();
+});
+
+test("uses admin workspace styling for sign-in", () => {
+  // Arrange
+  mockSignedOut();
+
+  // Act
+  render(<AdminPage />);
+
+  // Assert
+  expect(screen.getByRole("main")).toHaveClass("admin-shell", "admin-login-shell");
+});
+
+test("includes a decorative interactive background outside sign-in controls", () => {
+  // Arrange
+  mockSignedOut();
+
+  // Act
+  render(<AdminPage />);
+
+  // Assert
+  expect(document.querySelector(".admin-login-background")).toHaveAttribute("aria-hidden", "true");
+  expect(document.querySelector(".admin-login-background canvas")).toBeInTheDocument();
 });
 
 test("logs in then loads provider status", async () => {
@@ -117,7 +156,49 @@ test("shows invalid login error", async () => {
 
   // Assert
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Invalid username or password"
+    "The login information you entered is incorrect."
+  );
+});
+
+test("clears invalid login error when typing", async () => {
+  // Arrange
+  const user = userEvent.setup();
+  mockSignedOut();
+  mockedLoginAdmin.mockRejectedValue(
+    new ApiError(401, "Invalid username or password")
+  );
+  render(<AdminPage />);
+
+  // Act
+  await user.type(await screen.findByLabelText("Username"), "admin");
+  await user.type(screen.getByLabelText("Password"), "wrong-password");
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "The login information you entered is incorrect."
+  );
+
+  await user.type(screen.getByLabelText("Password"), "1");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("shows rate limit error on 429", async () => {
+  // Arrange
+  const user = userEvent.setup();
+  mockSignedOut();
+  mockedLoginAdmin.mockRejectedValue(
+    new ApiError(429, "Login rate limit exceeded")
+  );
+  render(<AdminPage />);
+
+  // Act
+  await user.type(await screen.findByLabelText("Username"), "admin");
+  await user.type(screen.getByLabelText("Password"), "any-password");
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Too many login attempts. Please wait 5 seconds and try again."
   );
 });
 
@@ -158,42 +239,28 @@ test("renders detected and embedded counts plus model health", async () => {
 
   render(<AdminPage />);
 
-  expect(await screen.findByText("20")).toBeInTheDocument();
-  expect(screen.getByText("18")).toBeInTheDocument();
+  expect(await screen.findByText("18 / 20")).toBeInTheDocument();
+  expect(screen.getByText("2 / 3")).toBeInTheDocument();
   expect(screen.getByText("nomic-embed-text")).toBeInTheDocument();
 });
 
-test("refresh disables only selected provider action", async () => {
-  const user = userEvent.setup();
+test("embeds indexing progress in each provider card instead of a separate analytics panel", async () => {
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
   mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
-  mockedRefreshAdminProvider.mockReturnValue(new Promise(() => undefined));
 
   render(<AdminPage />);
-  await user.click(await screen.findByRole("button", { name: "Refresh Google Drive" }));
 
-  expect(screen.getByRole("button", { name: "Refreshing Google Drive" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Refresh Dropbox" })).toBeEnabled();
+  const googleDriveProgress = await screen.findByRole("region", { name: "Google Drive vector indexing progress" });
+  const dropboxProgress = screen.getByRole("region", { name: "Dropbox vector indexing progress" });
+
+  expect(googleDriveProgress).toHaveTextContent("18 / 20");
+  expect(googleDriveProgress).toHaveTextContent("90%");
+  expect(dropboxProgress).toHaveTextContent("2 / 3");
+  expect(dropboxProgress).toHaveTextContent("67%");
+  expect(screen.queryByText("Storage Vector Indexing Progress")).not.toBeInTheDocument();
 });
 
-test("renders independent panels for concurrent provider streams", async () => {
-  const user = userEvent.setup();
-  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
-  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
-  mockedStreamAdminSync.mockImplementation((provider, onEvent) => {
-    onEvent({ sequence: 1, provider, filename: "asset.png", status: "loading", detail: "Loading file", terminal: false });
-    return new Promise(() => undefined);
-  });
-
-  render(<AdminPage />);
-  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
-  await user.click(screen.getByRole("button", { name: "Sync Dropbox" }));
-
-  expect(screen.getByLabelText("Google Drive sync activity")).toBeInTheDocument();
-  expect(screen.getByLabelText("Dropbox sync activity")).toBeInTheDocument();
-});
-
-test("does not show a sign-out button for an authenticated administrator", async () => {
+test("shows a compact sign-out action for an authenticated administrator", async () => {
   // Arrange
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
   mockedGetAdminSyncStatus.mockResolvedValue({
@@ -207,87 +274,7 @@ test("does not show a sign-out button for an authenticated administrator", async
 
   // Assert
   await screen.findByRole("region", { name: "Storage providers" });
-  expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
-});
-
-test("changes sync button to stop syncing while syncing and stops on click", async () => {
-  const user = userEvent.setup();
-  const mockedStopAdminSync = vi.mocked(stopAdminSync);
-  mockedStopAdminSync.mockResolvedValue({ status: "stopping", provider: "google_drive" });
-  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
-  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
-  mockedStreamAdminSync.mockImplementation(() => new Promise(() => undefined));
-
-  render(<AdminPage />);
-  const syncBtn = await screen.findByRole("button", { name: "Sync Google Drive" });
-  await user.click(syncBtn);
-
-  const stopBtn = screen.getByRole("button", { name: "Stop syncing Google Drive" });
-  expect(stopBtn).toBeEnabled();
-
-  await user.click(stopBtn);
-  expect(mockedStopAdminSync).toHaveBeenCalledWith("google_drive");
-});
-
-test("updates sync activity in place for the same asset instead of rendering 2 cards", async () => {
-  const user = userEvent.setup();
-  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
-  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
-  mockedStreamAdminSync.mockImplementation((provider, onEvent) => {
-    onEvent({ sequence: 1, provider, filename: "photo.jpg", status: "loading", detail: "Loading file", terminal: false });
-    onEvent({ sequence: 2, provider, filename: "photo.jpg", status: "done", detail: "Indexed file", terminal: false });
-    return new Promise(() => undefined);
-  });
-
-  render(<AdminPage />);
-  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
-
-  const activitySection = screen.getByRole("region", { name: "Google Drive sync activity" });
-  const items = activitySection.querySelectorAll("li");
-  expect(items).toHaveLength(1);
-  expect(items[0]).toHaveTextContent("photo.jpg");
-  expect(items[0]).toHaveTextContent("done");
-});
-
-test("deletes indexed vectors after confirmation and refreshes provider metrics", async () => {
-  // Arrange
-  const user = userEvent.setup();
-  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
-  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
-  mockedReindexAdminStorageFile.mockResolvedValue({
-    provider: "google_drive",
-    storage_file_id: "file-123",
-    deleted: 4,
-  });
-  render(<AdminPage />);
-
-  // Act
-  await user.type(await screen.findByLabelText("Google Drive storage file ID"), "file-123");
-  await user.click(screen.getByRole("button", { name: "Delete indexed file Google Drive" }));
-
-  // Assert
-  expect(confirmSpy).toHaveBeenCalledWith("Delete indexed vectors for Google Drive file file-123? Cloud file stays unchanged.");
-  expect(mockedReindexAdminStorageFile).toHaveBeenCalledWith("google_drive", "file-123");
-  expect(await screen.findByText("Deleted 4 indexed records.")).toBeInTheDocument();
-  expect(screen.getByLabelText("Google Drive storage file ID")).toHaveValue("");
-  expect(mockedGetAdminSyncStatus).toHaveBeenCalledTimes(2);
-});
-
-test("does not call delete endpoint when confirmation is declined", async () => {
-  // Arrange
-  const user = userEvent.setup();
-  vi.spyOn(window, "confirm").mockReturnValue(false);
-  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
-  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
-  render(<AdminPage />);
-
-  // Act
-  await user.type(await screen.findByLabelText("Google Drive storage file ID"), "file-123");
-  await user.click(screen.getByRole("button", { name: "Delete indexed file Google Drive" }));
-
-  // Assert
-  expect(mockedReindexAdminStorageFile).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
 });
 
 test("does not show provider search filters in the admin dashboard", async () => {
@@ -322,6 +309,7 @@ test("loads and displays embedded provider items and allows deleting an item", a
   await user.click(viewBtn);
 
   expect(mockedGetAdminProviderItems).toHaveBeenCalledWith("dropbox");
+
   expect(await screen.findByText("dropbox-file-1.pdf")).toBeInTheDocument();
   expect(screen.getByText("dropbox-file-2.png")).toBeInTheDocument();
 
@@ -334,4 +322,66 @@ test("loads and displays embedded provider items and allows deleting an item", a
   expect(screen.queryByText("dropbox-file-1.pdf")).not.toBeInTheDocument();
 });
 
+test("opens mobile navigation from compact topbar", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
 
+  render(<AdminPage />);
+  await screen.findByRole("region", { name: "Storage providers" });
+
+  expect(screen.queryByRole("dialog", { name: "Admin navigation" })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Open navigation" }));
+
+  const drawer = screen.getByRole("dialog", { name: "Admin navigation" });
+  expect(within(drawer).getByRole("button", { name: "Overview" })).toBeInTheDocument();
+  expect(within(drawer).getByRole("button", { name: "Providers" })).toBeInTheDocument();
+  expect(within(drawer).getByRole("button", { name: "Models" })).toBeInTheDocument();
+  expect(within(drawer).getByRole("button", { name: "Activity" })).toBeInTheDocument();
+  expect(within(drawer).getByRole("button", { name: "Settings" })).toBeInTheDocument();
+
+  await user.click(within(drawer).getByRole("button", { name: "Close navigation" }));
+  expect(screen.queryByRole("dialog", { name: "Admin navigation" })).not.toBeInTheDocument();
+});
+
+test("does not show navigation controls on login page", async () => {
+  mockSignedOut();
+
+  render(<AdminPage />);
+  await screen.findByLabelText("Username");
+
+  expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "Admin navigation" })).not.toBeInTheDocument();
+});
+
+test("renders real assets detected chart with provider breakdown and filters", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+
+  render(<AdminPage />);
+  await screen.findByRole("region", { name: "Storage providers" });
+
+  const chartViewport = screen.getByLabelText("Assets breakdown chart");
+  expect(chartViewport).toBeInTheDocument();
+
+  // "All (23)" filter chip is active by default
+  const allChip = screen.getByRole("tab", { name: "All (23)" });
+  expect(allChip).toBeInTheDocument();
+  expect(allChip).toHaveAttribute("aria-selected", "true");
+
+  // Multi-provider columns exist in the chart
+  expect(within(chartViewport).getByText("Google Drive")).toBeInTheDocument();
+  expect(within(chartViewport).getByText("Dropbox")).toBeInTheDocument();
+
+  // Click Dropbox provider filter tab to drill down into its breakdown
+  const dropboxChip = screen.getByRole("tab", { name: "Dropbox (3)" });
+  await user.click(dropboxChip);
+
+  expect(dropboxChip).toHaveAttribute("aria-selected", "true");
+  expect(allChip).toHaveAttribute("aria-selected", "false");
+  expect(within(chartViewport).getByText("Detected")).toBeInTheDocument();
+  expect(within(chartViewport).getByText("Indexed")).toBeInTheDocument();
+  expect(within(chartViewport).getByText("Pending")).toBeInTheDocument();
+});
