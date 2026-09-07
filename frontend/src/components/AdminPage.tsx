@@ -10,142 +10,98 @@ import {
   loginAdmin,
   logoutAdmin,
   refreshAdminProvider,
-  reindexAdminStorageFile,
   stopAdminSync,
   streamAdminSync,
 } from "../api/client";
-
 import type {
+  AdminAccount,
   ModelHealthStatus,
   ProviderDashboardStatus,
   QdrantItem,
   SyncActivityEvent,
 } from "../types";
+import { AdminLoginBackground } from "./AdminLoginBackground";
+import { AdminModelHealth } from "./AdminModelHealth";
+import { AdminNavigation, type AdminTab } from "./AdminNavigation";
+import { AdminProviderCard } from "./AdminProviderCard";
+import { ProviderLogo } from "./ProviderLogo";
 
-
-const safeError = "Provider sync failed. Try again.";
-
-type DashboardState = {
-  providers: ProviderDashboardStatus[];
-  embeddingModel: ModelHealthStatus | null;
-  descriptionModel: ModelHealthStatus | null;
-};
-
-function statusLabel(health: string): string {
-  return health === "ok" ? "Ready" : health === "disabled" ? "Not configured" : "Unavailable";
-}
-
-function statusClassName(health: string): string {
-  if (health === "ok") return "admin-dashboard__status--ready";
-  if (health === "disabled") return "admin-dashboard__status--disabled";
-  return "admin-dashboard__status--unavailable";
-}
-
-
-function applyDashboard(
-  response: Awaited<ReturnType<typeof getAdminSyncStatus>>,
-  setDashboard: (state: DashboardState) => void
-): void {
-  setDashboard({
-    providers: response.providers,
-    embeddingModel: response.embedding_model,
-    descriptionModel: response.description_model,
-  });
-}
-
+const SAFE_SYNC_ERROR = "Provider sync failed. Try again.";
 const INITIAL_PROVIDERS: ProviderDashboardStatus[] = [
   { provider: "google_drive", display_name: "Google Drive", enabled: true, health: "ok", detected_count: null, embedded_count: null },
   { provider: "dropbox", display_name: "Dropbox", enabled: true, health: "ok", detected_count: null, embedded_count: null },
 ];
+const INITIAL_EMBEDDING_MODEL: ModelHealthStatus = { name: "embeddinggemma:latest", health: "ok" };
+const INITIAL_DESCRIPTION_MODEL: ModelHealthStatus = { name: "deepseek-v4-flash-vision-exp", health: "ok" };
 
-const INITIAL_EMBEDDING_MODEL: ModelHealthStatus = {
-  name: "embeddinggemma:latest",
-  health: "ok",
+type DashboardState = {
+  readonly providers: readonly ProviderDashboardStatus[];
+  readonly embeddingModel: ModelHealthStatus | null;
+  readonly descriptionModel: ModelHealthStatus | null;
 };
 
-const INITIAL_DESCRIPTION_MODEL: ModelHealthStatus = {
-  name: "deepseek-v4-flash-vision-exp",
-  health: "ok",
+type Toast = {
+  readonly id: string;
+  readonly type: "status" | "error";
+  readonly message: string;
+  readonly isDismissing?: boolean;
 };
+
+const INITIAL_DASHBOARD: DashboardState = {
+  providers: INITIAL_PROVIDERS,
+  embeddingModel: INITIAL_EMBEDDING_MODEL,
+  descriptionModel: INITIAL_DESCRIPTION_MODEL,
+};
+
+function dashboardFrom(response: Awaited<ReturnType<typeof getAdminSyncStatus>>): DashboardState {
+  return {
+    providers: response.providers,
+    embeddingModel: response.embedding_model,
+    descriptionModel: response.description_model,
+  };
+}
+
+function headingForTab(tab: AdminTab): string {
+  return tab === "dashboards" ? "Overview" : tab === "logs" ? "Activity" : tab.charAt(0).toUpperCase() + tab.slice(1);
+}
 
 export function AdminPage(): JSX.Element {
   document.title = "Admin Dashboard";
+  const isAdminRoute = typeof window !== "undefined" && ["/admin", "/admin/dashboard"].includes(window.location.pathname);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const isDashboardPath = typeof window !== "undefined" && (window.location.pathname === "/admin/dashboard" || window.location.pathname === "/admin");
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(isDashboardPath);
-  const [dashboard, setDashboard] = useState<DashboardState>({
-    providers: INITIAL_PROVIDERS,
-    embeddingModel: INITIAL_EMBEDDING_MODEL,
-    descriptionModel: INITIAL_DESCRIPTION_MODEL,
-  });
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(isAdminRoute);
+  const [dashboard, setDashboard] = useState<DashboardState>(INITIAL_DASHBOARD);
   const [refreshingProviders, setRefreshingProviders] = useState<ReadonlySet<string>>(new Set());
   const [syncingProviders, setSyncingProviders] = useState<ReadonlySet<string>>(new Set());
   const [activityByProvider, setActivityByProvider] = useState<Readonly<Record<string, readonly SyncActivityEvent[]>>>({});
   const [openActivityProviders, setOpenActivityProviders] = useState<ReadonlySet<string>>(new Set());
-  const [storageFileIds, setStorageFileIds] = useState<Readonly<Record<string, string>>>({});
   const [deletingProviders, setDeletingProviders] = useState<ReadonlySet<string>>(new Set());
   const [itemsByProvider, setItemsByProvider] = useState<Readonly<Record<string, readonly QdrantItem[] | null>>>({});
   const [openItemsProviders, setOpenItemsProviders] = useState<ReadonlySet<string>>(new Set());
   const [loadingItemsProviders, setLoadingItemsProviders] = useState<ReadonlySet<string>>(new Set());
-  const [isLoadingDashboard, setIsLoadingDashboard] = useState<boolean>(true);
-  const [showAdminMenu, setShowAdminMenu] = useState<boolean>(false);
-  const [toasts, setToasts] = useState<readonly { id: string; type: "status" | "error"; message: string; isDismissing?: boolean }[]>([]);
-
-  const addToast = useCallback((message: string, type: "status" | "error") => {
-    const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);
-    setToasts((prev) => [...prev, { id, type, message }]);
-
-    setTimeout(() => {
-      setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, isDismissing: true } : t)));
-    }, 4500);
-
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4900);
-  }, []);
-
-  function setError(message: string | null): void {
-    if (message) addToast(message, "error");
-  }
-
-  function setDeleteResult(message: string | null): void {
-    if (message) addToast(message, "status");
-  }
-
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
+  const [dashboardEpoch, setDashboardEpoch] = useState(0);
+  const [activeTab, setActiveTab] = useState<AdminTab>("dashboards");
+  const [selectedChartProvider, setSelectedChartProvider] = useState<string>("all");
+  const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
+  const [toasts, setToasts] = useState<readonly Toast[]>([]);
   const controllers = useRef<Record<string, AbortController>>({});
 
-  async function loadDashboard(): Promise<void> {
-    setIsLoadingDashboard(true);
-    try {
-      applyDashboard(await getAdminSyncStatus(), setDashboard);
-    } finally {
-      setIsLoadingDashboard(false);
-    }
-  }
+  const addToast = useCallback((message: string, type: Toast["type"]): void => {
+    const id = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
+    setToasts((current) => [...current, { id, type, message }]);
+    window.setTimeout(() => setToasts((current) => current.map((toast) => toast.id === id ? { ...toast, isDismissing: true } : toast)), 4500);
+    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 4900);
+  }, []);
 
   function clearSession(): void {
     setIsAuthenticated(false);
-    setDashboard({
-      providers: INITIAL_PROVIDERS,
-      embeddingModel: INITIAL_EMBEDDING_MODEL,
-      descriptionModel: INITIAL_DESCRIPTION_MODEL,
-    });
+    setIsMobileNavigationOpen(false);
+    setDashboard(INITIAL_DASHBOARD);
     setSyncingProviders(new Set());
-    if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) {
-      window.history.replaceState({}, "", "/admin/login");
-    }
-  }
-
-  async function handleLogout(): Promise<void> {
-    setShowAdminMenu(false);
-    try {
-      await logoutAdmin();
-    } catch {
-      // Ignore API errors during logout
-    } finally {
-      clearSession();
-    }
+    if (window.location.pathname.startsWith("/admin")) window.history.replaceState({}, "", "/admin/login");
   }
 
   function handleAdminError(caught: unknown, fallback: string, clearOn401 = true): void {
@@ -153,7 +109,19 @@ export function AdminPage(): JSX.Element {
       clearSession();
       return;
     }
-    setError(caught instanceof ApiError ? caught.message : fallback);
+    addToast(caught instanceof ApiError ? caught.message : fallback, "error");
+  }
+
+  async function loadDashboard(): Promise<void> {
+    setIsLoadingDashboard(true);
+    try {
+      setDashboard(dashboardFrom(await getAdminSyncStatus()));
+      setDashboardEpoch((current) => current + 1);
+    } catch (caught) {
+      handleAdminError(caught, "Could not load status");
+    } finally {
+      setIsLoadingDashboard(false);
+    }
   }
 
   useEffect(() => {
@@ -162,14 +130,10 @@ export function AdminPage(): JSX.Element {
         const account = await getAdminSession();
         setUsername(account.username);
         setIsAuthenticated(true);
-        if (window.location.pathname === "/admin" || window.location.pathname === "/admin/login") {
-          window.history.replaceState({}, "", "/admin/dashboard");
-        }
+        if (window.location.pathname === "/admin" || window.location.pathname === "/admin/login") window.history.replaceState({}, "", "/admin/dashboard");
         await loadDashboard();
       } catch (caught) {
-        if (window.location.pathname === "/admin" || window.location.pathname === "/admin/dashboard") {
-          window.history.replaceState({}, "", "/admin/login");
-        }
+        if (window.location.pathname === "/admin" || window.location.pathname === "/admin/dashboard") window.history.replaceState({}, "", "/admin/login");
         handleAdminError(caught, "Could not restore session");
       }
     })();
@@ -178,628 +142,566 @@ export function AdminPage(): JSX.Element {
 
   async function submitLogin(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    setError(null);
+    setLoginError(null);
+    let account: AdminAccount;
     try {
-      const account = await loginAdmin(username, password);
-      setUsername(account.username);
-      setPassword("");
-      setIsAuthenticated(true);
-      window.history.pushState({}, "", "/admin/dashboard");
-      await loadDashboard();
+      account = await loginAdmin(username, password);
     } catch (caught) {
-      handleAdminError(caught, "Could not sign in", false);
+      if (caught instanceof ApiError) {
+        if (caught.status === 401) {
+          setLoginError("The login information you entered is incorrect.");
+        } else if (caught.status === 429) {
+          setLoginError("Too many login attempts. Please wait 5 seconds and try again.");
+        } else {
+          setLoginError(caught.message || "Could not sign in. Please try again.");
+        }
+      } else {
+        setLoginError("The login information you entered is incorrect.");
+      }
+      return;
+    }
+
+    setUsername(account.username);
+    setPassword("");
+    setIsAuthenticated(true);
+    window.history.pushState({}, "", "/admin/dashboard");
+    await loadDashboard();
+  }
+
+  async function handleLogout(): Promise<void> {
+    try {
+      await logoutAdmin();
+    } catch {
+      // Session is cleared locally even when remote logout fails.
+    } finally {
+      clearSession();
     }
   }
 
-  async function refreshProvider(provider: string): Promise<void> {
-    setRefreshingProviders((current) => new Set(current).add(provider));
-    setError(null);
+  async function refreshProvider(providerId: string): Promise<void> {
+    setRefreshingProviders((current) => new Set(current).add(providerId));
     try {
-      const response = await refreshAdminProvider(provider);
+      const response = await refreshAdminProvider(providerId);
       setDashboard((current) => ({
         ...current,
-        providers: current.providers.map((item) => item.provider === provider ? response.provider : item),
+        providers: current.providers.map((provider) => provider.provider === providerId ? response.provider : provider),
         embeddingModel: response.embedding_model,
         descriptionModel: response.description_model,
       }));
+      setDashboardEpoch((current) => current + 1);
     } catch (caught) {
       handleAdminError(caught, "Could not refresh provider");
     } finally {
-      setRefreshingProviders((current) => new Set([...current].filter((item) => item !== provider)));
+      setRefreshingProviders((current) => new Set([...current].filter((item) => item !== providerId)));
     }
   }
 
-  function toggleActivity(provider: string): void {
-    setOpenActivityProviders((current) => {
-      const next = new Set(current);
-      if (next.has(provider)) {
-        next.delete(provider);
-      } else {
-        next.add(provider);
-      }
-      return next;
-    });
+  function toggleActivity(providerId: string): void {
+    setOpenActivityProviders((current) => current.has(providerId)
+      ? new Set([...current].filter((item) => item !== providerId))
+      : new Set(current).add(providerId));
   }
 
-  async function toggleProviderItems(provider: string): Promise<void> {
-    if (openItemsProviders.has(provider)) {
-      setOpenItemsProviders((current) => new Set([...current].filter((p) => p !== provider)));
+  async function toggleProviderItems(providerId: string): Promise<void> {
+    if (openItemsProviders.has(providerId)) {
+      setOpenItemsProviders((current) => new Set([...current].filter((item) => item !== providerId)));
       return;
     }
-    setLoadingItemsProviders((current) => new Set(current).add(provider));
-    setError(null);
+    setLoadingItemsProviders((current) => new Set(current).add(providerId));
     try {
-      const response = await getAdminProviderItems(provider);
-      setItemsByProvider((current) => ({ ...current, [provider]: response.items }));
-      setOpenItemsProviders((current) => new Set(current).add(provider));
+      const response = await getAdminProviderItems(providerId);
+      setItemsByProvider((current) => ({ ...current, [providerId]: response.items }));
+      setOpenItemsProviders((current) => new Set(current).add(providerId));
     } catch (caught) {
       handleAdminError(caught, "Could not load embedded items");
     } finally {
-      setLoadingItemsProviders((current) => new Set([...current].filter((p) => p !== provider)));
+      setLoadingItemsProviders((current) => new Set([...current].filter((item) => item !== providerId)));
     }
   }
 
-  async function deleteEmbeddedItem(provider: string, item: QdrantItem): Promise<void> {
+  async function deleteEmbeddedItem(providerId: string, item: QdrantItem): Promise<void> {
     const itemName = item.filename || item.point_id;
     if (!window.confirm(`Delete embedded Qdrant item "${itemName}"?`)) return;
-
-    setDeletingProviders((current) => new Set(current).add(provider));
-    setDeleteResult(null);
-    setError(null);
+    setDeletingProviders((current) => new Set(current).add(providerId));
     try {
       await deleteAdminQdrantPoint(item.point_id);
-      setItemsByProvider((current) => ({
-        ...current,
-        [provider]: (current[provider] ?? []).filter((i) => i.point_id !== item.point_id),
-      }));
-      setDeleteResult(`Deleted embedded item "${itemName}".`);
+      setItemsByProvider((current) => ({ ...current, [providerId]: (current[providerId] ?? []).filter((entry) => entry.point_id !== item.point_id) }));
+      addToast(`Deleted embedded item "${itemName}".`, "status");
       await loadDashboard();
     } catch (caught) {
       handleAdminError(caught, "Could not delete embedded item");
     } finally {
-      setDeletingProviders((current) => new Set([...current].filter((p) => p !== provider)));
+      setDeletingProviders((current) => new Set([...current].filter((entry) => entry !== providerId)));
     }
   }
 
-  async function deleteIndexedFile(provider: string, displayName: string): Promise<void> {
-    const storageFileId = storageFileIds[provider]?.trim() ?? "";
-    if (!storageFileId || !window.confirm(`Delete indexed vectors for ${displayName} file ${storageFileId}? Cloud file stays unchanged.`)) return;
-
-    setDeletingProviders((current) => new Set(current).add(provider));
-    setDeleteResult(null);
-    setError(null);
-    try {
-      const response = await reindexAdminStorageFile(provider, storageFileId);
-      setStorageFileIds((current) => ({ ...current, [provider]: "" }));
-      setDeleteResult(`Deleted ${response.deleted} indexed records.`);
-      await loadDashboard();
-    } catch (caught) {
-      handleAdminError(caught, "Could not delete indexed file");
-    } finally {
-      setDeletingProviders((current) => new Set([...current].filter((item) => item !== provider)));
-    }
-  }
-
-
-
-
-
-  async function syncProvider(provider: string): Promise<void> {
-    if (syncingProviders.has(provider)) {
-      controllers.current[provider]?.abort();
-      void stopAdminSync(provider).catch(() => {});
+  async function syncProvider(providerId: string): Promise<void> {
+    if (syncingProviders.has(providerId)) {
+      controllers.current[providerId]?.abort();
+      void stopAdminSync(providerId).catch(() => undefined);
       return;
     }
     const controller = new AbortController();
-    controllers.current = { ...controllers.current, [provider]: controller };
-    setSyncingProviders((current) => new Set(current).add(provider));
-    setOpenActivityProviders((current) => new Set(current).add(provider));
-    setActivityByProvider((current) => ({ ...current, [provider]: [] }));
-    setError(null);
+    controllers.current = { ...controllers.current, [providerId]: controller };
+    setSyncingProviders((current) => new Set(current).add(providerId));
+    setOpenActivityProviders((current) => new Set(current).add(providerId));
+    setActivityByProvider((current) => ({ ...current, [providerId]: [] }));
     try {
-      await streamAdminSync(provider, (event) => {
-        if (!event.terminal) {
-          setActivityByProvider((current) => {
-            const list = current[provider] ?? [];
-            const index = event.filename
-              ? list.findIndex((item) => item.filename === event.filename)
-              : -1;
-            const nextList =
-              index >= 0
-                ? list.map((item, idx) => (idx === index ? event : item))
-                : [event, ...list];
-            return {
-              ...current,
-              [provider]: nextList,
-            };
-          });
-        }
+      await streamAdminSync(providerId, (event) => {
+        if (event.terminal) return;
+        setActivityByProvider((current) => {
+          const events = current[providerId] ?? [];
+          const index = event.filename ? events.findIndex((item) => item.filename === event.filename) : -1;
+          const nextEvents = index >= 0 ? events.map((item, itemIndex) => itemIndex === index ? event : item) : [event, ...events];
+          return { ...current, [providerId]: nextEvents };
+        });
       }, controller.signal);
       await loadDashboard();
     } catch (caught) {
-      if (!controller.signal.aborted) handleAdminError(caught, safeError);
+      if (!controller.signal.aborted) handleAdminError(caught, SAFE_SYNC_ERROR);
     } finally {
-      setSyncingProviders((current) => new Set([...current].filter((item) => item !== provider)));
-      const { [provider]: _, ...rest } = controllers.current;
+      setSyncingProviders((current) => new Set([...current].filter((item) => item !== providerId)));
+      const { [providerId]: _, ...rest } = controllers.current;
       controllers.current = rest;
     }
   }
 
-  return (
-    <div className="app">
-      {/* Floating Island Header */}
-      <div className="floating-nav-container">
-        <header className="floating-nav-pill">
-          <a href="/" className="floating-nav-brand">
-            <div className="brand-icon" aria-hidden="true">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#05070c"
-                strokeWidth={2.4}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ width: "20px", height: "20px" }}
-              >
-                <path d="M12 2L3 7l9 5 9-5-9-5z" />
-                <path d="M3 12l9 5 9-5" />
-                <path d="M3 17l9 5 9-5" />
-              </svg>
-            </div>
-            <div>
-              <h1 style={{ fontSize: "16px", fontWeight: 700, margin: 0 }}>Asset Manager</h1>
-            </div>
-          </a>
+  function selectTab(tab: AdminTab): void {
+    setActiveTab(tab);
+    setIsMobileNavigationOpen(false);
+  }
 
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            {isAuthenticated && (
-              <div className="admin-menu-wrapper">
-                <button
-                  type="button"
-                  className={`badge admin-menu-btn ${showAdminMenu ? "active" : ""}`}
-                  onClick={() => setShowAdminMenu((prev) => !prev)}
-                  aria-label="Admin menu"
-                  aria-expanded={showAdminMenu}
+  function renderProviders(): JSX.Element {
+    return (
+      <section className="admin-provider-grid" aria-label="Storage providers">
+        {dashboard.providers.map((provider) => (
+          <AdminProviderCard
+            key={provider.provider}
+            provider={provider}
+            items={itemsByProvider[provider.provider] ?? null}
+            events={activityByProvider[provider.provider] ?? []}
+            isRefreshing={refreshingProviders.has(provider.provider)}
+            isSyncing={syncingProviders.has(provider.provider)}
+            isDeleting={deletingProviders.has(provider.provider)}
+            isItemsOpen={openItemsProviders.has(provider.provider)}
+            isItemsLoading={loadingItemsProviders.has(provider.provider)}
+            isActivityOpen={openActivityProviders.has(provider.provider)}
+            onRefresh={(providerId) => void refreshProvider(providerId)}
+            onToggleItems={(providerId) => void toggleProviderItems(providerId)}
+            onSync={(providerId) => void syncProvider(providerId)}
+            onDeleteItem={(providerId, item) => void deleteEmbeddedItem(providerId, item)}
+            onToggleActivity={toggleActivity}
+          />
+        ))}
+      </section>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <main className="admin-shell admin-login-shell">
+        <AdminLoginBackground />
+        <div className="admin-login-layout">
+          <aside className="admin-login-intro" aria-label="Asset Manager administration">
+            <a className="admin-login-brand" href="/" aria-label="Asset Manager home">
+              <span className="admin-login-brand-mark" aria-hidden="true"><span /></span>
+              <span>Asset Manager</span>
+            </a>
+            <div className="admin-login-intro-copy">
+              <p className="admin-login-eyebrow">Administration</p>
+              <h1>Asset operations <em>under control</em></h1>
+              <p>Monitor storage, manage indexing, and keep your visual archive ready for every team.</p>
+            </div>
+          </aside>
+
+          <section className="admin-login-card" aria-labelledby="admin-login-heading">
+            <div className="admin-login-card-header">
+              <p className="admin-login-eyebrow">Secure access</p>
+              <h2 id="admin-login-heading">Admin sign in</h2>
+            </div>
+            {loginError && (
+              <div className="admin-login-error" role="alert">
+                <svg
+                  className="admin-login-error-icon"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
                 >
-                  Admin <span style={{ fontSize: "10px", marginLeft: "2px" }}>▾</span>
-                </button>
-
-                {showAdminMenu && (
-                  <div className="admin-menu-popover" role="menu">
-                    {username && (
-                      <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "8px", paddingBottom: "6px", borderBottom: "1px solid var(--border)" }}>
-                        Signed in as <strong style={{ color: "var(--text)" }}>{username}</strong>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      className="logout-btn"
-                      onClick={() => {
-                        void handleLogout();
-                      }}
-                      aria-label="Log out"
-                    >
-                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-                        <polyline points="16 17 21 12 16 7" />
-                        <line x1="21" y1="12" x2="9" y2="12" />
-                      </svg>
-                      Log out
-                    </button>
-                  </div>
-                )}
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <span>{loginError}</span>
               </div>
             )}
-          </div>
-        </header>
-      </div>
-
-      <main className="app-content admin-dashboard" style={{ maxWidth: "1140px", margin: "0 auto" }}>
-        {!isAuthenticated ? (
-          <div className="double-bezel-outer" style={{ maxWidth: "460px", margin: "40px auto 30px" }}>
-            <section className="double-bezel-inner">
-              <div style={{ marginBottom: "24px", textAlign: "center" }}>
-                <div className="eyebrow-badge" style={{ marginBottom: "10px" }}>AUTHENTICATION</div>
-                <h2 style={{ fontSize: "22px", fontWeight: 700, margin: "0 auto", letterSpacing: "-0.02em" }}>
-                  Admin Dashboard
-                </h2>
-                <p style={{ fontSize: "13px", color: "var(--text-dim)", margin: "6px 0 0" }}>
-                  Sign in with administrator credentials
-                </p>
+            <form onSubmit={submitLogin}>
+              <div className="admin-login-field">
+                <label htmlFor="admin-username">Username</label>
+                <input
+                  id="admin-username"
+                  autoComplete="username"
+                  value={username}
+                  onChange={(event) => {
+                    setUsername(event.target.value);
+                    setLoginError(null);
+                  }}
+                  required
+                />
               </div>
-
-              <form onSubmit={submitLogin}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                  <div>
-                    <label className="field" htmlFor="admin-username">
-                      Username
-                    </label>
-                    <div className="input">
-                      <input
-                        id="admin-username"
-                        value={username}
-                        onChange={(event) => setUsername(event.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="field" htmlFor="admin-password">
-                      Password
-                    </label>
-                    <div className="input">
-                      <input
-                        id="admin-password"
-                        type="password"
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="actions" style={{ justifyContent: "flex-end", marginTop: "8px" }}>
-                    <button className="btn-island-primary" type="submit">
-                      <span>Sign in</span>
-                      <div className="icon-circle" aria-hidden="true">
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3.5 8.5L8.5 3.5" />
-                          <path d="M4 3.5H8.5V8" />
-                        </svg>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </section>
-          </div>
-        ) : (
-          <>
-            <div className="page-header" style={{ marginBottom: "20px" }}>
-              <div className="eyebrow-badge" style={{ marginBottom: "8px" }}>METRICS &amp; STORAGE CONTROL</div>
-              <h2 style={{ fontSize: "26px", fontWeight: 800, margin: 0, letterSpacing: "-0.03em" }}>
-                Admin Dashboard
-              </h2>
-            </div>
-
-            {/* Quick KPI Statistics Cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "28px" }}>
-              <div className="double-bezel-outer">
-                <div className="double-bezel-inner" style={{ padding: "20px" }}>
-                  <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Storage Sources</div>
-                  <div className="mono-font" style={{ fontSize: "28px", fontWeight: 800, color: "#ffffff", marginTop: "4px" }}>
-                    {dashboard.providers.length} Connected
-                  </div>
-                </div>
+              <div className="admin-login-field">
+                <label htmlFor="admin-password">Password</label>
+                <input
+                  id="admin-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setLoginError(null);
+                  }}
+                  required
+                />
               </div>
-
-              <div className="double-bezel-outer">
-                <div className="double-bezel-inner" style={{ padding: "20px" }}>
-                  <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Overall Coverage</div>
-                  <div className="mono-font" style={{ fontSize: "28px", fontWeight: 800, color: "var(--accent)", marginTop: "4px" }}>
-                    {(() => {
-                      const hasUnloaded = dashboard.providers.some((p) => p.detected_count === null || p.embedded_count === null);
-                      if (hasUnloaded) {
-                        return <span className="skeleton-box" style={{ display: "inline-block", width: "60px", height: "28px", borderRadius: "6px" }} />;
-                      }
-                      const det = dashboard.providers.reduce((acc, p) => acc + (p.detected_count ?? 0), 0);
-                      const emb = dashboard.providers.reduce((acc, p) => acc + (p.embedded_count ?? 0), 0);
-                      return det > 0 ? `${Math.round((emb / det) * 100)}%` : "0%";
-                    })()}
-                  </div>
-                </div>
-              </div>
-
-              <div className="double-bezel-outer">
-                <div className="double-bezel-inner" style={{ padding: "20px" }}>
-                  <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Provider Health</div>
-                  <div className="mono-font" style={{ fontSize: "28px", fontWeight: 800, color: "#4ade80", marginTop: "4px" }}>
-                    {dashboard.providers.filter((p) => p.health === "ok").length === dashboard.providers.length ? "100% Operational" : "Degraded"}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* High-End Visual Storage Indexing Progress Chart */}
-            <div className="double-bezel-outer" style={{ marginBottom: "32px" }}>
-              <div className="double-bezel-inner">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
-                  <div>
-                    <div className="eyebrow-badge" style={{ marginBottom: "6px" }}>ANALYTICS &amp; VISUAL METRICS</div>
-                    <h3 style={{ fontSize: "18px", fontWeight: 700, margin: 0 }}>Storage Vector Indexing Progress</h3>
-                  </div>
-                  <div className="mono-font" style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                    REAL-TIME SYNC RATIO
-                  </div>
-                </div>
-
-                <div style={{ display: "grid", gap: "16px" }}>
-                  {dashboard.providers.map((provider) => {
-                    const isLoaded = provider.detected_count !== null && provider.detected_count !== undefined && provider.embedded_count !== null && provider.embedded_count !== undefined;
-                    const det = provider.detected_count ?? 0;
-                    const emb = provider.embedded_count ?? 0;
-                    const pct = isLoaded && det > 0 ? Math.min(100, Math.round((emb / det) * 100)) : 0;
-                    const isComplete = isLoaded && det > 0 && pct === 100;
-                    return (
-                      <div key={provider.provider} style={{ background: "rgba(0,0,0,0.3)", padding: "16px 20px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                            <span style={{ fontWeight: 700, fontSize: "14px", color: "#ffffff" }}>{provider.display_name}</span>
-                            <span className="mono-font" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                              {isLoaded ? `(${emb} / ${det} files)` : "(Loading files…)"}
-                            </span>
-                          </div>
-                          <span className="mono-font" style={{ fontSize: "13px", fontWeight: 700, color: isComplete ? "#4ade80" : "var(--accent)" }}>
-                            {isLoaded ? (
-                              `${pct}% Indexed`
-                            ) : (
-                              <span className="skeleton-box" style={{ display: "inline-flex", alignItems: "center", fontSize: "12px", fontWeight: 500, padding: "2px 8px", borderRadius: "6px", color: "var(--text-muted)" }}>
-                                Loading…
-                              </span>
-                            )}
-                          </span>
-                        </div>
-
-                        {/* Visual Gradient Progress Bar */}
-                        <div style={{ width: "100%", height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "999px", overflow: "hidden" }}>
-                          <div
-                            style={{
-                              height: "100%",
-                              width: `${pct}%`,
-                              background: isComplete ? "linear-gradient(90deg, #4ade80, #22c55e)" : "linear-gradient(90deg, #a78bff, #5fa8ff)",
-                              borderRadius: "999px",
-                              boxShadow: isComplete ? "0 0 12px rgba(74,222,128,0.5)" : "0 0 12px rgba(167,139,255,0.5)",
-                              transition: "width 0.8s cubic-bezier(0.32, 0.72, 0, 1)",
-                            }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="admin-dashboard__controls" style={{ marginBottom: "16px" }}>
-              <div>
-                <h2 style={{ fontSize: "18px", fontWeight: 700, margin: "0 0 4px 0" }}>
-                  Storage providers
-                </h2>
-              </div>
-            </div>
-
-            <section className="admin-dashboard__providers" aria-label="Storage providers">
-              {dashboard.providers.map((provider) => {
-                const isRefreshing = refreshingProviders.has(provider.provider);
-                const isSyncing = syncingProviders.has(provider.provider);
-                const events = activityByProvider[provider.provider] ?? [];
-                const storageFileId = storageFileIds[provider.provider] ?? "";
-                const isDeleting = deletingProviders.has(provider.provider);
-                const items = itemsByProvider[provider.provider];
-                const isOpenItems = openItemsProviders.has(provider.provider);
-                const isLoadingItems = loadingItemsProviders.has(provider.provider);
-                return (
-                  <article className="admin-dashboard__provider double-bezel-outer" key={provider.provider}>
-                    <div className="double-bezel-inner">
-                      <div className="admin-dashboard__card-head">
-                        <h2 style={{ fontSize: "20px", fontWeight: 700 }}>{provider.display_name}</h2>
-                        <span className={`admin-dashboard__status ${statusClassName(provider.health)}`}>
-                          {statusLabel(provider.health)}
-                        </span>
-                      </div>
-                      <dl className="admin-dashboard__metrics">
-                        <div>
-                          <dt>Detected</dt>
-                          <dd className="mono-font">
-                            {provider.detected_count !== null && provider.detected_count !== undefined ? (
-                              provider.detected_count
-                            ) : (
-                              <span className="skeleton-box" style={{ display: "inline-flex", alignItems: "center", fontSize: "13px", fontWeight: 500, padding: "2px 8px", borderRadius: "6px", color: "var(--text-muted)" }}>
-                                Loading…
-                              </span>
-                            )}
-                          </dd>
-                        </div>
-                        <div className="admin-dashboard__embedded">
-                          <dt>Embedded</dt>
-                          <dd className="mono-font">
-                            {provider.embedded_count !== null && provider.embedded_count !== undefined ? (
-                              provider.embedded_count
-                            ) : (
-                              <span className="skeleton-box" style={{ display: "inline-flex", alignItems: "center", fontSize: "13px", fontWeight: 500, padding: "2px 8px", borderRadius: "6px", color: "var(--text-muted)" }}>
-                                Loading…
-                              </span>
-                            )}
-                          </dd>
-                        </div>
-                      </dl>
-                      <div className="admin-dashboard__actions">
-                        <button
-                          type="button"
-                          onClick={() => void refreshProvider(provider.provider)}
-                          disabled={isRefreshing}
-                          aria-label={`${isRefreshing ? "Refreshing" : "Refresh"} ${provider.display_name}`}
-                        >
-                          {isRefreshing ? "Refreshing…" : "Refresh"}
-                        </button>
-                        <button
-                          className={`admin-dashboard__sync ${isSyncing ? "admin-dashboard__sync--stopping" : ""}`}
-                          type="button"
-                          onClick={() => void syncProvider(provider.provider)}
-                          disabled={!provider.enabled && !isSyncing}
-                          aria-label={`${isSyncing ? "Stop syncing" : "Sync"} ${provider.display_name}`}
-                        >
-                          {isSyncing ? "Stop syncing" : "Sync"}
-                        </button>
-                      </div>
-                      <div className="admin-dashboard__delete">
-                        <label htmlFor={`storage-file-id-${provider.provider}`}>
-                          {provider.display_name} storage file ID
-                        </label>
-                        <div>
-                          <input
-                            id={`storage-file-id-${provider.provider}`}
-                            value={storageFileId}
-                            onChange={(event) =>
-                              setStorageFileIds((current) => ({
-                                ...current,
-                                [provider.provider]: event.target.value,
-                              }))
-                            }
-                            placeholder="Storage file ID"
-                            className="mono-font"
-                          />
-                          <button
-                            type="button"
-                            className="admin-dashboard__delete-button"
-                            onClick={() => void deleteIndexedFile(provider.provider, provider.display_name)}
-                            disabled={!provider.enabled || !storageFileId.trim() || isDeleting}
-                            aria-label={`Delete indexed file ${provider.display_name}`}
-                          >
-                            {isDeleting ? "Deleting…" : "Delete indexed file"}
-                          </button>
-                        </div>
-                      </div>
-                      <div className="admin-dashboard__items-section">
-                        <button
-                          type="button"
-                          className="admin-dashboard__toggle-items"
-                          onClick={() => void toggleProviderItems(provider.provider)}
-                          disabled={isLoadingItems || !provider.enabled}
-                          aria-label={`View embedded items for ${provider.display_name}`}
-                        >
-                          {isLoadingItems
-                            ? "Loading items…"
-                            : isOpenItems
-                            ? "Hide embedded items"
-                            : `View embedded items (${provider.embedded_count ?? 0})`}
-                        </button>
-                        {isOpenItems && items && items.length > 0 ? (
-                          <ul
-                            className="admin-dashboard__items-list"
-                            aria-label={`Embedded items for ${provider.display_name}`}
-                          >
-                            {items.map((item) => (
-                              <li key={item.point_id} className="admin-dashboard__item-row">
-                                <div className="admin-dashboard__item-info">
-                                  <span
-                                    className="admin-dashboard__item-name"
-                                    title={item.filename || item.point_id}
-                                  >
-                                    {item.filename || item.point_id}
-                                  </span>
-                                  <small className="admin-dashboard__item-meta mono-font">
-                                    {item.file_type ? `${item.file_type} · ` : ""}ID:{" "}
-                                    {item.point_id.slice(0, 8)}…
-                                  </small>
-                                </div>
-                                <button
-                                  type="button"
-                                  className="admin-dashboard__delete-button"
-                                  onClick={() => void deleteEmbeddedItem(provider.provider, item)}
-                                  aria-label={`Delete ${item.filename || item.point_id}`}
-                                >
-                                  Delete
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : isOpenItems && items ? (
-                          <p className="admin-dashboard__empty-items">No embedded items found.</p>
-                        ) : null}
-                      </div>
-                      {openActivityProviders.has(provider.provider) ? (
-                        <section
-                          className="admin-dashboard__activity"
-                          aria-label={`${provider.display_name} sync activity`}
-                          aria-live="polite"
-                        >
-                          <div>
-                            <span>
-                              Sync activity <small style={{ color: "var(--text-muted)", marginLeft: "4px" }}>({events.length} events)</small>
-                            </span>
-                            <button
-                              type="button"
-                              className="admin-dashboard__close-activity"
-                              onClick={() => toggleActivity(provider.provider)}
-                              aria-label={`Close ${provider.display_name} sync activity`}
-                            >
-                              Close activity ✕
-                            </button>
-                          </div>
-                          <ul className="admin-dashboard__activity-list">
-                            {events.map((event) => (
-                              <li key={event.sequence}>
-                                <span
-                                  className={`admin-dashboard__activity-icon admin-dashboard__activity-icon--${event.status}`}
-                                  aria-hidden="true"
-                                />
-                                <span className="mono-font">{event.filename ?? event.detail}</span>
-                                <small>{event.status}</small>
-                              </li>
-                            ))}
-                          </ul>
-                        </section>
-                      ) : events.length > 0 ? (
-                        <div className="admin-dashboard__items-section" style={{ borderTop: "1px solid var(--border)" }}>
-                          <button
-                            type="button"
-                            className="admin-dashboard__toggle-items"
-                            onClick={() => toggleActivity(provider.provider)}
-                            aria-label={`View sync activity for ${provider.display_name}`}
-                          >
-                            View sync activity ({events.length})
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  </article>
-                );
-              })}
-            </section>
-
-            <section className="admin-dashboard__models" aria-labelledby="model-health" style={{ marginTop: "40px" }}>
-              <div className="eyebrow-badge" style={{ marginBottom: "8px" }}>INFERENCE INFRASTRUCTURE</div>
-              <h2 id="model-health" style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 16px 0" }}>
-                Model health
-              </h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "20px" }}>
-                {[
-                  ["Embedding model", dashboard.embeddingModel],
-                  ["Description model", dashboard.descriptionModel],
-                ].map(
-                  ([role, model]) =>
-                    model && (
-                      <article key={role as string} className="double-bezel-outer">
-                        <div className="double-bezel-inner">
-                          <p style={{ fontSize: "12px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 6px" }}>{role as string}</p>
-                          <strong className="mono-font" style={{ fontSize: "16px", color: "#ffffff", display: "block", marginBottom: "12px" }}>{(model as ModelHealthStatus).name}</strong>
-                          <span
-                            className={`admin-dashboard__status ${statusClassName(
-                              (model as ModelHealthStatus).health
-                            )}`}
-                          >
-                            {statusLabel((model as ModelHealthStatus).health)}
-                          </span>
-                        </div>
-                      </article>
-                    )
-                )}
-              </div>
-            </section>
-          </>
-        )}
-        <div className="toast-container" aria-live="polite">
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              className={`banner ${toast.type === "status" ? "banner--status" : ""} ${toast.isDismissing ? "banner--dismissing" : ""}`}
-              role={toast.type === "status" ? "status" : "alert"}
-            >
-              {toast.message}
-            </div>
-          ))}
+              <button className="admin-primary-button admin-login-submit" type="submit"><span>Sign in</span><span aria-hidden="true">→</span></button>
+            </form>
+            <p className="admin-login-footer">Restricted to authorized workspace administrators.</p>
+            <ToastList toasts={toasts} />
+          </section>
         </div>
       </main>
+    );
+  }
+
+  return (
+    <div className="admin-shell">
+      <AdminNavigation activeTab={activeTab} isMobileOpen={isMobileNavigationOpen} onSelectTab={selectTab} onCloseMobile={() => setIsMobileNavigationOpen(false)} />
+      <main className="admin-content">
+        <header className="admin-topbar">
+          <button type="button" className="admin-menu-button" onClick={() => setIsMobileNavigationOpen(true)} aria-label="Open navigation">Menu</button>
+          <div>
+            <h1>{headingForTab(activeTab)}</h1>
+            <span>{username}</span>
+          </div>
+          <button type="button" className="admin-link-button" onClick={() => void handleLogout()}>Sign out</button>
+        </header>
+
+        {activeTab === "dashboards" ? (() => {
+          const totalDetected = dashboard.providers.reduce((acc, p) => acc + (p.detected_count ?? 0), 0);
+          const totalEmbedded = dashboard.providers.reduce((acc, p) => acc + (p.embedded_count ?? 0), 0);
+          const coveragePct = totalDetected > 0 ? Math.round((totalEmbedded / totalDetected) * 100) : 0;
+          const pendingFiles = Math.max(0, totalDetected - totalEmbedded);
+          const coverageCircumference = 264;
+          const coverageOffset = totalDetected > 0 ? Math.max(0, coverageCircumference - (coverageCircumference * coveragePct) / 100) : coverageCircumference;
+
+          const selectedProvider = selectedChartProvider !== "all"
+            ? dashboard.providers.find((p) => p.provider === selectedChartProvider)
+            : null;
+
+          type ChartBarItem = {
+            key: string;
+            label: string;
+            subLabel: string;
+            val: number;
+            pct: number;
+            embeddedPct?: number;
+            active?: boolean;
+            fillClass?: string;
+            tooltip: string;
+          };
+
+          let chartBars: ChartBarItem[] = [];
+          let yMax = 0;
+
+          if (selectedProvider) {
+            const detected = selectedProvider.detected_count ?? 0;
+            const embedded = selectedProvider.embedded_count ?? 0;
+            const pending = Math.max(0, detected - embedded);
+            yMax = Math.max(detected, 1);
+
+            chartBars = [
+              {
+                key: "detected",
+                label: "Detected",
+                subLabel: `${detected} total`,
+                val: detected,
+                pct: detected > 0 ? 100 : 4,
+                fillClass: "admin-chart-bar-fill--detected",
+                tooltip: `${selectedProvider.display_name} - Detected: ${detected}`,
+              },
+              {
+                key: "indexed",
+                label: "Indexed",
+                subLabel: `${detected > 0 ? Math.round((embedded / detected) * 100) : 0}%`,
+                val: embedded,
+                pct: detected > 0 ? Math.max(4, Math.round((embedded / yMax) * 100)) : 4,
+                fillClass: "admin-chart-bar-fill--indexed",
+                active: true,
+                tooltip: `${selectedProvider.display_name} - Indexed: ${embedded} files`,
+              },
+              {
+                key: "pending",
+                label: "Pending",
+                subLabel: `${detected > 0 ? Math.round((pending / detected) * 100) : 0}%`,
+                val: pending,
+                pct: detected > 0 ? Math.max(4, Math.round((pending / yMax) * 100)) : 4,
+                fillClass: "admin-chart-bar-fill--pending",
+                tooltip: `${selectedProvider.display_name} - Pending intake: ${pending} files`,
+              },
+            ];
+          } else if (dashboard.providers.length === 1 && dashboard.providers[0]) {
+            const p = dashboard.providers[0];
+            const detected = p.detected_count ?? 0;
+            const embedded = p.embedded_count ?? 0;
+            const pending = Math.max(0, detected - embedded);
+            yMax = Math.max(detected, 1);
+
+            chartBars = [
+              {
+                key: "detected",
+                label: "Detected",
+                subLabel: `${detected} total`,
+                val: detected,
+                pct: detected > 0 ? 100 : 4,
+                fillClass: "admin-chart-bar-fill--detected",
+                tooltip: `${p.display_name} - Detected: ${detected}`,
+              },
+              {
+                key: "indexed",
+                label: "Indexed",
+                subLabel: `${detected > 0 ? Math.round((embedded / detected) * 100) : 0}%`,
+                val: embedded,
+                pct: detected > 0 ? Math.max(4, Math.round((embedded / yMax) * 100)) : 4,
+                fillClass: "admin-chart-bar-fill--indexed",
+                active: true,
+                tooltip: `${p.display_name} - Indexed: ${embedded} files`,
+              },
+              {
+                key: "pending",
+                label: "Pending",
+                subLabel: `${detected > 0 ? Math.round((pending / detected) * 100) : 0}%`,
+                val: pending,
+                pct: detected > 0 ? Math.max(4, Math.round((pending / yMax) * 100)) : 4,
+                fillClass: "admin-chart-bar-fill--pending",
+                tooltip: `${p.display_name} - Pending intake: ${pending} files`,
+              },
+            ];
+          } else if (dashboard.providers.length > 1) {
+            yMax = Math.max(...dashboard.providers.map((p) => p.detected_count ?? 0), 1);
+
+            chartBars = dashboard.providers.map((p) => {
+              const detected = p.detected_count ?? 0;
+              const embedded = p.embedded_count ?? 0;
+              const pending = Math.max(0, detected - embedded);
+              const heightPct = detected > 0 ? Math.max(8, Math.round((detected / yMax) * 100)) : 4;
+              const embeddedPct = detected > 0 ? Math.round((embedded / detected) * 100) : 0;
+
+              return {
+                key: p.provider,
+                label: p.display_name,
+                subLabel: `${embedded}/${detected}`,
+                val: detected,
+                pct: heightPct,
+                embeddedPct: embeddedPct,
+                fillClass: "admin-chart-bar-fill--stacked",
+                tooltip: `${p.display_name}: ${detected} detected (${embedded} indexed, ${pending} pending)`,
+              };
+            });
+          }
+
+          return (
+            <section className="admin-metrics-grid" aria-label="Key operational metrics">
+              {/* 1. Dedicated Real Assets Detected Breakdown Chart */}
+              <article className="admin-metric-panel admin-chart-panel">
+                <header className="admin-panel-header">
+                  <div>
+                    <span className="admin-panel-label">Assets detected</span>
+                    <div className="admin-panel-metric-row">
+                      <strong className="admin-panel-metric-val">
+                        {selectedProvider ? (selectedProvider.detected_count ?? 0) : totalDetected}
+                      </strong>
+                      <span className="admin-trend-badge admin-trend-badge--blue">
+                        {selectedProvider
+                          ? `${selectedProvider.embedded_count ?? 0}/${selectedProvider.detected_count ?? 0} indexed`
+                          : `${dashboard.providers.length} provider${dashboard.providers.length === 1 ? "" : "s"}`}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="admin-provider-tabs" role="tablist" aria-label="Provider chart filter">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={selectedChartProvider === "all"}
+                      className={`admin-tab-chip ${selectedChartProvider === "all" ? "admin-tab-chip--active" : ""}`}
+                      onClick={() => setSelectedChartProvider("all")}
+                    >
+                      All ({totalDetected})
+                    </button>
+                    {dashboard.providers.map((p) => (
+                      <button
+                        key={p.provider}
+                        type="button"
+                        role="tab"
+                        aria-selected={selectedChartProvider === p.provider}
+                        className={`admin-tab-chip ${selectedChartProvider === p.provider ? "admin-tab-chip--active" : ""}`}
+                        onClick={() => setSelectedChartProvider(p.provider)}
+                        title={p.display_name}
+                      >
+                        {p.display_name} ({p.detected_count ?? 0})
+                      </button>
+                    ))}
+                  </div>
+                </header>
+
+                <div className="admin-chart-viewport" aria-label="Assets breakdown chart">
+                  <div className="admin-chart-grid" aria-hidden="true">
+                    <div className="admin-chart-grid-line"><span>{yMax}</span></div>
+                    <div className="admin-chart-grid-line"><span>{Math.round(yMax / 2)}</span></div>
+                    <div className="admin-chart-grid-line"><span>0</span></div>
+                  </div>
+
+                  {chartBars.length === 0 ? (
+                    <div className="admin-chart-empty">No storage providers configured</div>
+                  ) : (
+                    <div key={`chart-${dashboardEpoch}-${selectedChartProvider}`} className="admin-timeline-chart">
+                      {chartBars.map((bar, colIdx) => {
+                        const isClickable = selectedChartProvider === "all" && dashboard.providers.some((p) => p.provider === bar.key);
+                        return (
+                          <div
+                            key={bar.key}
+                            className={`admin-chart-col ${bar.active ? "active" : ""}`}
+                            title={bar.tooltip}
+                            onClick={() => {
+                              if (isClickable) {
+                                setSelectedChartProvider(bar.key);
+                              }
+                            }}
+                            style={{
+                              cursor: isClickable ? "pointer" : "default",
+                              "--col-index": colIdx,
+                            } as React.CSSProperties}
+                          >
+                            <span className="admin-chart-val-label">{bar.val}</span>
+                            <div className="admin-chart-bar-wrap">
+                              <div className="admin-chart-bar-bg" />
+                              <div
+                                className={`admin-chart-bar-fill ${bar.fillClass ?? ""}`}
+                                style={{ height: `${bar.pct}%` }}
+                              >
+                                {bar.embeddedPct !== undefined ? (
+                                  <div
+                                    className="admin-chart-segment-embedded"
+                                    style={{ height: `${bar.embeddedPct}%` }}
+                                  />
+                                ) : null}
+                              </div>
+                            </div>
+                            <span className="admin-chart-axis-label">{bar.label}</span>
+                            <span className="admin-chart-axis-sub">{bar.subLabel}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <footer className="admin-panel-footer">
+                  <div className="admin-chart-legend">
+                    <span className="admin-chart-legend-item"><span className="admin-chart-dot indexed" />Indexed</span>
+                    <span className="admin-chart-legend-item"><span className="admin-chart-dot pending" />Pending</span>
+                  </div>
+                </footer>
+              </article>
+
+              {/* 2. Dedicated Index Coverage Gauge Card */}
+              <article className="admin-metric-panel admin-coverage-panel">
+                <header className="admin-panel-header">
+                  <div>
+                    <span className="admin-panel-label">Index coverage</span>
+                    <span className="admin-status-desc">Vector embeddings health</span>
+                  </div>
+                </header>
+
+                <div className="admin-coverage-card-body">
+                  <div key={`gauge-${dashboardEpoch}-${coveragePct}`} className="admin-coverage-visual-stage">
+                    <svg className="admin-coverage-chart-svg" viewBox="0 0 100 100" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="adminCoverageGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#3b82f6" />
+                          <stop offset="100%" stopColor="#1d4ed8" />
+                        </linearGradient>
+                      </defs>
+                      <circle className="admin-coverage-meter-track" cx="50" cy="50" r="42" />
+                      <circle className="admin-coverage-meter-pending" cx="50" cy="50" r="42" />
+                      <circle
+                        className="admin-coverage-meter-indexed"
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        style={{
+                          strokeDashoffset: coverageOffset,
+                          ["--target-offset" as string]: coverageOffset,
+                        }}
+                      />
+                    </svg>
+                    <div className="admin-coverage-visual-center">
+                      <span className="admin-coverage-pct">{coveragePct}<span className="admin-coverage-pct-unit">%</span></span>
+                      <span className="admin-coverage-sub-label">Covered</span>
+                    </div>
+                  </div>
+
+                  <div className="admin-coverage-ledger">
+                    <div className="admin-coverage-ledger-row">
+                      <span className="admin-stat-label"><span className="admin-stat-dot indexed" />Indexed files</span>
+                      <strong className="admin-stat-val">
+                        {totalEmbedded} <small>/ {totalDetected}</small>
+                      </strong>
+                    </div>
+                    <div className="admin-coverage-ledger-row">
+                      <span className="admin-stat-label"><span className="admin-stat-dot pending" />Pending intake</span>
+                      <strong className="admin-stat-val alert">
+                        {pendingFiles} files
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </section>
+          );
+        })() : null}
+
+        {activeTab === "dashboards" || activeTab === "providers" ? renderProviders() : null}
+        {activeTab === "dashboards" || activeTab === "models" ? <AdminModelHealth embeddingModel={dashboard.embeddingModel} descriptionModel={dashboard.descriptionModel} /> : null}
+        {activeTab === "logs" ? (
+          <section className="admin-log-panel" aria-label="Sync activity logs">
+            {Object.values(activityByProvider).flat().length === 0 ? <p>No activity in this session.</p> : (
+              <ul className="admin-activity-list">
+                {Object.entries(activityByProvider).flatMap(([providerId, events]) => events.map((event) => <li key={`${providerId}-${event.sequence}`}>{event.filename ?? event.detail}</li>))}
+              </ul>
+            )}
+          </section>
+        ) : null}
+        {activeTab === "settings" ? (
+          <section className="admin-settings-grid" aria-label="Admin settings">
+            <article><h2>Session</h2><button type="button" className="admin-link-button" onClick={() => void handleLogout()}>Sign out</button></article>
+            <article><h2>Status</h2><button type="button" className="admin-primary-button" onClick={() => void loadDashboard()} disabled={isLoadingDashboard}>{isLoadingDashboard ? "Refreshing" : "Refresh status"}</button></article>
+          </section>
+        ) : null}
+        <ToastList toasts={toasts} />
+      </main>
+    </div>
+  );
+}
+
+function ToastList({ toasts }: { readonly toasts: readonly Toast[] }): JSX.Element {
+  return (
+    <div className="admin-toast-list" aria-live="polite">
+      {toasts.map((toast) => <div key={toast.id} className={`admin-toast admin-toast--${toast.type} ${toast.isDismissing ? "admin-toast--dismissing" : ""}`} role={toast.type === "error" ? "alert" : "status"}>{toast.message}</div>)}
     </div>
   );
 }
