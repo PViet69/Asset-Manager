@@ -310,16 +310,33 @@ test("loads and displays embedded provider items and allows deleting an item", a
 
   expect(mockedGetAdminProviderItems).toHaveBeenCalledWith("dropbox");
 
-  expect(await screen.findByText("dropbox-file-1.pdf")).toBeInTheDocument();
-  expect(screen.getByText("dropbox-file-2.png")).toBeInTheDocument();
+  const dialog = await screen.findByRole("dialog", { name: "Dropbox embedded items" });
+  expect(within(dialog).getByText("dropbox-file-1.pdf")).toBeInTheDocument();
+  expect(within(dialog).getByText("dropbox-file-2.png")).toBeInTheDocument();
 
-  const deleteBtn = screen.getByRole("button", { name: "Delete dropbox-file-1.pdf" });
+  const deleteBtn = within(dialog).getByRole("button", { name: "Delete dropbox-file-1.pdf" });
   await user.click(deleteBtn);
 
   expect(confirmSpy).toHaveBeenCalledWith('Delete embedded Qdrant item "dropbox-file-1.pdf"?');
   expect(mockedDeleteAdminQdrantPoint).toHaveBeenCalledWith("p1");
   expect(await screen.findByText('Deleted embedded item "dropbox-file-1.pdf".')).toBeInTheDocument();
   expect(screen.queryByText("dropbox-file-1.pdf")).not.toBeInTheDocument();
+});
+
+test("closes embedded items dialog with Escape", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedGetAdminProviderItems.mockResolvedValue({ provider: "google_drive", items: [] });
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "View embedded items for Google Drive" }));
+
+  expect(await screen.findByRole("dialog", { name: "Google Drive embedded items" })).toBeInTheDocument();
+
+  await user.keyboard("{Escape}");
+
+  expect(screen.queryByRole("dialog", { name: "Google Drive embedded items" })).not.toBeInTheDocument();
 });
 
 test("opens mobile navigation from compact topbar", async () => {

@@ -8,18 +8,14 @@ import { ProviderLogo } from "./ProviderLogo";
 
 export interface AdminProviderCardProps {
   readonly provider: ProviderDashboardStatus;
-  readonly items: readonly QdrantItem[] | null;
   readonly events: readonly SyncActivityEvent[];
   readonly isRefreshing: boolean;
   readonly isSyncing: boolean;
-  readonly isDeleting: boolean;
-  readonly isItemsOpen: boolean;
   readonly isItemsLoading: boolean;
   readonly isActivityOpen: boolean;
   readonly onRefresh: (provider: string) => void;
-  readonly onToggleItems: (provider: string) => void;
+  readonly onOpenItems: (provider: string) => void;
   readonly onSync: (provider: string) => void;
-  readonly onDeleteItem: (provider: string, item: QdrantItem) => void;
   readonly onToggleActivity: (provider: string) => void;
 }
 
@@ -37,18 +33,14 @@ function healthClassName(health: string): string {
 
 export function AdminProviderCard({
   provider,
-  items,
   events,
   isRefreshing,
   isSyncing,
-  isDeleting,
-  isItemsOpen,
   isItemsLoading,
   isActivityOpen,
   onRefresh,
-  onToggleItems,
+  onOpenItems,
   onSync,
-  onDeleteItem,
   onToggleActivity,
 }: AdminProviderCardProps): JSX.Element {
   const [mounted, setMounted] = useState(false);
@@ -125,11 +117,11 @@ export function AdminProviderCard({
         <button
           type="button"
           className="admin-link-button"
-          onClick={() => onToggleItems(provider.provider)}
+          onClick={() => onOpenItems(provider.provider)}
           disabled={!canAct || isItemsLoading}
           aria-label={`View embedded items for ${provider.display_name}`}
         >
-          {isItemsLoading ? "Loading" : isItemsOpen ? "Hide items" : `Items (${embeddedCount})`}
+          {isItemsLoading ? "Loading" : `Items (${embeddedCount})`}
         </button>
         <button
           type="button"
@@ -142,31 +134,6 @@ export function AdminProviderCard({
         </button>
       </footer>
 
-      {isItemsOpen && items ? (
-        <section className="admin-provider-card__details" aria-label={`Embedded items for ${provider.display_name}`}>
-          {items.length === 0 ? <p>No embedded items.</p> : (
-            <ul className="admin-item-list">
-              {items.map((item) => {
-                const itemName = item.filename || item.point_id;
-                return (
-                  <li key={item.point_id}>
-                    <span title={itemName}>{itemName}</span>
-                    <button
-                      type="button"
-                      className="admin-delete-button"
-                      onClick={() => onDeleteItem(provider.provider, item)}
-                      disabled={isDeleting}
-                      aria-label={`Delete ${itemName}`}
-                    >
-                      Delete
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ) : null}
 
       {isActivityOpen ? (
         <section className="admin-provider-card__details" aria-label={`${provider.display_name} sync activity`} aria-live="polite">

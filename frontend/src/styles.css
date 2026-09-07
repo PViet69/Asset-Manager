@@ -1250,7 +1250,7 @@ ul.list li:hover {
   right: 0;
   width: 100%;
   z-index: 1000;
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(67, 67, 67, 0.82);
   backdrop-filter: blur(24px) saturate(140%);
   -webkit-backdrop-filter: blur(24px) saturate(140%);
   border-bottom: 1px solid rgba(226, 232, 240, 0.85);
@@ -2519,7 +2519,7 @@ ul.list li:hover {
 /* 2-Card Metrics Grid */
 .admin-metrics-grid {
   display: grid;
-  grid-template-columns: 1.35fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 26px;
   align-items: stretch;
@@ -2595,6 +2595,7 @@ ul.list li:hover {
 
 .admin-provider-tabs {
   display: inline-flex;
+  flex-wrap: wrap;
   background: rgba(255, 255, 255, 0.45);
   border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 7px;
@@ -3213,6 +3214,94 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   margin-top: auto;
 }
 
+.admin-items-modal-backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.46);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.admin-items-modal {
+  width: min(100%, 640px);
+  max-height: min(76dvh, 680px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 12px;
+  color: var(--admin-text);
+  background: var(--admin-surface);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.admin-items-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(111, 137, 171, 0.14);
+}
+
+.admin-items-modal__header p {
+  margin: 0 0 3px;
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.admin-items-modal__header h2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.admin-items-modal__content {
+  min-height: 100px;
+  max-height: calc(min(76dvh, 680px) - 91px);
+  overflow: auto;
+  padding: 12px 20px 20px;
+}
+
+.admin-items-modal__content > p {
+  margin: 18px 0;
+  color: var(--admin-muted);
+}
+
+.admin-item-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-item-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border: 1px solid rgba(111, 137, 171, 0.14);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.82);
+}
+
+.admin-item-list li > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--admin-text);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Model Health Redesign */
 .admin-model-health {
   display: grid;
@@ -3590,8 +3679,8 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
     padding: 22px 24px 48px;
   }
   .admin-metrics-grid {
-    grid-template-columns: 1.3fr 1fr;
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
     margin-bottom: 22px;
   }
   .admin-metric-panel {

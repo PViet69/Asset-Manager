@@ -24,15 +24,8 @@ import { AdminLoginBackground } from "./AdminLoginBackground";
 import { AdminModelHealth } from "./AdminModelHealth";
 import { AdminNavigation, type AdminTab } from "./AdminNavigation";
 import { AdminProviderCard } from "./AdminProviderCard";
-import { ProviderLogo } from "./ProviderLogo";
 
 const SAFE_SYNC_ERROR = "Provider sync failed. Try again.";
-const INITIAL_PROVIDERS: ProviderDashboardStatus[] = [
-  { provider: "google_drive", display_name: "Google Drive", enabled: true, health: "ok", detected_count: null, embedded_count: null },
-  { provider: "dropbox", display_name: "Dropbox", enabled: true, health: "ok", detected_count: null, embedded_count: null },
-];
-const INITIAL_EMBEDDING_MODEL: ModelHealthStatus = { name: "embeddinggemma:latest", health: "ok" };
-const INITIAL_DESCRIPTION_MODEL: ModelHealthStatus = { name: "deepseek-v4-flash-vision-exp", health: "ok" };
 
 type DashboardState = {
   readonly providers: readonly ProviderDashboardStatus[];
@@ -47,10 +40,10 @@ type Toast = {
   readonly isDismissing?: boolean;
 };
 
-const INITIAL_DASHBOARD: DashboardState = {
-  providers: INITIAL_PROVIDERS,
-  embeddingModel: INITIAL_EMBEDDING_MODEL,
-  descriptionModel: INITIAL_DESCRIPTION_MODEL,
+const EMPTY_DASHBOARD: DashboardState = {
+  providers: [],
+  embeddingModel: null,
+  descriptionModel: null,
 };
 
 function dashboardFrom(response: Awaited<ReturnType<typeof getAdminSyncStatus>>): DashboardState {
@@ -72,14 +65,14 @@ export function AdminPage(): JSX.Element {
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(isAdminRoute);
-  const [dashboard, setDashboard] = useState<DashboardState>(INITIAL_DASHBOARD);
+  const [dashboard, setDashboard] = useState<DashboardState>(EMPTY_DASHBOARD);
   const [refreshingProviders, setRefreshingProviders] = useState<ReadonlySet<string>>(new Set());
   const [syncingProviders, setSyncingProviders] = useState<ReadonlySet<string>>(new Set());
   const [activityByProvider, setActivityByProvider] = useState<Readonly<Record<string, readonly SyncActivityEvent[]>>>({});
   const [openActivityProviders, setOpenActivityProviders] = useState<ReadonlySet<string>>(new Set());
   const [deletingProviders, setDeletingProviders] = useState<ReadonlySet<string>>(new Set());
   const [itemsByProvider, setItemsByProvider] = useState<Readonly<Record<string, readonly QdrantItem[] | null>>>({});
-  const [openItemsProviders, setOpenItemsProviders] = useState<ReadonlySet<string>>(new Set());
+  const [openItemsProvider, setOpenItemsProvider] = useState<string | null>(null);
   const [loadingItemsProviders, setLoadingItemsProviders] = useState<ReadonlySet<string>>(new Set());
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardEpoch, setDashboardEpoch] = useState(0);
@@ -99,7 +92,7 @@ export function AdminPage(): JSX.Element {
   function clearSession(): void {
     setIsAuthenticated(false);
     setIsMobileNavigationOpen(false);
-    setDashboard(INITIAL_DASHBOARD);
+    setDashboard(EMPTY_DASHBOARD);
     setSyncingProviders(new Set());
     if (window.location.pathname.startsWith("/admin")) window.history.replaceState({}, "", "/admin/login");
   }
@@ -202,21 +195,83 @@ export function AdminPage(): JSX.Element {
       : new Set(current).add(providerId));
   }
 
-  async function toggleProviderItems(providerId: string): Promise<void> {
-    if (openItemsProviders.has(providerId)) {
-      setOpenItemsProviders((current) => new Set([...current].filter((item) => item !== providerId)));
-      return;
-    }
+  async function openProviderItems(providerId: string): Promise<void> {
+    setOpenItemsProvider(providerId);
     setLoadingItemsProviders((current) => new Set(current).add(providerId));
     try {
       const response = await getAdminProviderItems(providerId);
       setItemsByProvider((current) => ({ ...current, [providerId]: response.items }));
-      setOpenItemsProviders((current) => new Set(current).add(providerId));
     } catch (caught) {
+      setOpenItemsProvider(null);
       handleAdminError(caught, "Could not load embedded items");
     } finally {
       setLoadingItemsProviders((current) => new Set([...current].filter((item) => item !== providerId)));
     }
+  }
+
+  function closeProviderItems(): void {
+    setOpenItemsProvider(null);
+  }
+
+  useEffect(() => {
+    if (!openItemsProvider) return;
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") closeProviderItems();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [openItemsProvider]);
+
+  const openedItemsProvider = dashboard.providers.find((provider) => provider.provider === openItemsProvider) ?? null;
+  const openedItems = openItemsProvider ? itemsByProvider[openItemsProvider] ?? null : null;
+  const isOpenedItemsLoading = openItemsProvider ? loadingItemsProviders.has(openItemsProvider) : false;
+
+  function renderItemsDialog(): JSX.Element | null {
+    if (!openedItemsProvider || !openItemsProvider) return null;
+    return (
+      <div className="admin-items-modal-backdrop" onMouseDown={closeProviderItems}>
+        <section
+          className="admin-items-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${openedItemsProvider.display_name} embedded items`}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <header className="admin-items-modal__header">
+            <div>
+              <p>Embedded items</p>
+              <h2>{openedItemsProvider.display_name}</h2>
+            </div>
+            <button type="button" className="admin-icon-button" onClick={closeProviderItems} aria-label="Close embedded items">
+              ×
+            </button>
+          </header>
+          <div className="admin-items-modal__content" aria-live="polite">
+            {isOpenedItemsLoading ? <p>Loading embedded items…</p> : openedItems?.length === 0 ? <p>No embedded items.</p> : openedItems ? (
+              <ul className="admin-item-list">
+                {openedItems.map((item) => {
+                  const itemName = item.filename || item.point_id;
+                  return (
+                    <li key={item.point_id}>
+                      <span title={itemName}>{itemName}</span>
+                      <button
+                        type="button"
+                        className="admin-delete-button"
+                        onClick={() => void deleteEmbeddedItem(openItemsProvider, item)}
+                        disabled={deletingProviders.has(openItemsProvider)}
+                        aria-label={`Delete ${itemName}`}
+                      >
+                        Delete
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </div>
+        </section>
+      </div>
+    );
   }
 
   async function deleteEmbeddedItem(providerId: string, item: QdrantItem): Promise<void> {
@@ -278,18 +333,14 @@ export function AdminPage(): JSX.Element {
           <AdminProviderCard
             key={provider.provider}
             provider={provider}
-            items={itemsByProvider[provider.provider] ?? null}
             events={activityByProvider[provider.provider] ?? []}
             isRefreshing={refreshingProviders.has(provider.provider)}
             isSyncing={syncingProviders.has(provider.provider)}
-            isDeleting={deletingProviders.has(provider.provider)}
-            isItemsOpen={openItemsProviders.has(provider.provider)}
             isItemsLoading={loadingItemsProviders.has(provider.provider)}
             isActivityOpen={openActivityProviders.has(provider.provider)}
             onRefresh={(providerId) => void refreshProvider(providerId)}
-            onToggleItems={(providerId) => void toggleProviderItems(providerId)}
+            onOpenItems={(providerId) => void openProviderItems(providerId)}
             onSync={(providerId) => void syncProvider(providerId)}
-            onDeleteItem={(providerId, item) => void deleteEmbeddedItem(providerId, item)}
             onToggleActivity={toggleActivity}
           />
         ))}
@@ -692,6 +743,7 @@ export function AdminPage(): JSX.Element {
             <article><h2>Status</h2><button type="button" className="admin-primary-button" onClick={() => void loadDashboard()} disabled={isLoadingDashboard}>{isLoadingDashboard ? "Refreshing" : "Refresh status"}</button></article>
           </section>
         ) : null}
+        {renderItemsDialog()}
         <ToastList toasts={toasts} />
       </main>
     </div>

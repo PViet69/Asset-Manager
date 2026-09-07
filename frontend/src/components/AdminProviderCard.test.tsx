@@ -32,18 +32,14 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof AdminProvider
   render(
     <AdminProviderCard
       provider={provider}
-      items={null}
       events={[]}
       isRefreshing={false}
       isSyncing={false}
-      isDeleting={false}
-      isItemsOpen={false}
       isItemsLoading={false}
       isActivityOpen={false}
       onRefresh={vi.fn()}
-      onToggleItems={vi.fn()}
+      onOpenItems={vi.fn()}
       onSync={vi.fn()}
-      onDeleteItem={vi.fn()}
       onToggleActivity={vi.fn()}
       {...overrides}
     />
