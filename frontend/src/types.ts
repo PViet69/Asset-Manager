@@ -1,5 +1,19 @@
+// Storage provider types
+export type StorageProvider = string;
+
+export interface ProviderMeta {
+  readonly id: string;
+  readonly displayName: string;
+}
+
+
+
+
+
+
 // Mirrors backend/app/api/schemas/file_embeddings.py
 export type FileStatus = "success" | "failed";
+
 
 export type FileEmbeddingItem = {
   filename: string;
@@ -131,6 +145,7 @@ export type QdrantItem = {
   file_path?: string | null;
   storage_file_id?: string | null;
   file_type?: string | null;
+  thumbnail_url?: string | null;
   modified_time?: string | null;
 };
 

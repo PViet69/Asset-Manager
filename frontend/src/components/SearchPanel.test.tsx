@@ -4,10 +4,17 @@ import { afterEach, expect, test, vi } from "vitest";
 import { searchVectors } from "../api/client";
 import { SearchPanel } from "./SearchPanel";
 
+
+
 vi.mock("../api/client", () => ({
   ApiError: class ApiError extends Error {},
   searchVectors: vi.fn(),
+  getProviders: vi.fn().mockResolvedValue([
+    { id: "google_drive", displayName: "Google Drive" },
+    { id: "dropbox", displayName: "Dropbox" },
+  ]),
 }));
+
 
 vi.mock("./SearchResultThumbnail", () => ({
   SearchResultThumbnail: ({
@@ -93,10 +100,14 @@ test("sends selected provider with search request", async () => {
     target: { value: "campaign report" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await waitFor(() => {
+    expect(screen.getByRole("option", { name: "Google Drive" })).toBeInTheDocument();
+  });
   fireEvent.change(screen.getByLabelText("Provider"), {
     target: { value: "google_drive" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
 
   // Assert
   await waitFor(() => {
@@ -107,6 +118,9 @@ test("sends selected provider with search request", async () => {
       "semantic"
     );
   });
+
+
+
 });
 
 test("hides Search Results input and triggers real-time search on typing in filename mode", async () => {

@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import { ApiError, searchVectors } from "../api/client";
-import type { VectorSearchItem } from "../types";
+import { ApiError, getProviders, searchVectors } from "../api/client";
+import type {
+  ProviderMeta,
+  StorageProvider,
+  VectorSearchItem,
+} from "../types";
+
+
 import { SearchResultThumbnail } from "./SearchResultThumbnail";
+import { ProviderLogo } from "./ProviderLogo";
+
 
 const DEFAULT_TOP_K = 10;
 const MIN_TOP_K = 1;
 const MAX_TOP_K = 100;
 const MAX_QUERY_LENGTH = 4190;
 
-type ProviderFilter = "" | "google_drive" | "dropbox";
+type ProviderFilter = "" | StorageProvider;
+
 type SearchMode = "semantic" | "filename";
 type SortOrder = "relevance" | "date_desc" | "date_asc";
 
@@ -48,12 +57,26 @@ export function SearchPanel({
   const topK = externalTopK !== undefined ? externalTopK : internalTopK;
   const setTopK = onTopKChange || setInternalTopK;
   const [provider, setProvider] = useState<ProviderFilter>("");
+  const [providers, setProviders] = useState<readonly ProviderMeta[]>([]);
   const [searchMode, setSearchMode] = useState<SearchMode>("semantic");
   const [sortBy, setSortBy] = useState<SortOrder>("relevance");
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [state, setState] = useState<SearchState>({ kind: "idle" });
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    getProviders()
+      .then((data) => {
+        if (isMounted) setProviders(data);
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
 
   useEffect(() => {
     if (!showSettings) return;
@@ -174,6 +197,39 @@ export function SearchPanel({
 
   return (
     <section className="glass panel-card" role="tabpanel">
+      {/* Mode Switcher Tabs */}
+      <div className="search-mode-tabs" role="tablist" aria-label="Search mode selector">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={searchMode === "semantic"}
+          className={`search-mode-chip ${searchMode === "semantic" ? "search-mode-chip--active" : ""}`}
+          onClick={() => setSearchMode("semantic")}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 2a4 4 0 0 1 4 4c0 1.5-.8 2.8-2 3.5V14h-4V9.5C8.8 8.8 8 7.5 8 6a4 4 0 0 1 4-4z" />
+            <path d="M9 18h6" />
+            <path d="M10 22h4" />
+          </svg>
+          <span>Semantic AI</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={searchMode === "filename"}
+          className={`search-mode-chip ${searchMode === "filename" ? "search-mode-chip--active" : ""}`}
+          onClick={() => setSearchMode("filename")}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+          <span>Filename Match</span>
+        </button>
+      </div>
+
       <form onSubmit={onSubmit}>
         <div className="search-bar-box">
           <div className="search-input-wrapper">
@@ -200,22 +256,34 @@ export function SearchPanel({
               maxLength={MAX_QUERY_LENGTH}
               placeholder={
                 searchMode === "semantic"
-                  ? "describe what you're looking for..."
-                  : "enter filename or extension (e.g. invoice.pdf)"
+                  ? "Describe what you're looking for (e.g. 'financial forecast Q3', 'brand logo')..."
+                  : "Enter filename or extension (e.g. 'invoice.pdf', 'quarterly')..."
               }
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              autoComplete="off"
             />
+
+            {query.length > 0 && (
+              <button
+                type="button"
+                className="search-clear-btn"
+                onClick={() => setQuery("")}
+                aria-label="Clear search input"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
           <div className="search-bar-actions">
             <button
               ref={buttonRef}
               type="button"
-              className={`config-btn ${showSettings ? "active" : ""}`}
+              className={`config-btn ${showSettings ? "active" : ""} ${provider || (searchMode === "semantic" && topK !== String(DEFAULT_TOP_K)) ? "config-btn--active-filter" : ""}`}
               onClick={() => setShowSettings(!showSettings)}
               aria-label="Settings"
-              title="Search Settings"
+              title="Search Settings & Filters"
             >
               <svg
                 width="18"
@@ -244,7 +312,7 @@ export function SearchPanel({
               type="submit"
               disabled={state.kind === "submitting" || query.trim().length === 0}
             >
-              Search
+              {state.kind === "submitting" ? "Searching…" : "Search"}
             </button>
           </div>
 
@@ -290,8 +358,11 @@ export function SearchPanel({
                       onChange={(e) => setProvider(e.target.value as ProviderFilter)}
                     >
                       <option value="">All providers</option>
-                      <option value="google_drive">Google Drive</option>
-                      <option value="dropbox">Dropbox</option>
+                      {providers.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.displayName}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -319,6 +390,30 @@ export function SearchPanel({
         </div>
       </form>
 
+      {/* Quick Provider Filters */}
+      {providers.length > 0 && (
+        <div className="search-quick-providers" aria-label="Filter by provider">
+          <button
+            type="button"
+            className={`search-filter-chip ${provider === "" ? "search-filter-chip--active" : ""}`}
+            onClick={() => setProvider("")}
+          >
+            All providers
+          </button>
+          {providers.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`search-filter-chip ${provider === p.id ? "search-filter-chip--active" : ""}`}
+              onClick={() => setProvider(provider === p.id ? "" : (p.id as ProviderFilter))}
+            >
+              <ProviderLogo provider={p.id} size={13} />
+              <span>{p.displayName}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {state.kind === "submitting" && (
         <div className="results" aria-busy="true" aria-label="Loading search results">
           <h3>Searching...</h3>
@@ -326,7 +421,7 @@ export function SearchPanel({
             {[1, 2, 3].map((i) => (
               <li key={i} className="skeleton-card">
                 <div className="row-line" style={{ gap: "14px" }}>
-                  <div className="skeleton-box" style={{ width: "42px", height: "42px", borderRadius: "8px", flexShrink: 0 }} />
+                  <div className="skeleton-box" style={{ width: "46px", height: "46px", borderRadius: "10px", flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
                     <div className="skeleton-box" style={{ width: "45%", height: "16px", marginBottom: "8px" }} />
                     <div className="skeleton-box" style={{ width: "85%", height: "12px" }} />
@@ -355,7 +450,12 @@ export function SearchPanel({
               marginBottom: "12px",
             }}
           >
-            <h3 style={{ margin: 0 }}>Result</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <h3 style={{ margin: 0 }}>Result</h3>
+              <span className="results-count-badge">
+                {sortedItems.length} {sortedItems.length === 1 ? "match" : "matches"}
+              </span>
+            </div>
             {searchMode === "filename" && (
               <div
                 className="results-sort"
@@ -380,67 +480,86 @@ export function SearchPanel({
               </div>
             )}
           </div>
-          <ul className="list search-results--entering" aria-label="Search results">
-            {sortedItems.map((item, index) => {
-              const sourceUrl = item.source_url ?? null;
-              const animationStyle = { "--result-index": index } as CSSProperties;
-              const formattedDate = item.modified_time
-                ? new Date(item.modified_time).toLocaleDateString(undefined, {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                  })
-                : null;
-              return (
-                <li key={item.point_id} style={animationStyle}>
-                  <div className="row-line">
-                    <SearchResultThumbnail
-                      thumbnailUrl={item.thumbnail_url}
-                      filename={item.filename}
-                    />
-                    <div className="result-name">
-                      {sourceUrl ? (
-                        <a
-                          href={sourceUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="fname"
-                          style={{
-                            color: "var(--accent-2)",
-                            textDecoration: "none",
-                          }}
-                          title={item.filename}
-                        >
-                          {item.filename} <span style={{ fontSize: "11px" }}>↗</span>
-                        </a>
-                      ) : (
-                        <span className="fname" title={item.filename}>
-                          {item.filename}
+
+          {sortedItems.length === 0 ? (
+            <div className="results-empty">
+              <div className="results-empty__icon">🔍</div>
+              <h4>No matching assets found</h4>
+              <p>
+                {searchMode === "semantic"
+                  ? "Try using different keywords or describing concepts more broadly."
+                  : "Check the filename spelling or switch to Semantic Search."}
+              </p>
+            </div>
+          ) : (
+            <ul className="list search-results--entering" aria-label="Search results">
+              {sortedItems.map((item, index) => {
+                const sourceUrl = item.source_url ?? null;
+                const animationStyle = { "--result-index": index } as CSSProperties;
+                const formattedDate = item.modified_time
+                  ? new Date(item.modified_time).toLocaleDateString(undefined, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })
+                  : null;
+                return (
+                  <li key={item.point_id} style={animationStyle}>
+                    <div className="row-line">
+                      <SearchResultThumbnail
+                        thumbnailUrl={item.thumbnail_url}
+                        filename={item.filename}
+                      />
+                      <div className="result-name">
+                        {sourceUrl ? (
+                          <a
+                            href={sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="fname"
+                            style={{
+                              color: "var(--accent-2)",
+                              textDecoration: "none",
+                            }}
+                            title={item.filename}
+                          >
+                            {item.filename} <span style={{ fontSize: "11px" }}>↗</span>
+                          </a>
+                        ) : (
+                          <span className="fname" title={item.filename}>
+                            {item.filename}
+                          </span>
+                        )}
+                      </div>
+                      {item.provider && (
+                        <span className="result-provider-pill" title={`Storage provider: ${item.provider}`}>
+                          <ProviderLogo provider={item.provider} size={12} />
+                          <span style={{ textTransform: "capitalize" }}>{item.provider.replace(/_/g, " ")}</span>
                         </span>
                       )}
+                      {formattedDate && (
+                        <span
+                          className="meta-date"
+                          style={{
+                            fontSize: "12px",
+                            color: "var(--text-muted)",
+                            marginRight: "8px",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {formattedDate}
+                        </span>
+                      )}
+                      {searchMode === "semantic" && (
+                        <span className="score">{formatScore(item.score)}</span>
+                      )}
                     </div>
-                    {formattedDate && (
-                      <span
-                        className="meta-date"
-                        style={{
-                          fontSize: "12px",
-                          color: "var(--text-muted)",
-                          marginRight: "8px",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {formattedDate}
-                      </span>
-                    )}
-                    {searchMode === "semantic" && (
-                      <span className="score">{formatScore(item.score)}</span>
-                    )}
-                  </div>
-                  <div className="snippet" title={item.content}>{item.content}</div>
-                </li>
-              );
-            })}
-          </ul>
+                    <div className="snippet" title={item.content}>{item.content}</div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
     </section>

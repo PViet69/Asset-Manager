@@ -5,9 +5,13 @@ import {
   deleteAdminQdrantPoint,
   fetchThumbnail,
   getAdminProviderItems,
+  getProviders,
   refreshAdminProvider,
   streamAdminSync,
 } from "./client";
+
+
+
 
 
 
@@ -52,15 +56,39 @@ test("posts provider refresh with admin credentials", async () => {
   await refreshAdminProvider("dropbox");
 
   expect(fetchMock).toHaveBeenCalledWith(
-    "/admin/sync/dropbox/refresh",
+    `/admin/sync/dropbox/refresh`,
     expect.objectContaining({ method: "POST", credentials: "include" })
   );
 });
 
+test("fetches providers from backend", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify([
+        { id: "google_drive", display_name: "Google Drive" },
+        { id: "dropbox", display_name: "Dropbox" },
+      ]),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    )
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const providers = await getProviders();
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    expect.stringContaining("/v1/providers"),
+    expect.any(Object)
+  );
+  expect(providers).toEqual([
+    { id: "google_drive", displayName: "Google Drive" },
+    { id: "dropbox", displayName: "Dropbox" },
+  ]);
+});
+
 test("parses complete SSE frames", async () => {
   const payload = [
-    'data: {"provider":"dropbox","sequence":1,"filename":"asset.png","status":"loading","detail":"Loading file","terminal":false}',
-    'data: {"provider":"dropbox","sequence":2,"detected_count":1,"embedded_count":1,"upserted":1,"deleted":0,"unchanged":0,"failed":0,"terminal":true}',
+    `data: {"provider":"dropbox","sequence":1,"filename":"asset.png","status":"loading","detail":"Loading file","terminal":false}`,
+    `data: {"provider":"dropbox","sequence":2,"detected_count":1,"embedded_count":1,"upserted":1,"deleted":0,"unchanged":0,"failed":0,"terminal":true}`,
   ].join("\n\n") + "\n\n";
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payload, { status: 200 })));
   const events: unknown[] = [];
@@ -70,6 +98,8 @@ test("parses complete SSE frames", async () => {
   expect(events).toHaveLength(2);
   expect(events[1]).toMatchObject({ terminal: true });
 });
+
+
 
 test("maps a failed thumbnail response to ApiError", async () => {
   // Arrange
@@ -132,7 +162,7 @@ test("fetches embedded items for a provider", async () => {
   const result = await getAdminProviderItems("dropbox");
 
   expect(fetchMock).toHaveBeenCalledWith(
-    "/admin/sync/dropbox/items",
+    `/admin/sync/dropbox/items`,
     expect.objectContaining({ method: "GET", credentials: "include" })
   );
   expect(result).toEqual({
@@ -140,5 +170,7 @@ test("fetches embedded items for a provider", async () => {
     items: [{ point_id: "point-1", filename: "photo.png" }],
   });
 });
+
+
 
 

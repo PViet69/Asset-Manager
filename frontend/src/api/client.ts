@@ -7,9 +7,13 @@ import type {
   AdminQdrantItemsResponse,
   AdminReindexResponse,
   AdminSyncResponse,
+  ProviderMeta,
+  StorageProvider,
   SyncEvent,
   VectorSearchResponse,
 } from "../types";
+
+
 
 export function getAdminProviderItems(
   provider: string
@@ -71,9 +75,10 @@ async function postJson<T>(
 export function searchVectors(
   query: string,
   limit: number = 10,
-  provider?: "google_drive" | "dropbox",
+  provider?: StorageProvider,
   mode: "semantic" | "filename" = "semantic"
 ): Promise<VectorSearchResponse> {
+
   const body = {
     query,
     limit,
@@ -82,6 +87,17 @@ export function searchVectors(
   };
   return postJson<VectorSearchResponse>("/v1/search", body);
 }
+
+export async function getProviders(): Promise<ProviderMeta[]> {
+  const res = await fetch(`${config.apiBase}/v1/providers`, { headers: buildHeaders() });
+  if (!res.ok) await parseError(res);
+  const data = (await res.json()) as Array<{ id: string; display_name: string }>;
+  return data.map((item) => ({
+    id: item.id,
+    displayName: item.display_name,
+  }));
+}
+
 
 export async function fetchThumbnail(path: string): Promise<Blob> {
   const res = await fetch(`${config.apiBase}${path}`, { headers: buildHeaders() });
