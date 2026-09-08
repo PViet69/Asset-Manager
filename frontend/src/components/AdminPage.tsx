@@ -14,7 +14,6 @@ import {
   streamAdminSync,
 } from "../api/client";
 import type {
-  AdminAccount,
   ModelHealthStatus,
   ProviderDashboardStatus,
   QdrantItem,
@@ -40,6 +39,11 @@ type Toast = {
   readonly isDismissing?: boolean;
 };
 
+type PendingDeletion = {
+  readonly providerId: string;
+  readonly item: QdrantItem;
+};
+
 const EMPTY_DASHBOARD: DashboardState = {
   providers: [],
   embeddingModel: null,
@@ -61,8 +65,6 @@ function headingForTab(tab: AdminTab): string {
 export function AdminPage(): JSX.Element {
   document.title = "Admin Dashboard";
   const isAdminRoute = typeof window !== "undefined" && ["/admin", "/admin/dashboard"].includes(window.location.pathname);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(isAdminRoute);
   const [dashboard, setDashboard] = useState<DashboardState>(EMPTY_DASHBOARD);
@@ -71,6 +73,7 @@ export function AdminPage(): JSX.Element {
   const [activityByProvider, setActivityByProvider] = useState<Readonly<Record<string, readonly SyncActivityEvent[]>>>({});
   const [openActivityProviders, setOpenActivityProviders] = useState<ReadonlySet<string>>(new Set());
   const [deletingProviders, setDeletingProviders] = useState<ReadonlySet<string>>(new Set());
+  const [pendingDeletion, setPendingDeletion] = useState<PendingDeletion | null>(null);
   const [itemsByProvider, setItemsByProvider] = useState<Readonly<Record<string, readonly QdrantItem[] | null>>>({});
   const [openItemsProvider, setOpenItemsProvider] = useState<string | null>(null);
   const [loadingItemsProviders, setLoadingItemsProviders] = useState<ReadonlySet<string>>(new Set());
@@ -120,8 +123,7 @@ export function AdminPage(): JSX.Element {
   useEffect(() => {
     void (async () => {
       try {
-        const account = await getAdminSession();
-        setUsername(account.username);
+        await getAdminSession();
         setIsAuthenticated(true);
         if (window.location.pathname === "/admin" || window.location.pathname === "/admin/login") window.history.replaceState({}, "", "/admin/dashboard");
         await loadDashboard();
@@ -133,12 +135,10 @@ export function AdminPage(): JSX.Element {
     return () => Object.values(controllers.current).forEach((controller) => controller.abort());
   }, []);
 
-  async function submitLogin(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  async function handleLogin(enteredUsername: string, enteredPassword: string): Promise<void> {
     setLoginError(null);
-    let account: AdminAccount;
     try {
-      account = await loginAdmin(username, password);
+      await loginAdmin(enteredUsername, enteredPassword);
     } catch (caught) {
       if (caught instanceof ApiError) {
         if (caught.status === 401) {
@@ -154,8 +154,6 @@ export function AdminPage(): JSX.Element {
       return;
     }
 
-    setUsername(account.username);
-    setPassword("");
     setIsAuthenticated(true);
     window.history.pushState({}, "", "/admin/dashboard");
     await loadDashboard();
@@ -214,13 +212,18 @@ export function AdminPage(): JSX.Element {
   }
 
   useEffect(() => {
-    if (!openItemsProvider) return;
+    if (!openItemsProvider && !pendingDeletion) return;
     const closeOnEscape = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") closeProviderItems();
+      if (event.key !== "Escape") return;
+      if (pendingDeletion && !deletingProviders.has(pendingDeletion.providerId)) {
+        setPendingDeletion(null);
+        return;
+      }
+      closeProviderItems();
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [openItemsProvider]);
+  }, [openItemsProvider, pendingDeletion, deletingProviders]);
 
   const openedItemsProvider = dashboard.providers.find((provider) => provider.provider === openItemsProvider) ?? null;
   const openedItems = openItemsProvider ? itemsByProvider[openItemsProvider] ?? null : null;
@@ -257,7 +260,7 @@ export function AdminPage(): JSX.Element {
                       <button
                         type="button"
                         className="admin-delete-button"
-                        onClick={() => void deleteEmbeddedItem(openItemsProvider, item)}
+                        onClick={() => setPendingDeletion({ providerId: openItemsProvider, item })}
                         disabled={deletingProviders.has(openItemsProvider)}
                         aria-label={`Delete ${itemName}`}
                       >
@@ -274,13 +277,15 @@ export function AdminPage(): JSX.Element {
     );
   }
 
-  async function deleteEmbeddedItem(providerId: string, item: QdrantItem): Promise<void> {
+  async function deleteEmbeddedItem(): Promise<void> {
+    if (!pendingDeletion) return;
+    const { providerId, item } = pendingDeletion;
     const itemName = item.filename || item.point_id;
-    if (!window.confirm(`Delete embedded Qdrant item "${itemName}"?`)) return;
     setDeletingProviders((current) => new Set(current).add(providerId));
     try {
       await deleteAdminQdrantPoint(item.point_id);
       setItemsByProvider((current) => ({ ...current, [providerId]: (current[providerId] ?? []).filter((entry) => entry.point_id !== item.point_id) }));
+      setPendingDeletion(null);
       addToast(`Deleted embedded item "${itemName}".`, "status");
       await loadDashboard();
     } catch (caught) {
@@ -288,6 +293,25 @@ export function AdminPage(): JSX.Element {
     } finally {
       setDeletingProviders((current) => new Set([...current].filter((entry) => entry !== providerId)));
     }
+  }
+
+  function renderDeleteConfirmationDialog(): JSX.Element | null {
+    if (!pendingDeletion) return null;
+    const itemName = pendingDeletion.item.filename || pendingDeletion.item.point_id;
+    const isDeleting = deletingProviders.has(pendingDeletion.providerId);
+    return (
+      <div className="admin-items-modal-backdrop" onMouseDown={() => !isDeleting && setPendingDeletion(null)}>
+        <section className="admin-confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="admin-delete-confirmation-title" onMouseDown={(event) => event.stopPropagation()}>
+          <p className="admin-confirmation-modal__eyebrow">Remove embedded source</p>
+          <h2 id="admin-delete-confirmation-title">Remove {itemName}?</h2>
+          <p>This removes this source from vector search. This action cannot be undone.</p>
+          <div className="admin-confirmation-modal__actions">
+            <button type="button" className="admin-link-button" onClick={() => setPendingDeletion(null)} disabled={isDeleting}>Cancel</button>
+            <button type="button" className="admin-primary-button admin-primary-button--danger" onClick={() => void deleteEmbeddedItem()} disabled={isDeleting}>{isDeleting ? "Removing" : "Remove source"}</button>
+          </div>
+        </section>
+      </div>
+    );
   }
 
   async function syncProvider(providerId: string): Promise<void> {
@@ -327,6 +351,27 @@ export function AdminPage(): JSX.Element {
   }
 
   function renderProviders(): JSX.Element {
+    if (isLoadingDashboard) {
+      return (
+        <section className="admin-provider-grid" aria-label="Storage providers" aria-busy="true">
+          {["provider-a", "provider-b"].map((key) => (
+            <article className="admin-provider-card admin-skeleton-card" key={key} aria-hidden="true">
+              <div className="admin-provider-card__header">
+                <span className="admin-skeleton admin-skeleton--icon" />
+                <span className="admin-skeleton admin-skeleton--status" />
+              </div>
+              <div className="admin-skeleton admin-skeleton--provider-name" />
+              <div className="admin-provider-card__index">
+                <span className="admin-skeleton admin-skeleton--metric" />
+                <span className="admin-skeleton admin-skeleton--metric" />
+              </div>
+              <div className="admin-skeleton admin-skeleton--action" />
+            </article>
+          ))}
+        </section>
+      );
+    }
+
     return (
       <section className="admin-provider-grid" aria-label="Storage providers">
         {dashboard.providers.map((provider) => (
@@ -391,36 +436,7 @@ export function AdminPage(): JSX.Element {
                 <span>{loginError}</span>
               </div>
             )}
-            <form onSubmit={submitLogin}>
-              <div className="admin-login-field">
-                <label htmlFor="admin-username">Username</label>
-                <input
-                  id="admin-username"
-                  autoComplete="username"
-                  value={username}
-                  onChange={(event) => {
-                    setUsername(event.target.value);
-                    setLoginError(null);
-                  }}
-                  required
-                />
-              </div>
-              <div className="admin-login-field">
-                <label htmlFor="admin-password">Password</label>
-                <input
-                  id="admin-password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value);
-                    setLoginError(null);
-                  }}
-                  required
-                />
-              </div>
-              <button className="admin-primary-button admin-login-submit" type="submit"><span>Sign in</span><span aria-hidden="true">→</span></button>
-            </form>
+            <AdminLoginForm onSubmit={handleLogin} onClearError={() => setLoginError(null)} />
             <p className="admin-login-footer">Restricted to authorized workspace administrators.</p>
             <ToastList toasts={toasts} />
           </section>
@@ -437,12 +453,72 @@ export function AdminPage(): JSX.Element {
           <button type="button" className="admin-menu-button" onClick={() => setIsMobileNavigationOpen(true)} aria-label="Open navigation">Menu</button>
           <div>
             <h1>{headingForTab(activeTab)}</h1>
-            <span>{username}</span>
           </div>
           <button type="button" className="admin-link-button" onClick={() => void handleLogout()}>Sign out</button>
         </header>
 
         {activeTab === "dashboards" ? (() => {
+          if (isLoadingDashboard) {
+            return (
+              <section className="admin-metrics-grid" aria-label="Key operational metrics" aria-busy="true">
+                <article className="admin-metric-panel admin-chart-panel admin-skeleton-card" aria-hidden="true">
+                  <header className="admin-panel-header">
+                    <div>
+                      <span className="admin-skeleton admin-skeleton--label" />
+                      <div className="admin-panel-metric-row">
+                        <span className="admin-skeleton admin-skeleton--metric-val" />
+                        <span className="admin-skeleton admin-skeleton--trend" />
+                      </div>
+                    </div>
+                    <div className="admin-provider-tabs">
+                      <span className="admin-skeleton admin-skeleton--tab-chip" />
+                      <span className="admin-skeleton admin-skeleton--tab-chip" />
+                    </div>
+                  </header>
+
+                  <div className="admin-chart-viewport">
+                    <div className="admin-skeleton-chart-bars">
+                      <span className="admin-skeleton admin-skeleton--bar" style={{ height: "65%" }} />
+                      <span className="admin-skeleton admin-skeleton--bar" style={{ height: "90%" }} />
+                      <span className="admin-skeleton admin-skeleton--bar" style={{ height: "45%" }} />
+                    </div>
+                  </div>
+
+                  <footer className="admin-panel-footer">
+                    <div className="admin-chart-legend">
+                      <span className="admin-skeleton admin-skeleton--legend" />
+                      <span className="admin-skeleton admin-skeleton--legend" />
+                    </div>
+                  </footer>
+                </article>
+
+                <article className="admin-metric-panel admin-coverage-panel admin-skeleton-card" aria-hidden="true">
+                  <header className="admin-panel-header">
+                    <div>
+                      <span className="admin-skeleton admin-skeleton--label" />
+                      <span className="admin-skeleton admin-skeleton--desc" />
+                    </div>
+                  </header>
+
+                  <div className="admin-coverage-card-body">
+                    <div className="admin-coverage-visual-stage">
+                      <div className="admin-skeleton admin-skeleton--gauge" />
+                    </div>
+
+                    <div className="admin-coverage-ledger">
+                      <div className="admin-coverage-ledger-row">
+                        <span className="admin-skeleton admin-skeleton--ledger-row" />
+                      </div>
+                      <div className="admin-coverage-ledger-row">
+                        <span className="admin-skeleton admin-skeleton--ledger-row" />
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              </section>
+            );
+          }
+
           const totalDetected = dashboard.providers.reduce((acc, p) => acc + (p.detected_count ?? 0), 0);
           const totalEmbedded = dashboard.providers.reduce((acc, p) => acc + (p.embedded_count ?? 0), 0);
           const coveragePct = totalDetected > 0 ? Math.round((totalEmbedded / totalDetected) * 100) : 0;
@@ -702,7 +778,6 @@ export function AdminPage(): JSX.Element {
                     </svg>
                     <div className="admin-coverage-visual-center">
                       <span className="admin-coverage-pct">{coveragePct}<span className="admin-coverage-pct-unit">%</span></span>
-                      <span className="admin-coverage-sub-label">Covered</span>
                     </div>
                   </div>
 
@@ -727,7 +802,7 @@ export function AdminPage(): JSX.Element {
         })() : null}
 
         {activeTab === "dashboards" || activeTab === "providers" ? renderProviders() : null}
-        {activeTab === "dashboards" || activeTab === "models" ? <AdminModelHealth embeddingModel={dashboard.embeddingModel} descriptionModel={dashboard.descriptionModel} /> : null}
+        {activeTab === "dashboards" || activeTab === "models" ? <AdminModelHealth embeddingModel={dashboard.embeddingModel} descriptionModel={dashboard.descriptionModel} isLoading={isLoadingDashboard} /> : null}
         {activeTab === "logs" ? (
           <section className="admin-log-panel" aria-label="Sync activity logs">
             {Object.values(activityByProvider).flat().length === 0 ? <p>No activity in this session.</p> : (
@@ -744,6 +819,7 @@ export function AdminPage(): JSX.Element {
           </section>
         ) : null}
         {renderItemsDialog()}
+        {renderDeleteConfirmationDialog()}
         <ToastList toasts={toasts} />
       </main>
     </div>
@@ -757,3 +833,57 @@ function ToastList({ toasts }: { readonly toasts: readonly Toast[] }): JSX.Eleme
     </div>
   );
 }
+
+interface AdminLoginFormProps {
+  readonly onSubmit: (username: string, password: string) => Promise<void>;
+  readonly onClearError: () => void;
+}
+
+function AdminLoginForm({ onSubmit, onClearError }: AdminLoginFormProps): JSX.Element {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    await onSubmit(username, password);
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div className="admin-login-field">
+        <label htmlFor="admin-username">Username</label>
+        <input
+          id="admin-username"
+          name="username"
+          autoComplete="username"
+          value={username}
+          onChange={(event) => {
+            setUsername(event.target.value);
+            onClearError();
+          }}
+          required
+        />
+      </div>
+      <div className="admin-login-field">
+        <label htmlFor="admin-password">Password</label>
+        <input
+          id="admin-password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => {
+            setPassword(event.target.value);
+            onClearError();
+          }}
+          required
+        />
+      </div>
+      <button className="admin-primary-button admin-login-submit" type="submit">
+        <span>Sign in</span>
+        <span aria-hidden="true">→</span>
+      </button>
+    </form>
+  );
+}
+

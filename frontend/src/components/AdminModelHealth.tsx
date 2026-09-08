@@ -3,6 +3,7 @@ import type { ModelHealthStatus } from "../types";
 export interface AdminModelHealthProps {
   readonly embeddingModel: ModelHealthStatus | null;
   readonly descriptionModel: ModelHealthStatus | null;
+  readonly isLoading?: boolean;
 }
 
 function healthLabel(health: string): string {
@@ -11,7 +12,20 @@ function healthLabel(health: string): string {
   return "Unavailable";
 }
 
-export function AdminModelHealth({ embeddingModel, descriptionModel }: AdminModelHealthProps): JSX.Element {
+export function AdminModelHealth({ embeddingModel, descriptionModel, isLoading }: AdminModelHealthProps): JSX.Element {
+  if (isLoading) {
+    return (
+      <section className="admin-model-health" aria-label="Model health" aria-busy="true">
+        {["embedding", "description"].map((key) => (
+          <article className="admin-model-health__card admin-skeleton-card" key={key} aria-hidden="true">
+            <span className="admin-skeleton admin-skeleton--badge" />
+            <span className="admin-skeleton admin-skeleton--model-name" />
+          </article>
+        ))}
+      </section>
+    );
+  }
+
   const models = [
     {
       role: "Embedding",

@@ -218,6 +218,23 @@ test("restores session on page load", async () => {
   expect(await screen.findByRole("region", { name: "Storage providers" })).toBeInTheDocument();
 });
 
+test("renders skeleton cards across overview metrics, providers, and model health while dashboard is loading", async () => {
+  let resolveStatus!: (value: Awaited<ReturnType<typeof getAdminSyncStatus>>) => void;
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockReturnValue(new Promise((resolve) => {
+    resolveStatus = resolve;
+  }));
+
+  render(<AdminPage />);
+
+  expect(await screen.findByRole("region", { name: "Key operational metrics" })).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByRole("region", { name: "Storage providers" })).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByRole("region", { name: "Model health" })).toHaveAttribute("aria-busy", "true");
+
+  resolveStatus(dashboard);
+  expect(await screen.findByText("18 / 20")).toBeInTheDocument();
+});
+
 test("returns to login when provider status returns 401", async () => {
   // Arrange
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
@@ -291,7 +308,6 @@ test("does not show provider search filters in the admin dashboard", async () =>
 
 test("loads and displays embedded provider items and allows deleting an item", async () => {
   const user = userEvent.setup();
-  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
   mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
   mockedGetAdminProviderItems.mockResolvedValue({
@@ -317,7 +333,11 @@ test("loads and displays embedded provider items and allows deleting an item", a
   const deleteBtn = within(dialog).getByRole("button", { name: "Delete dropbox-file-1.pdf" });
   await user.click(deleteBtn);
 
-  expect(confirmSpy).toHaveBeenCalledWith('Delete embedded Qdrant item "dropbox-file-1.pdf"?');
+  const confirmation = await screen.findByRole("dialog", { name: "Remove dropbox-file-1.pdf?" });
+  expect(mockedDeleteAdminQdrantPoint).not.toHaveBeenCalled();
+
+  await user.click(within(confirmation).getByRole("button", { name: "Remove source" }));
+
   expect(mockedDeleteAdminQdrantPoint).toHaveBeenCalledWith("p1");
   expect(await screen.findByText('Deleted embedded item "dropbox-file-1.pdf".')).toBeInTheDocument();
   expect(screen.queryByText("dropbox-file-1.pdf")).not.toBeInTheDocument();

@@ -3395,6 +3395,125 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   box-sizing: border-box;
 }
 
+/* Admin Skeleton Loading States */
+.admin-skeleton-card {
+  pointer-events: none;
+  user-select: none;
+}
+
+.admin-skeleton {
+  display: block;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.12) 25%, rgba(148, 163, 184, 0.24) 50%, rgba(148, 163, 184, 0.12) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite ease-in-out;
+  border-radius: 6px;
+}
+
+.admin-skeleton--icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+}
+
+.admin-skeleton--status {
+  width: 64px;
+  height: 22px;
+  border-radius: 12px;
+}
+
+.admin-skeleton--provider-name {
+  width: 140px;
+  height: 20px;
+  margin: 10px 0 16px;
+}
+
+.admin-skeleton--metric {
+  width: 80px;
+  height: 28px;
+}
+
+.admin-skeleton--action {
+  width: 96px;
+  height: 32px;
+  margin-left: auto;
+  border-radius: 6px;
+}
+
+.admin-skeleton--badge {
+  width: 72px;
+  height: 20px;
+  border-radius: 6px;
+}
+
+.admin-skeleton--model-name {
+  width: 160px;
+  height: 22px;
+  margin-top: 6px;
+}
+
+.admin-skeleton--label {
+  width: 110px;
+  height: 14px;
+  margin-bottom: 8px;
+}
+
+.admin-skeleton--desc {
+  width: 150px;
+  height: 12px;
+  margin-top: 4px;
+}
+
+.admin-skeleton--metric-val {
+  width: 64px;
+  height: 32px;
+}
+
+.admin-skeleton--trend {
+  width: 88px;
+  height: 22px;
+  border-radius: 12px;
+}
+
+.admin-skeleton--tab-chip {
+  width: 64px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.admin-skeleton-chart-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  height: 140px;
+  padding: 10px 20px;
+  gap: 24px;
+  border-bottom: 1px solid rgba(111, 137, 171, 0.12);
+}
+
+.admin-skeleton--bar {
+  flex: 0 1 48px;
+  min-height: 24px;
+  border-radius: 6px 6px 0 0;
+}
+
+.admin-skeleton--legend {
+  width: 68px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.admin-skeleton--gauge {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  margin: 12px auto;
+}
+
+.admin-skeleton--ledger-row {
+  width: 100%;
+  height: 26px;
+}
+
 /* Admin Sign-in */
 .admin-login-shell {
   grid-template-columns: minmax(0, 1fr);
