@@ -7,9 +7,8 @@ from dataclasses import dataclass, field
 from backend.app.config import Settings
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.integrations.qdrant_store import QdrantStore
+from backend.app.storage import StorageProvider
 from backend.app.storage.client import (
-    DROPBOX_PROVIDER,
-    GOOGLE_DRIVE_PROVIDER,
     StorageClient,
     build_dropbox_client,
     build_google_drive_client,
@@ -17,7 +16,6 @@ from backend.app.storage.client import (
     is_google_drive_configured,
 )
 from backend.app.storage.scheduler import StorageSyncScheduler
-
 
 HEALTH_CACHE_TTL_SECONDS = 5 * 60
 
@@ -34,15 +32,18 @@ class ProviderHealthCache:
     def get(self) -> str:
         """Return cached health, refreshing only after cache expiry."""
         with self._lock:
-            if time.monotonic() - self._checked_at >= HEALTH_CACHE_TTL_SECONDS:
-                self._health = self._client.check_health()
-                self._checked_at = time.monotonic()
-            return self._health
+            if time.monotonic() - self._checked_at < HEALTH_CACHE_TTL_SECONDS:
+                return self._health
+        return self.refresh()
 
     def refresh(self) -> str:
         """Run a provider health check and replace cached health."""
+        try:
+            new_health = self._client.check_health()
+        except Exception:  # noqa: BLE001
+            new_health = "unavailable"
         with self._lock:
-            self._health = self._client.check_health()
+            self._health = new_health
             self._checked_at = time.monotonic()
             return self._health
 
@@ -53,6 +54,7 @@ class ProviderSync:
     display_name: str
     client: StorageClient
     scheduler: StorageSyncScheduler | None
+    root: str | None = None
     health_cache: ProviderHealthCache = field(init=False)
 
     def __post_init__(self) -> None:
@@ -89,30 +91,33 @@ def build_provider_registry(
     dropbox_client = build_dropbox_client(settings)
     entries = (
         ProviderSync(
-            GOOGLE_DRIVE_PROVIDER,
-            "Google Drive",
+            StorageProvider.GOOGLE_DRIVE,
+            StorageProvider.GOOGLE_DRIVE.display_name,
             drive_client,
             _build_scheduler(
-                GOOGLE_DRIVE_PROVIDER,
+                StorageProvider.GOOGLE_DRIVE,
                 drive_client,
                 settings.DRIVE_FOLDER_ID,
                 is_google_drive_configured(settings),
                 ingestion_service,
                 qdrant_store,
             ),
+            settings.DRIVE_FOLDER_ID,
         ),
         ProviderSync(
-            DROPBOX_PROVIDER,
-            "Dropbox",
+            StorageProvider.DROPBOX,
+            StorageProvider.DROPBOX.display_name,
             dropbox_client,
             _build_scheduler(
-                DROPBOX_PROVIDER,
+                StorageProvider.DROPBOX,
                 dropbox_client,
                 settings.DROPBOX_ROOT_PATH,
                 is_dropbox_configured(settings),
                 ingestion_service,
                 qdrant_store,
             ),
+            settings.DROPBOX_ROOT_PATH,
         ),
     )
+
     return ProviderRegistry(entries)

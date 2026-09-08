@@ -10,6 +10,7 @@ from backend.app.api.schemas.file_embeddings import (
     FileEmbeddingResponse,
 )
 from backend.app.api.schemas.vector_search import (
+    MAX_SEARCH_QUERY_LENGTH,
     VectorSearchItem,
     VectorSearchResponse,
 )
@@ -98,13 +99,31 @@ class FileIngestionService:
         """Embed query text without storing it."""
         return self._model_client.embed_text(text)
 
-    def search(self, query: str, limit: int) -> VectorSearchResponse:
-        """Search stored vectors by embedded query text."""
-        threshold = self._settings.SEARCH_THRESHOLD if self._settings else None
-        if threshold is None:
-            raise SettingsError("Search is not configured")
-        vector = self._model_client.embed_text(query)
-        hits = self._qdrant_store.search(vector, limit=limit, score_threshold=threshold)
+    def search(
+        self,
+        query: str,
+        limit: int,
+        provider: str | None = None,
+        mode: str = "semantic",
+    ) -> VectorSearchResponse:
+        query = query.strip()
+        if len(query) > MAX_SEARCH_QUERY_LENGTH:
+            raise ValueError(
+                f"Search query exceeds maximum allowed length of {MAX_SEARCH_QUERY_LENGTH} characters"
+            )
+        if mode == "filename":
+            hits = self._qdrant_store.find_by_filename(
+                query, limit=limit, provider=provider
+            )
+        else:
+            threshold = self._settings.SEARCH_THRESHOLD if self._settings else None
+            if threshold is None:
+                raise SettingsError("Search is not configured")
+            vector = self._model_client.embed_text(query)
+            search_kwargs = {"limit": limit, "score_threshold": threshold}
+            if provider is not None:
+                search_kwargs["provider"] = provider
+            hits = self._qdrant_store.search(vector, **search_kwargs)
         items = [
             self._to_search_item(hit) for hit in hits if self._has_full_payload(hit)
         ]
@@ -159,6 +178,7 @@ class FileIngestionService:
         provider = payload.get("provider")
         storage_file_id = payload.get("storage_file_id")
         source_url = payload.get("source_url")
+        modified_time = payload.get("modified_time")
         return VectorSearchItem(
             point_id=hit.point_id,
             score=hit.score,
@@ -175,6 +195,11 @@ class FileIngestionService:
             ),
             thumbnail_url=FileIngestionService._thumbnail_url(
                 provider, storage_file_id, payload["file_type"]
+            ),
+            modified_time=(
+                str(modified_time)
+                if isinstance(modified_time, str) and modified_time
+                else None
             ),
         )
 

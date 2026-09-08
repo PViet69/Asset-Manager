@@ -6,6 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
+from backend.app.storage import StorageProvider
 from backend.app.storage.client import (
     StorageThumbnailNotFound,
     StorageThumbnailUnavailable,
@@ -28,14 +29,19 @@ class _Scheduler:
 
 
 def _registry(
-    client: Mock, scheduler: _Scheduler | None = _Scheduler("dropbox")
+    client: Mock, scheduler: _Scheduler | None = _Scheduler(StorageProvider.DROPBOX)
 ) -> ProviderRegistry:
-    return ProviderRegistry((ProviderSync("dropbox", "Dropbox", client, scheduler),))
+    return ProviderRegistry(
+        (ProviderSync(StorageProvider.DROPBOX, "Dropbox", client, scheduler),)
+    )
+
+
 
 
 @pytest.mark.unit
 def test_indexed_thumbnail_source_is_immutable() -> None:
-    source = IndexedThumbnailSource("dropbox", "id:photo", "image/png")
+    source = IndexedThumbnailSource(StorageProvider.DROPBOX, "id:photo", "image/png")
+
 
     with pytest.raises((AttributeError, TypeError)):
         source.file_type = "image/jpeg"  # type: ignore[misc]
@@ -49,7 +55,7 @@ def test_find_indexed_thumbnail_source_requires_exact_identity() -> None:
     service = ThumbnailService(_registry(client), ingestion)
 
     with pytest.raises(ThumbnailSourceNotFound):
-        service.get_thumbnail("dropbox", "id:not-indexed")
+        service.get_thumbnail(StorageProvider.DROPBOX, "id:not-indexed")
 
     client.get_thumbnail.assert_not_called()
 
@@ -58,14 +64,15 @@ def test_find_indexed_thumbnail_source_requires_exact_identity() -> None:
 def test_thumbnail_service_rejects_indexed_non_image() -> None:
     ingestion = Mock(spec=FileIngestionService)
     ingestion.find_indexed_thumbnail_source.return_value = IndexedThumbnailSource(
-        "dropbox", "id:pdf", "application/pdf"
+        StorageProvider.DROPBOX, "id:pdf", "application/pdf"
     )
     client = Mock()
 
     with pytest.raises(UnsupportedThumbnailSource):
         ThumbnailService(_registry(client), ingestion).get_thumbnail(
-            "dropbox", "id:pdf"
+            StorageProvider.DROPBOX, "id:pdf"
         )
+
 
     client.get_thumbnail.assert_not_called()
 
@@ -74,13 +81,13 @@ def test_thumbnail_service_rejects_indexed_non_image() -> None:
 def test_thumbnail_service_rejects_disabled_provider() -> None:
     ingestion = Mock(spec=FileIngestionService)
     ingestion.find_indexed_thumbnail_source.return_value = IndexedThumbnailSource(
-        "dropbox", "id:photo", "image/png"
+        StorageProvider.DROPBOX, "id:photo", "image/png"
     )
     client = Mock()
 
     with pytest.raises(ThumbnailProviderDisabled):
         ThumbnailService(_registry(client, scheduler=None), ingestion).get_thumbnail(
-            "dropbox", "id:photo"
+            StorageProvider.DROPBOX, "id:photo"
         )
 
     client.get_thumbnail.assert_not_called()
@@ -90,14 +97,14 @@ def test_thumbnail_service_rejects_disabled_provider() -> None:
 def test_thumbnail_service_maps_provider_errors_without_leaking_details() -> None:
     ingestion = Mock(spec=FileIngestionService)
     ingestion.find_indexed_thumbnail_source.return_value = IndexedThumbnailSource(
-        "dropbox", "id:photo", "image/png"
+        StorageProvider.DROPBOX, "id:photo", "image/png"
     )
     client = Mock()
     client.get_thumbnail.side_effect = StorageThumbnailUnavailable()
 
     with pytest.raises(ThumbnailProviderUnavailable) as raised:
         ThumbnailService(_registry(client), ingestion).get_thumbnail(
-            "dropbox", "id:photo"
+            StorageProvider.DROPBOX, "id:photo"
         )
 
     assert "Storage thumbnail unavailable" not in str(raised.value)
@@ -107,16 +114,17 @@ def test_thumbnail_service_maps_provider_errors_without_leaking_details() -> Non
 def test_thumbnail_service_returns_provider_thumbnail_for_indexed_image() -> None:
     ingestion = Mock(spec=FileIngestionService)
     ingestion.find_indexed_thumbnail_source.return_value = IndexedThumbnailSource(
-        "dropbox", "id:photo", "image/png"
+        StorageProvider.DROPBOX, "id:photo", "image/png"
     )
     client = Mock()
     client.get_thumbnail.return_value = Thumbnail(b"image", "image/jpeg")
+    service = ThumbnailService(_registry(client), ingestion)
 
-    thumbnail = ThumbnailService(_registry(client), ingestion).get_thumbnail(
-        "dropbox", "id:photo"
-    )
+    first_thumbnail = service.get_thumbnail(StorageProvider.DROPBOX, "id:photo")
+    second_thumbnail = service.get_thumbnail(StorageProvider.DROPBOX, "id:photo")
 
-    assert thumbnail == Thumbnail(b"image", "image/jpeg")
+    assert first_thumbnail == Thumbnail(b"image", "image/jpeg")
+    assert second_thumbnail == first_thumbnail
     client.get_thumbnail.assert_called_once_with("id:photo")
 
 
@@ -124,12 +132,13 @@ def test_thumbnail_service_returns_provider_thumbnail_for_indexed_image() -> Non
 def test_thumbnail_service_maps_provider_not_found_to_source_not_found() -> None:
     ingestion = Mock(spec=FileIngestionService)
     ingestion.find_indexed_thumbnail_source.return_value = IndexedThumbnailSource(
-        "dropbox", "id:photo", "image/png"
+        StorageProvider.DROPBOX, "id:photo", "image/png"
     )
     client = Mock()
     client.get_thumbnail.side_effect = StorageThumbnailNotFound()
 
     with pytest.raises(ThumbnailSourceNotFound):
         ThumbnailService(_registry(client), ingestion).get_thumbnail(
-            "dropbox", "id:photo"
+            StorageProvider.DROPBOX, "id:photo"
         )
+

@@ -3,17 +3,19 @@
 import base64
 import logging
 import threading
+import time
 from typing import Protocol
 
 import instructor
 import magic
 from instructor.core.exceptions import InstructorRetryException
+from openai import APIConnectionError, APIError, APITimeoutError, NotFoundError, OpenAI
 from pydantic import ValidationError
 
 from backend.app.exceptions import ModelEndpointError, ModelNotFoundError
+from backend.app.integrations.model_client import GLOBAL_MODEL_LOCK
 from backend.app.model.prompt_model import ImageDescription
 from backend.app.model.prompts import CAPTIONING_PROMPT
-from openai import APIConnectionError, APIError, APITimeoutError, NotFoundError, OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,9 @@ MAX_DESCRIPTION_RETRIES = 0
 
 class ImageDescriptionClient(Protocol):
     """Boundary for converting validated image bytes into structured text."""
+
+    @property
+    def model_name(self) -> str: ...
 
     def describe(self, image_bytes: bytes) -> ImageDescription: ...
     def check_health(self) -> str: ...
@@ -62,6 +67,11 @@ class InstructorImageDescriptionClient:
         self._client = instructor.patch(sdk_client, mode=instructor.Mode.JSON)
         self._description_model = description_model
 
+    @property
+    def model_name(self) -> str:
+        """Return configured description model identity."""
+        return self._description_model
+
     @classmethod
     def from_client(
         cls,
@@ -78,60 +88,69 @@ class InstructorImageDescriptionClient:
     def describe(self, image_bytes: bytes) -> ImageDescription:
         """Return validated retrieval fields for supported image bytes."""
         data_url = self._build_data_url(image_bytes)
-        try:
-            description = self._client.chat.completions.create(
-                model=self._description_model,
-                response_model=ImageDescription,
-                max_retries=MAX_DESCRIPTION_RETRIES,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": CAPTIONING_PROMPT},
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                with GLOBAL_MODEL_LOCK:
+                    description = self._client.chat.completions.create(
+                        model=self._description_model,
+                        response_model=ImageDescription,
+                        max_retries=MAX_DESCRIPTION_RETRIES,
+                        messages=[
                             {
-                                "type": "image_url",
-                                "image_url": {"url": data_url},
-                            },
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": CAPTIONING_PROMPT},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": data_url},
+                                    },
+                                ],
+                            }
                         ],
-                    }
-                ],
-            )
-        except APITimeoutError as exc:
-            logger.error("Model endpoint timed out during image description")
-            raise ModelEndpointError("Model endpoint timed out", exc) from exc
-        except NotFoundError as exc:
-            logger.error("Configured description model not found")
-            raise ModelNotFoundError(exc) from exc
-        except (
-            APIConnectionError,
-            APIError,
-            InstructorRetryException,
-            ValidationError,
-        ) as exc:
+                    )
+                if isinstance(description, ImageDescription):
+                    return description
+            except NotFoundError as exc:
+                logger.error("Configured description model not found")
+                raise ModelNotFoundError(exc) from exc
+            except (
+                APITimeoutError,
+                APIConnectionError,
+                APIError,
+                InstructorRetryException,
+                ValidationError,
+            ) as exc:
+                last_exc = exc
+                logger.warning(
+                    "Model endpoint attempt %d failed to describe image: %s",
+                    attempt + 1,
+                    _failure_detail(exc),
+                )
+                if attempt < 2:
+                    time.sleep(1.0 * (attempt + 1))
+                    continue
+
+        if last_exc is not None:
             logger.error(
                 "Model endpoint failed to describe image: %s",
-                _failure_detail(exc),
+                _failure_detail(last_exc),
             )
-            raise ModelEndpointError(
-                "Model endpoint failed to describe image",
-                exc,
-            ) from exc
-
-        if not isinstance(description, ImageDescription):
-            raise ModelEndpointError(
-                "Model endpoint returned an invalid image description"
-            )
-        return description
+            if isinstance(last_exc, APITimeoutError):
+                raise ModelEndpointError("Model endpoint timed out", last_exc) from last_exc
+            raise ModelEndpointError("Model endpoint failed to describe image", last_exc) from last_exc
+        raise ModelEndpointError("Model endpoint returned an invalid image description")
 
     def check_health(self) -> str:
         """Check endpoint liveness and configured model availability."""
         try:
-            response = self._sdk_client.models.list()
-            model_ids = {
-                item.id
-                for item in getattr(response, "data", ())
-                if isinstance(getattr(item, "id", None), str)
-            }
+            with GLOBAL_MODEL_LOCK:
+                response = self._sdk_client.models.list()
+                model_ids = {
+                    item.id
+                    for item in getattr(response, "data", ())
+                    if isinstance(getattr(item, "id", None), str)
+                }
         except Exception:  # noqa: BLE001
             return "unavailable"
         return "ok" if self._description_model in model_ids else "unavailable"

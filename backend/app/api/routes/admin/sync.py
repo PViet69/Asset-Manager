@@ -3,13 +3,21 @@
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 
+from backend.app.admin_dashboard.status_service import AdminDashboardStatusService
+from backend.app.admin_dashboard.sync_stream import ProviderSyncStream
 from backend.app.api.schemas.admin import (
+    AdminDashboardStatusResponse,
+    AdminDeletePointResponse,
+    AdminProviderRefreshResponse,
+    AdminQdrantItemsResponse,
     AdminReindexResponse,
     AdminSyncResponse,
-    AdminSyncStatusResponse,
-    ProviderSyncStatus,
+    QdrantItemSchema,
 )
+from backend.app.exceptions import QdrantStorageError
+from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.security import require_admin_access, require_admin_origin
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 from backend.app.storage.scheduler import StorageSyncScheduler
@@ -19,6 +27,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 def _registry(request: Request) -> ProviderRegistry:
     return request.app.state.provider_registry
+
+
+def _dashboard_service(request: Request) -> AdminDashboardStatusService:
+    return request.app.state.admin_dashboard_status_service
 
 
 def _provider_or_404(request: Request, provider: str) -> ProviderSync:
@@ -61,28 +73,62 @@ async def trigger_sync(provider: str, request: Request) -> AdminSyncResponse:
 
 @router.get(
     "/sync/status",
-    response_model=AdminSyncStatusResponse,
+    response_model=AdminDashboardStatusResponse,
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(require_admin_access)],
 )
-async def sync_status(request: Request) -> AdminSyncStatusResponse:
-    providers = []
-    for entry in _registry(request).providers:
-        last = entry.scheduler.last_result if entry.scheduler else None
-        providers.append(
-            ProviderSyncStatus(
-                provider=entry.name,
-                display_name=entry.display_name,
-                enabled=entry.scheduler is not None,
-                health=await asyncio.to_thread(entry.health_cache.get),
-                last_upserted=last.upserted if last else None,
-                last_deleted=last.deleted if last else None,
-                last_unchanged=last.unchanged if last else None,
-                last_failed=last.failed if last else None,
-                last_traces=list(last.traces) if last else [],
-            )
-        )
-    return AdminSyncStatusResponse(providers=providers)
+async def sync_status(request: Request) -> AdminDashboardStatusResponse:
+    return await _dashboard_service(request).get_status()
+
+
+@router.post(
+    "/sync/{provider}/refresh",
+    response_model=AdminProviderRefreshResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
+)
+async def refresh_provider(
+    provider: str, request: Request
+) -> AdminProviderRefreshResponse:
+    _provider_or_404(request, provider)
+    try:
+        return await _dashboard_service(request).refresh_provider(provider)
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Unknown storage provider"
+        ) from None
+
+
+@router.post(
+    "/sync/{provider}/stream",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
+)
+async def stream_sync(provider: str, request: Request) -> StreamingResponse:
+    scheduler = _scheduler_or_503(_provider_or_404(request, provider))
+
+    async def snapshot(selected_provider: str):
+        return (
+            await _dashboard_service(request).refresh_provider(selected_provider)
+        ).provider
+
+    stream = ProviderSyncStream(provider, scheduler, snapshot)
+    return StreamingResponse(
+        stream.run(),
+        media_type="text/event-stream",
+        headers={"Content-Encoding": "identity", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post(
+    "/sync/{provider}/stop",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
+)
+async def stop_sync(provider: str, request: Request) -> dict[str, str]:
+    scheduler = _scheduler_or_503(_provider_or_404(request, provider))
+    scheduler.stop_sync()
+    return {"status": "stopping", "provider": provider}
 
 
 @router.post(
@@ -99,3 +145,67 @@ async def reindex_storage_file(
     return AdminReindexResponse(
         provider=provider, storage_file_id=storage_file_id, deleted=deleted
     )
+
+
+@router.get(
+    "/sync/{provider}/items",
+    response_model=AdminQdrantItemsResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access)],
+)
+async def list_provider_items(
+    provider: str, request: Request
+) -> AdminQdrantItemsResponse:
+    _provider_or_404(request, provider)
+    qdrant_store = request.app.state.health_dependencies.qdrant_store
+    try:
+        hits = await asyncio.to_thread(
+            qdrant_store.find_all_with_storage_key, provider
+        )
+    except QdrantStorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.safe_message
+        ) from exc
+
+    items = [
+        QdrantItemSchema(
+            point_id=hit.point_id,
+            filename=hit.payload.get("filename")
+            or hit.payload.get("file_path")
+            or hit.point_id,
+            file_path=hit.payload.get("file_path"),
+            storage_file_id=hit.payload.get("storage_file_id"),
+            file_type=hit.payload.get("file_type"),
+            thumbnail_url=FileIngestionService._thumbnail_url(
+                provider,
+                hit.payload.get("storage_file_id"),
+                hit.payload.get("file_type"),
+            ),
+            modified_time=hit.payload.get("modified_time"),
+        )
+        for hit in hits
+    ]
+    return AdminQdrantItemsResponse(provider=provider, items=items)
+
+
+@router.post(
+    "/sync/qdrant/delete/{point_id}",
+    response_model=AdminDeletePointResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
+)
+async def delete_qdrant_point(
+    point_id: str, request: Request
+) -> AdminDeletePointResponse:
+    qdrant_store = request.app.state.health_dependencies.qdrant_store
+    try:
+        deleted = await asyncio.to_thread(
+            qdrant_store.delete_by_point_ids, [point_id]
+        )
+    except QdrantStorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.safe_message
+        ) from exc
+    return AdminDeletePointResponse(point_id=point_id, deleted=deleted)
+
+

@@ -8,8 +8,11 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 from backend.app.config import Settings
 from backend.app.exceptions import QdrantStorageError
 from backend.app.integrations.qdrant_store import QdrantEmbeddingStore, SearchHit
+from backend.app.storage import StorageProvider
 
 COLLECTION = "configured_embeddings"
+
+
 
 
 @pytest.mark.unit
@@ -393,6 +396,34 @@ def test_search_returns_hits_above_threshold() -> None:
 
 
 @pytest.mark.unit
+def test_search_filters_by_provider_when_requested() -> None:
+    client = Mock()
+    store = QdrantEmbeddingStore.from_client(
+        client,
+        vector_size=2,
+        collection=COLLECTION,
+    )
+    client.query_points.return_value = Mock(points=[])
+
+    store.search(
+        [0.1, 0.2],
+        limit=5,
+        score_threshold=0.4,
+        provider=StorageProvider.GOOGLE_DRIVE,
+    )
+
+    client.query_points.assert_called_once_with(
+        collection_name=COLLECTION,
+        query=[0.1, 0.2],
+        limit=5,
+        score_threshold=0.4,
+        query_filter=store._key_filter(StorageProvider.GOOGLE_DRIVE),
+    )
+
+
+
+
+@pytest.mark.unit
 def test_search_without_payload_returns_empty_payload_dict() -> None:
     client = Mock()
     store = QdrantEmbeddingStore.from_client(
@@ -427,3 +458,27 @@ def test_search_failure_becomes_safe_chained_error() -> None:
 
     assert str(exc_info.value) == "Qdrant storage failure"
     assert exc_info.value.__cause__ is failure
+
+
+@pytest.mark.unit
+def test_find_by_filename_filters_case_insensitively() -> None:
+    client = Mock()
+    store = QdrantEmbeddingStore.from_client(
+        client,
+        vector_size=2,
+        collection=COLLECTION,
+    )
+    p1 = Mock()
+    p1.id = "point-1"
+    p1.payload = {"filename": "Q3_Report_Final.pdf"}
+    p2 = Mock()
+    p2.id = "point-2"
+    p2.payload = {"filename": "photo_sunset.jpg"}
+
+    client.scroll.return_value = ([p1, p2], None)
+
+    hits = store.find_by_filename("report", limit=5)
+
+    assert len(hits) == 1
+    assert hits[0].point_id == "point-1"
+    assert hits[0].payload["filename"] == "Q3_Report_Final.pdf"

@@ -1,5 +1,7 @@
 """Unit tests for storage provider adapters."""
 
+import logging
+import ssl
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -8,9 +10,8 @@ from unittest.mock import Mock
 import pytest
 
 from backend.app.config import Settings
+from backend.app.storage import StorageProvider
 from backend.app.storage.client import (
-    DROPBOX_PROVIDER,
-    GOOGLE_DRIVE_PROVIDER,
     DisabledStorageClient,
     DropboxClient,
     GoogleDriveClient,
@@ -52,6 +53,26 @@ def test_unconfigured_google_drive_returns_disabled_client() -> None:
 
 
 @pytest.mark.unit
+def test_google_drive_health_failure_logs_without_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client = GoogleDriveClient.__new__(GoogleDriveClient)
+    client._root_folder_id = "root"
+    files = Mock()
+    files.get.return_value = Mock(
+        execute=Mock(side_effect=ssl.SSLError("record layer failure"))
+    )
+    client._service = Mock(files=Mock(return_value=files))
+
+    with caplog.at_level(logging.WARNING):
+        health = client.check_health()
+
+    assert health == "unavailable"
+    assert "Google Drive health check failed" in caplog.text
+    assert "Traceback" not in caplog.text
+
+
+@pytest.mark.unit
 def test_google_drive_lists_recursively_and_maps_provider_metadata() -> None:
     client = GoogleDriveClient.__new__(GoogleDriveClient)
     client._service = _DriveService(
@@ -85,7 +106,7 @@ def test_google_drive_lists_recursively_and_maps_provider_metadata() -> None:
     )
     files = client.list_files("root")
     assert [file.storage_file_id for file in files] == ["image", "file"]
-    assert all(file.provider == GOOGLE_DRIVE_PROVIDER for file in files)
+    assert all(file.provider == StorageProvider.GOOGLE_DRIVE for file in files)
     assert files[0].source_url == "https://drive.google.com/file/d/image/view"
 
 
@@ -111,7 +132,7 @@ def test_dropbox_lists_paged_supported_files_and_downloads() -> None:
     files = client.list_files("/team")
     downloaded = client.download("id-1")
     assert [file.storage_file_id for file in files] == ["id-1"]
-    assert files[0].provider == DROPBOX_PROVIDER
+    assert files[0].provider == StorageProvider.DROPBOX
     assert files[0].modified_time == datetime(2026, 8, 1, tzinfo=timezone.utc)
     assert downloaded.file.modified_time == datetime(2026, 8, 1, tzinfo=timezone.utc)
     assert downloaded.content == b"hello"
@@ -120,8 +141,14 @@ def test_dropbox_lists_paged_supported_files_and_downloads() -> None:
 @pytest.mark.unit
 def test_storage_file_is_immutable() -> None:
     file = StorageFile(
-        GOOGLE_DRIVE_PROVIDER, "id", "x", "text/plain", datetime.now(timezone.utc), 0
+        StorageProvider.GOOGLE_DRIVE,
+        "id",
+        "x",
+        "text/plain",
+        datetime.now(timezone.utc),
+        0,
     )
+
     with pytest.raises((AttributeError, TypeError)):
         file.name = "changed"  # type: ignore[misc]
 
@@ -129,7 +156,8 @@ def test_storage_file_is_immutable() -> None:
 @pytest.mark.unit
 def test_disabled_storage_thumbnail_raises_safe_unavailable_error() -> None:
     with pytest.raises(StorageThumbnailUnavailable, match="thumbnail unavailable"):
-        DisabledStorageClient(DROPBOX_PROVIDER).get_thumbnail("id:photo")
+        DisabledStorageClient(StorageProvider.DROPBOX).get_thumbnail("id:photo")
+
 
 
 @pytest.mark.unit

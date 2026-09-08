@@ -4,10 +4,12 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from backend.app.storage import StorageProvider
+
 DEFAULT_SEARCH_LIMIT = 10
 MIN_SEARCH_LIMIT = 1
 MAX_SEARCH_LIMIT = 100
-MAX_SEARCH_QUERY_LENGTH = 8_192
+MAX_SEARCH_QUERY_LENGTH = 4_190
 
 SearchQuery = Annotated[
     str,
@@ -25,9 +27,13 @@ class VectorSearchRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     query: SearchQuery
+    mode: Literal["semantic", "filename"] = "semantic"
     limit: int = Field(
         default=DEFAULT_SEARCH_LIMIT, ge=MIN_SEARCH_LIMIT, le=MAX_SEARCH_LIMIT
     )
+    provider: StorageProvider | None = None
+
+
 
 
 class VectorSearchItem(BaseModel):
@@ -45,6 +51,7 @@ class VectorSearchItem(BaseModel):
     provider: str | None = None
     storage_file_id: str | None = None
     thumbnail_url: str | None = None
+    modified_time: str | None = None
 
 
 class VectorSearchResponse(BaseModel):
@@ -54,3 +61,13 @@ class VectorSearchResponse(BaseModel):
 
     object: Literal["list"] = "list"
     data: list[VectorSearchItem]
+
+
+class StorageProviderInfo(BaseModel):
+    """Storage provider metadata returned to clients."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    display_name: str
+

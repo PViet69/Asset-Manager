@@ -27,3 +27,12 @@ test("shows Asset Manager title on public search route", () => {
   expect(screen.getByRole("heading", { name: "Asset Manager" })).toBeInTheDocument();
   expect(document.title).toBe("Asset Manager");
 });
+
+test("renders AdminPage for /admin, /admin/login, and /admin/dashboard routes", () => {
+  for (const path of ["/admin", "/admin/login", "/admin/dashboard"]) {
+    window.history.replaceState({}, "", path);
+    const { unmount } = render(<App />);
+    expect(screen.getByText("Admin page")).toBeInTheDocument();
+    unmount();
+  }
+});

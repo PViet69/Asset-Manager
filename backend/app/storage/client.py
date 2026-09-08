@@ -2,6 +2,7 @@
 
 import json
 import logging
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
@@ -9,11 +10,11 @@ from typing import Any, Protocol
 from urllib.parse import quote
 
 from backend.app.config import Settings
+from backend.app.storage import StorageProvider
 
 logger = logging.getLogger(__name__)
 
-GOOGLE_DRIVE_PROVIDER = "google_drive"
-DROPBOX_PROVIDER = "dropbox"
+
 _GOOGLE_NATIVE_MIMES: dict[str, str] = {
     "application/vnd.google-apps.document": (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -129,7 +130,7 @@ def is_dropbox_configured(settings: Settings) -> bool:
 
 def build_google_drive_client(settings: Settings) -> StorageClient:
     if not is_google_drive_configured(settings):
-        return DisabledStorageClient(GOOGLE_DRIVE_PROVIDER)
+        return DisabledStorageClient(StorageProvider.GOOGLE_DRIVE)
     return GoogleDriveClient(
         json.loads(settings.DRIVE_SERVICE_ACCOUNT_JSON), settings.DRIVE_FOLDER_ID
     )  # type: ignore[arg-type]
@@ -137,13 +138,14 @@ def build_google_drive_client(settings: Settings) -> StorageClient:
 
 def build_dropbox_client(settings: Settings) -> StorageClient:
     if not is_dropbox_configured(settings):
-        return DisabledStorageClient(DROPBOX_PROVIDER)
+        return DisabledStorageClient(StorageProvider.DROPBOX)
     return DropboxClient(
         settings.DROPBOX_APP_KEY,
         settings.DROPBOX_APP_SECRET,
         settings.DROPBOX_REFRESH_TOKEN,
         settings.DROPBOX_ROOT_PATH,
     )  # type: ignore[arg-type]
+
 
 
 def _parse_modified_time(raw: str | None) -> datetime:
@@ -168,16 +170,26 @@ class GoogleDriveClient:
             service_account_info,
             scopes=["https://www.googleapis.com/auth/drive.readonly"],
         )
+        self._session = AuthorizedSession(credentials)
+        self._thumbnail_session = self._session
         self._service = build(
             "drive", "v3", credentials=credentials, cache_discovery=False
         )
-        self._thumbnail_session = AuthorizedSession(credentials)
         self._root_folder_id = root_folder_id
 
+    @property
+    def _lock(self) -> threading.Lock:
+        lock = getattr(self, "_lock_attr", None)
+        if lock is None:
+            lock = threading.Lock()
+            object.__setattr__(self, "_lock_attr", lock)
+        return lock
+
     def list_files(self, root: str) -> list[StorageFile]:
-        files: list[StorageFile] = []
-        self._walk(root, files)
-        return files
+        with self._lock:
+            files: list[StorageFile] = []
+            self._walk(root, files)
+            return files
 
     def _walk(self, folder_id: str, output: list[StorageFile]) -> None:
         page_token: str | None = None
@@ -189,6 +201,8 @@ class GoogleDriveClient:
                     fields="nextPageToken,files(id,name,mimeType,modifiedTime,size,parents)",
                     pageToken=page_token,
                     pageSize=100,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
                 )
                 .execute()
             )
@@ -203,70 +217,78 @@ class GoogleDriveClient:
                 return
 
     def download(self, storage_file_id: str) -> DownloadedStorageFile:
-        metadata = (
-            self._service.files()
-            .get(
-                fileId=storage_file_id,
-                fields="id,name,mimeType,modifiedTime,size,parents",
-            )
-            .execute()
-        )
-        file = _to_google_file(metadata)
-        export_mime = _GOOGLE_NATIVE_MIMES.get(file.mime_type)
-        if export_mime:
-            content = (
-                self._service.files()
-                .export(fileId=storage_file_id, mimeType=export_mime)
-                .execute()
-            )
-        else:
-            content = self._service.files().get_media(fileId=storage_file_id).execute()
-        return DownloadedStorageFile(
-            file, content if isinstance(content, bytes) else b"", export_mime
-        )
-
-    def get_thumbnail(self, storage_file_id: str) -> Thumbnail:
-        try:
+        with self._lock:
             metadata = (
                 self._service.files()
-                .get(fileId=storage_file_id, fields="thumbnailLink")
+                .get(
+                    fileId=storage_file_id,
+                    fields="id,name,mimeType,modifiedTime,size,parents",
+                    supportsAllDrives=True,
+                )
                 .execute()
             )
-            thumbnail_link = metadata.get("thumbnailLink")
-            if not isinstance(thumbnail_link, str) or not thumbnail_link:
-                raise StorageThumbnailUnavailable()
-            response = self._thumbnail_session.get(thumbnail_link)
-            media_type = str(response.headers.get("content-type", "")).split(";", 1)[0]
-            content = bytes(response.content)
-            if (
-                not response.ok
-                or media_type not in _THUMBNAIL_MIME_TYPES
-                or not content
-            ):
-                raise StorageThumbnailUnavailable()
-            return Thumbnail(content, media_type)
-        except StorageThumbnailUnavailable:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise StorageThumbnailUnavailable() from exc
+            file = _to_google_file(metadata)
+            export_mime = _GOOGLE_NATIVE_MIMES.get(file.mime_type)
+            if export_mime:
+                content = (
+                    self._service.files()
+                    .export(fileId=storage_file_id, mimeType=export_mime)
+                    .execute()
+                )
+            else:
+                content = self._service.files().get_media(fileId=storage_file_id).execute()
+            return DownloadedStorageFile(
+                file, content if isinstance(content, bytes) else b"", export_mime
+            )
+
+    def get_thumbnail(self, storage_file_id: str) -> Thumbnail:
+        with self._lock:
+            try:
+                metadata = (
+                    self._service.files()
+                    .get(fileId=storage_file_id, fields="thumbnailLink")
+                    .execute()
+                )
+                thumbnail_link = metadata.get("thumbnailLink")
+                session = getattr(self, "_thumbnail_session", None) or getattr(self, "_session", None)
+                if session is None:
+                    raise StorageThumbnailUnavailable()
+                response = session.get(thumbnail_link)
+                media_type = str(response.headers.get("content-type", "")).split(";", 1)[0]
+                content = bytes(response.content)
+                if (
+                    not response.ok
+                    or media_type not in _THUMBNAIL_MIME_TYPES
+                    or not content
+                ):
+                    raise StorageThumbnailUnavailable()
+                return Thumbnail(content, media_type)
+            except StorageThumbnailUnavailable:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                raise StorageThumbnailUnavailable() from exc
 
     def check_health(self) -> str:
-        try:
-            self._service.files().get(
-                fileId=self._root_folder_id, fields="id"
-            ).execute()
-        except Exception:  # noqa: BLE001
-            logger.warning("Google Drive health check failed", exc_info=True)
-            return "unavailable"
-        return "ok"
+        with self._lock:
+            try:
+                self._service.files().get(
+                    fileId=self._root_folder_id,
+                    fields="id",
+                    supportsAllDrives=True,
+                ).execute()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Google Drive health check failed: %s", exc)
+                return "unavailable"
+            return "ok"
 
 
 def _to_google_file(item: dict[str, Any]) -> StorageFile:
     storage_file_id = str(item["id"])
     return StorageFile(
-        GOOGLE_DRIVE_PROVIDER,
+        StorageProvider.GOOGLE_DRIVE,
         storage_file_id,
         str(item.get("name", "")),
+
         str(item.get("mimeType", "")),
         _parse_modified_time(item.get("modifiedTime")),
         int(item.get("size") or 0),
@@ -285,6 +307,14 @@ class DropboxClient:
         )
         self._root_path = root_path
 
+    @property
+    def _lock(self) -> threading.Lock:
+        lock = getattr(self, "_lock_attr", None)
+        if lock is None:
+            lock = threading.Lock()
+            object.__setattr__(self, "_lock_attr", lock)
+        return lock
+
     @classmethod
     def from_client(cls, client: Any, root_path: str) -> "DropboxClient":
         instance = cls.__new__(cls)
@@ -293,49 +323,53 @@ class DropboxClient:
         return instance
 
     def list_files(self, root: str) -> list[StorageFile]:
-        page = self._client.files_list_folder(root, recursive=True)
-        entries = list(page.entries)
-        while page.has_more:
-            page = self._client.files_list_folder_continue(page.cursor)
-            entries.extend(page.entries)
-        return [
-            file for entry in entries if (file := _to_dropbox_file(entry)) is not None
-        ]
+        with self._lock:
+            page = self._client.files_list_folder(root, recursive=True)
+            entries = list(page.entries)
+            while page.has_more:
+                page = self._client.files_list_folder_continue(page.cursor)
+                entries.extend(page.entries)
+            return [
+                file for entry in entries if (file := _to_dropbox_file(entry)) is not None
+            ]
 
     def download(self, storage_file_id: str) -> DownloadedStorageFile:
-        metadata, response = self._client.files_download(storage_file_id)
-        file = _to_dropbox_file(metadata, require_supported=False)
-        if file is None:
-            raise RuntimeError("Dropbox download metadata is invalid")
-        return DownloadedStorageFile(file, bytes(response.content))
+        with self._lock:
+            metadata, response = self._client.files_download(storage_file_id)
+            file = _to_dropbox_file(metadata, require_supported=False)
+            if file is None:
+                raise RuntimeError("Dropbox download metadata is invalid")
+            return DownloadedStorageFile(file, bytes(response.content))
 
     def get_thumbnail(self, storage_file_id: str) -> Thumbnail:
-        try:
-            from dropbox import files
+        with self._lock:
+            try:
+                from dropbox import files
 
-            _, response = self._client.files_get_thumbnail_v2(
-                files.PathOrLink.path(storage_file_id),
-                format=files.ThumbnailFormat.jpeg,
-                size=files.ThumbnailSize.w256h256,
-                mode=files.ThumbnailMode.strict,
-                exclude_media_info=True,
-            )
-            content = bytes(response.content)
-            if not content:
-                raise StorageThumbnailUnavailable()
-            return Thumbnail(content, "image/jpeg")
-        except StorageThumbnailUnavailable:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise StorageThumbnailUnavailable() from exc
+                _, response = self._client.files_get_thumbnail_v2(
+                    files.PathOrLink.path(storage_file_id),
+                    format=files.ThumbnailFormat.jpeg,
+                    size=files.ThumbnailSize.w256h256,
+                    mode=files.ThumbnailMode.strict,
+                    exclude_media_info=True,
+                )
+                content = bytes(response.content)
+                if not content:
+                    raise StorageThumbnailUnavailable()
+                return Thumbnail(content, "image/jpeg")
+            except StorageThumbnailUnavailable:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                raise StorageThumbnailUnavailable() from exc
 
     def check_health(self) -> str:
-        try:
-            self._client.files_get_metadata(self._root_path)
-        except Exception:  # noqa: BLE001
-            logger.warning("Dropbox health check failed", exc_info=True)
-            return "unavailable"
-        return "ok"
+        with self._lock:
+            try:
+                self._client.files_get_metadata(self._root_path)
+            except Exception:  # noqa: BLE001
+                logger.warning("Dropbox health check failed", exc_info=True)
+                return "unavailable"
+            return "ok"
 
 
 def _to_dropbox_file(entry: Any, require_supported: bool = True) -> StorageFile | None:
@@ -352,8 +386,9 @@ def _to_dropbox_file(entry: Any, require_supported: bool = True) -> StorageFile 
     if modified_time.tzinfo is None:
         modified_time = modified_time.replace(tzinfo=timezone.utc)
     return StorageFile(
-        DROPBOX_PROVIDER,
+        StorageProvider.DROPBOX,
         file_id,
+
         str(getattr(entry, "name", PurePosixPath(path).name)),
         mime_type or "application/octet-stream",
         modified_time,

@@ -8,6 +8,7 @@ from backend.app.integrations.qdrant_store import (
     QdrantEmbeddingStore,
     stable_point_id,
 )
+from backend.app.storage import StorageProvider
 
 
 def _store() -> QdrantEmbeddingStore:
@@ -22,24 +23,31 @@ def _payload(provider: str, storage_file_id: str) -> dict[str, str]:
 
 def test_storage_key_filter_prevents_cross_provider_id_collisions() -> None:
     store = _store()
-    store.store_embedding([0.1, 0.2], _payload("google_drive", "same"))
-    store.store_embedding([0.3, 0.4], _payload("dropbox", "same"))
-    assert len(store.find_by_storage_key("google_drive", "same")) == 1
-    assert len(store.find_by_storage_key("dropbox", "same")) == 1
-    assert store.delete_by_storage_key("dropbox", "same") == 1
-    assert len(store.find_by_storage_key("google_drive", "same")) == 1
+    store.store_embedding([0.1, 0.2], _payload(StorageProvider.GOOGLE_DRIVE, "same"))
+    store.store_embedding([0.3, 0.4], _payload(StorageProvider.DROPBOX, "same"))
+    assert len(store.find_by_storage_key(StorageProvider.GOOGLE_DRIVE, "same")) == 1
+    assert len(store.find_by_storage_key(StorageProvider.DROPBOX, "same")) == 1
+    assert store.delete_by_storage_key(StorageProvider.DROPBOX, "same") == 1
+    assert len(store.find_by_storage_key(StorageProvider.GOOGLE_DRIVE, "same")) == 1
 
 
 def test_provider_listing_skips_legacy_records() -> None:
     store = _store()
-    store.store_embedding([0.1, 0.2], _payload("dropbox", "one"))
+    store.store_embedding([0.1, 0.2], _payload(StorageProvider.DROPBOX, "one"))
     store.store_embedding([0.3, 0.4], {})
     assert [
         hit.payload[PAYLOAD_STORAGE_FILE_ID]
-        for hit in store.find_all_with_storage_key("dropbox")
+        for hit in store.find_all_with_storage_key(StorageProvider.DROPBOX)
     ] == ["one"]
 
 
 def test_stable_point_id_is_provider_qualified() -> None:
-    assert stable_point_id("dropbox", "same") == stable_point_id("dropbox", "same")
-    assert stable_point_id("dropbox", "same") != stable_point_id("google_drive", "same")
+    assert stable_point_id(StorageProvider.DROPBOX, "same") == stable_point_id(
+        StorageProvider.DROPBOX, "same"
+    )
+    assert stable_point_id(StorageProvider.DROPBOX, "same") != stable_point_id(
+        StorageProvider.GOOGLE_DRIVE, "same"
+    )
+
+
+

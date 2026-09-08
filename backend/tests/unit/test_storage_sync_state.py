@@ -5,14 +5,23 @@ from datetime import datetime, timezone
 import pytest
 
 from backend.app.integrations.qdrant_store import SearchHit
+from backend.app.storage import StorageProvider
 from backend.app.storage.client import StorageFile
 from backend.app.storage.sync_state import SyncState
 
 
 def _file(identifier: str, modified: datetime) -> StorageFile:
     return StorageFile(
-        "dropbox", identifier, f"{identifier}.txt", "text/plain", modified, 0
+        StorageProvider.DROPBOX,
+        identifier,
+        f"{identifier}.txt",
+        "text/plain",
+        modified,
+        0,
     )
+
+
+
 
 
 @pytest.mark.unit
