@@ -99,15 +99,9 @@ test("sends selected provider with search request", async () => {
   fireEvent.change(screen.getByLabelText("Query"), {
     target: { value: "campaign report" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  await waitFor(() => {
-    expect(screen.getByRole("option", { name: "Google Drive" })).toBeInTheDocument();
-  });
-  fireEvent.change(screen.getByLabelText("Provider"), {
-    target: { value: "google_drive" },
-  });
+  const providerBtn = await screen.findByRole("button", { name: /Google Drive/i });
+  fireEvent.click(providerBtn);
   fireEvent.click(screen.getByRole("button", { name: "Search" }));
-
 
   // Assert
   await waitFor(() => {
@@ -118,24 +112,15 @@ test("sends selected provider with search request", async () => {
       "semantic"
     );
   });
-
-
-
 });
 
-test("hides Search Results input and triggers real-time search on typing in filename mode", async () => {
+test("triggers real-time search on typing in filename mode", async () => {
   // Arrange
   mockedSearchVectors.mockResolvedValue({ object: "list", data: [] });
   render(<SearchPanel />);
 
-  // Open Settings popover
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  expect(screen.getByLabelText("Search Results")).toBeInTheDocument();
-
   // Switch to filename mode
-  fireEvent.change(screen.getByLabelText("Search Mode"), {
-    target: { value: "filename" },
-  });
+  fireEvent.click(screen.getByRole("tab", { name: "Filename Match" }));
 
   // Act: type query
   fireEvent.change(screen.getByLabelText("Query"), {
@@ -179,11 +164,8 @@ test("sorts search results by date in filename search mode (newest and oldest fi
   });
   render(<SearchPanel />);
 
-  // Open Settings popover and switch to filename mode
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  fireEvent.change(screen.getByLabelText("Search Mode"), {
-    target: { value: "filename" },
-  });
+  // Switch to filename mode
+  fireEvent.click(screen.getByRole("tab", { name: "Filename Match" }));
 
   fireEvent.change(screen.getByLabelText("Query"), {
     target: { value: "doc.pdf" },
@@ -216,23 +198,9 @@ test("sorts search results by date in filename search mode (newest and oldest fi
   expect(resultList.children[1]).toHaveTextContent("new-doc.pdf");
 });
 
-test("closes search options popover when clicking outside but keeps open when clicking inside", () => {
+test("does not render the settings button", () => {
   render(<SearchPanel />);
-
-  const settingsButton = screen.getByRole("button", { name: "Settings" });
-  fireEvent.click(settingsButton);
-
-  const popover = screen.getByRole("dialog", { name: "Settings popover" });
-  expect(popover).toBeInTheDocument();
-
-  // Click inside popover (e.g. on Search Mode dropdown)
-  const searchModeSelect = screen.getByLabelText("Search Mode");
-  fireEvent.mouseDown(searchModeSelect);
-  expect(screen.getByRole("dialog", { name: "Settings popover" })).toBeInTheDocument();
-
-  // Click outside (e.g. on document body)
-  fireEvent.mouseDown(document.body);
-  expect(screen.queryByRole("dialog", { name: "Settings popover" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Settings" })).not.toBeInTheDocument();
 });
 
 

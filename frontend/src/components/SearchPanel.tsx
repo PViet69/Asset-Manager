@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { ApiError, getProviders, searchVectors } from "../api/client";
 import type {
   ProviderMeta,
@@ -50,20 +50,14 @@ export type SearchPanelProps = {
 
 export function SearchPanel({
   externalTopK,
-  onTopKChange,
 }: SearchPanelProps = {}): JSX.Element {
   const [query, setQuery] = useState<string>("");
-  const [internalTopK, setInternalTopK] = useState<string>(String(DEFAULT_TOP_K));
-  const topK = externalTopK !== undefined ? externalTopK : internalTopK;
-  const setTopK = onTopKChange || setInternalTopK;
+  const topK = externalTopK ?? String(DEFAULT_TOP_K);
   const [provider, setProvider] = useState<ProviderFilter>("");
   const [providers, setProviders] = useState<readonly ProviderMeta[]>([]);
   const [searchMode, setSearchMode] = useState<SearchMode>("semantic");
   const [sortBy, setSortBy] = useState<SortOrder>("relevance");
-  const [showSettings, setShowSettings] = useState<boolean>(false);
   const [state, setState] = useState<SearchState>({ kind: "idle" });
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const popoverRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -76,34 +70,6 @@ export function SearchPanel({
       isMounted = false;
     };
   }, []);
-
-
-  useEffect(() => {
-    if (!showSettings) return;
-
-    function handleClickOutside(event: MouseEvent) {
-      const target = event.target as Node;
-      const clickedButton = buttonRef.current && buttonRef.current.contains(target);
-      const clickedPopover = popoverRef.current && popoverRef.current.contains(target);
-
-      if (!clickedButton && !clickedPopover) {
-        setShowSettings(false);
-      }
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setShowSettings(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [showSettings]);
 
   useEffect(() => {
     if (state.kind !== "error") return;
@@ -278,36 +244,6 @@ export function SearchPanel({
 
           <div className="search-bar-actions">
             <button
-              ref={buttonRef}
-              type="button"
-              className={`config-btn ${showSettings ? "active" : ""} ${provider || (searchMode === "semantic" && topK !== String(DEFAULT_TOP_K)) ? "config-btn--active-filter" : ""}`}
-              onClick={() => setShowSettings(!showSettings)}
-              aria-label="Settings"
-              title="Search Settings & Filters"
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="4" y1="21" x2="4" y2="14" />
-                <line x1="4" y1="10" x2="4" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="12" />
-                <line x1="12" y1="8" x2="12" y2="3" />
-                <line x1="20" y1="21" x2="20" y2="16" />
-                <line x1="20" y1="12" x2="20" y2="3" />
-                <line x1="1" y1="14" x2="7" y2="14" />
-                <line x1="9" y1="8" x2="15" y2="8" />
-                <line x1="17" y1="16" x2="23" y2="16" />
-              </svg>
-            </button>
-
-            <button
               className="primary"
               type="submit"
               disabled={state.kind === "submitting" || query.trim().length === 0}
@@ -315,84 +251,13 @@ export function SearchPanel({
               {state.kind === "submitting" ? "Searching…" : "Search"}
             </button>
           </div>
-
-          {showSettings && (
-            <div className="config-popover glass" role="dialog" aria-label="Settings popover" ref={popoverRef}>
-              <div className="popover-header">
-                <h3>Search Options</h3>
-                <button
-                  type="button"
-                  className="popover-close-btn"
-                  onClick={() => setShowSettings(false)}
-                  aria-label="Close settings"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="config-fields">
-                <div>
-                  <label className="field" htmlFor="search-mode">
-                    Search Mode
-                  </label>
-                  <div className="input">
-                    <select
-                      id="search-mode"
-                      value={searchMode}
-                      onChange={(e) => setSearchMode(e.target.value as SearchMode)}
-                    >
-                      <option value="semantic">Semantic Search (AI)</option>
-                      <option value="filename">Filename Search</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="field" htmlFor="search-provider">
-                    Provider
-                  </label>
-                  <div className="input">
-                    <select
-                      id="search-provider"
-                      value={provider}
-                      onChange={(e) => setProvider(e.target.value as ProviderFilter)}
-                    >
-                      <option value="">All providers</option>
-                      {providers.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.displayName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {searchMode === "semantic" && (
-                  <div>
-                    <label className="field" htmlFor="search-k">
-                      Search Results
-                    </label>
-                    <div className="input">
-                      <input
-                        id="search-k"
-                        type="number"
-                        min={MIN_TOP_K}
-                        max={MAX_TOP_K}
-                        value={topK}
-                        onChange={(e) => setTopK(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
       </form>
 
       {/* Quick Provider Filters */}
       {providers.length > 0 && (
         <div className="search-quick-providers" aria-label="Filter by provider">
+          <span className="search-quick-providers__label">Provider:</span>
           <button
             type="button"
             className={`search-filter-chip ${provider === "" ? "search-filter-chip--active" : ""}`}
