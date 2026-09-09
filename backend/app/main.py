@@ -36,6 +36,7 @@ from backend.app.security import (
 )
 from backend.app.storage.registry import ProviderRegistry, build_provider_registry
 from backend.app.storage.thumbnail_cache import ThumbnailCache
+from backend.app.tag_settings.store import TagSettingsStore
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ def create_app(
     health_dependencies: HealthDependencies | None = None,
     admin_auth_config: AdminAuthConfig | None = None,
     provider_registry: ProviderRegistry | None = None,
+    tag_settings_store: TagSettingsStore | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
@@ -62,6 +64,7 @@ def create_app(
         effective_health_dependencies = health_dependencies
         effective_admin_auth_config = admin_auth_config
         effective_provider_registry = provider_registry
+        effective_tag_settings_store = tag_settings_store
 
         settings = Settings() if effective_service is None else None
         if effective_admin_auth_config is None:
@@ -83,6 +86,8 @@ def create_app(
             )
             model_client = OpenAICompatibleModelClient(settings)
             qdrant_store = QdrantEmbeddingStore(settings)
+            if effective_tag_settings_store is None:
+                effective_tag_settings_store = TagSettingsStore.from_settings(settings)
             effective_service = FileIngestionService(
                 description_client=description_client,
                 model_client=model_client,
@@ -113,7 +118,11 @@ def create_app(
         assert effective_health_dependencies is not None
         assert effective_admin_auth_config is not None
         effective_service.startup()
+        if effective_tag_settings_store is not None:
+            effective_tag_settings_store.ensure_collection()
         application.state.file_ingestion_service = effective_service
+        if effective_tag_settings_store is not None:
+            application.state.tag_settings_store = effective_tag_settings_store
         application.state.health_dependencies = effective_health_dependencies
         application.state.admin_auth_config = effective_admin_auth_config
         application.state.upload_rate_limiter = InMemoryRateLimiter()
@@ -133,6 +142,7 @@ def create_app(
         finally:
             for key in (
                 "file_ingestion_service",
+                "tag_settings_store",
                 "health_dependencies",
                 "admin_auth_config",
                 "upload_rate_limiter",

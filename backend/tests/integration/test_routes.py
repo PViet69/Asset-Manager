@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from io import BytesIO
-from unittest.mock import ANY, Mock
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -28,6 +28,7 @@ from backend.app.integrations.qdrant_store import QdrantStore
 from backend.app.main import create_app
 from backend.app.model.description_client import ImageDescriptionClient
 from backend.app.security import MAX_REQUEST_SIZE
+from backend.app.tag_settings.store import TagSettingsStore
 
 
 @dataclass(frozen=True)
@@ -527,6 +528,47 @@ def test_injected_service_starts_once_on_testclient_lifespan(
 
     with TestClient(create_app(service=service)):
         service.startup.assert_called_once_with()
+
+
+@pytest.mark.integration
+def test_injected_tag_settings_store_starts_on_testclient_lifespan() -> None:
+    service = Mock(spec=FileIngestionService)
+    tag_settings_store = Mock(spec=TagSettingsStore)
+    app = create_app(service=service, tag_settings_store=tag_settings_store)
+
+    with TestClient(app) as client:
+        assert client.app.state.tag_settings_store is tag_settings_store
+        tag_settings_store.ensure_collection.assert_called_once_with()
+
+
+@pytest.mark.integration
+def test_default_tag_settings_store_uses_application_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tag_settings_store = Mock(spec=TagSettingsStore)
+    settings = Mock()
+    settings.DESCRIPTION_ENDPOINT_URL = "https://description.example"
+    settings.DESCRIPTION_ENDPOINT_API_KEY = "description-key"
+    settings.DESCRIPTION_MODEL = "description-model"
+    settings.MODEL_REQUEST_TIMEOUT = 30
+    settings.QDRANT_COLLECTION = "assets"
+    settings.QDRANT_VECTOR_SIZE = 2
+    with (
+        patch("backend.app.main.Settings", return_value=settings),
+        patch(
+            "backend.app.main.TagSettingsStore.from_settings",
+            return_value=tag_settings_store,
+        ) as factory,
+        patch("backend.app.main.InstructorImageDescriptionClient"),
+        patch("backend.app.main.OpenAICompatibleModelClient"),
+        patch("backend.app.main.QdrantEmbeddingStore"),
+        patch("backend.app.main.build_provider_registry", return_value=Mock()),
+    ):
+        with TestClient(create_app()):
+            pass
+
+    factory.assert_called_once_with(settings)
+    tag_settings_store.ensure_collection.assert_called_once_with()
 
 
 @pytest.mark.integration

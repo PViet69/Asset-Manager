@@ -17,6 +17,7 @@ from backend.app.main import create_app
 from backend.app.storage import StorageProvider
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 from backend.app.storage.scheduler import SyncTickResult
+from backend.app.tag_settings.store import TagIndexResult, TagSettingsStore
 
 
 @dataclass
@@ -53,8 +54,6 @@ class _Qdrant:
 
     def delete_by_point_ids(self, point_ids: list[str]) -> int:
         return len(point_ids)
-
-
 
 
 @dataclass(frozen=True)
@@ -116,13 +115,11 @@ def _registry(
                     dropbox if dropbox_enabled else None,
                     "/dropbox-root" if dropbox_enabled else None,
                 ),
-
             )
         ),
         drive,
         dropbox,
     )
-
 
 
 TEST_ORIGIN = "https://admin.example.test"
@@ -155,6 +152,113 @@ def _login(client: TestClient) -> None:
         headers={"Origin": TEST_ORIGIN},
     )
     assert response.status_code == 200
+
+
+@pytest.mark.integration
+def test_admin_tag_discovery_indexes_and_returns_grouped_tags() -> None:
+    registry, _, _ = _registry()
+    tag_settings_store = Mock(spec=TagSettingsStore)
+    tag_settings_store.discover_and_index.return_value = TagIndexResult(
+        indexed_assets=2,
+        tags=("color:black", "subject:laptop"),
+    )
+    app = _app(registry)
+    app.state.tag_settings_store = tag_settings_store
+
+    with TestClient(app, base_url="https://testserver") as client:
+        _login(client)
+        response = client.post("/admin/tags/discover", headers={"Origin": TEST_ORIGIN})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "indexed_assets": 2,
+        "groups": [
+            {"category": "Colors", "tags": ["color:black"]},
+            {"category": "Subjects", "tags": ["subject:laptop"]},
+        ],
+    }
+    tag_settings_store.discover_and_index.assert_called_once_with()
+
+
+@pytest.mark.integration
+def test_admin_tags_returns_grouped_approved_tags() -> None:
+    registry, _, _ = _registry()
+    tag_settings_store = Mock(spec=TagSettingsStore)
+    tag_settings_store.get_approved_tags.return_value = (
+        "color:black",
+        "subject:laptop",
+    )
+    app = _app(registry)
+    app.state.tag_settings_store = tag_settings_store
+
+    with TestClient(app, base_url="https://testserver") as client:
+        _login(client)
+        response = client.get("/admin/tags")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "groups": [
+            {"category": "Colors", "tags": ["color:black"]},
+            {"category": "Subjects", "tags": ["subject:laptop"]},
+        ]
+    }
+
+
+@pytest.mark.integration
+def test_admin_tags_saves_selected_discovered_tags() -> None:
+    registry, _, _ = _registry()
+    tag_settings_store = Mock(spec=TagSettingsStore)
+    tag_settings_store.replace_approved_tags.return_value = (
+        "color:black",
+        "subject:laptop",
+    )
+    app = _app(registry)
+    app.state.tag_settings_store = tag_settings_store
+
+    with TestClient(app, base_url="https://testserver") as client:
+        _login(client)
+        response = client.put(
+            "/admin/tags",
+            json={
+                "discovered_tags": ["color:black", "subject:laptop"],
+                "approved_tags": ["subject:laptop", "color:black"],
+            },
+            headers={"Origin": TEST_ORIGIN},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "groups": [
+            {"category": "Colors", "tags": ["color:black"]},
+            {"category": "Subjects", "tags": ["subject:laptop"]},
+        ]
+    }
+    tag_settings_store.replace_approved_tags.assert_called_once_with(
+        ["subject:laptop", "color:black"]
+    )
+
+
+@pytest.mark.integration
+def test_admin_tags_rejects_selected_tags_outside_discovery() -> None:
+    registry, _, _ = _registry()
+    tag_settings_store = Mock(spec=TagSettingsStore)
+    app = _app(registry)
+    app.state.tag_settings_store = tag_settings_store
+
+    with TestClient(app, base_url="https://testserver") as client:
+        _login(client)
+        response = client.put(
+            "/admin/tags",
+            json={
+                "discovered_tags": ["subject:laptop"],
+                "approved_tags": ["color:black"],
+            },
+            headers={"Origin": TEST_ORIGIN},
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "Approved tags must come from discovered tags"}
+    tag_settings_store.replace_approved_tags.assert_not_called()
 
 
 @pytest.mark.integration
@@ -251,8 +355,6 @@ def test_refresh_requires_allowed_origin_and_refreshes_one_provider() -> None:
     assert rejected.status_code == 403
     assert accepted.status_code == 200
     assert accepted.json()["provider"]["provider"] == StorageProvider.DROPBOX
-
-
 
 
 @pytest.mark.integration
@@ -375,8 +477,6 @@ def test_list_provider_items_returns_items() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "provider": StorageProvider.DROPBOX,
-
-
         "items": [
             {
                 "point_id": "point-1",
@@ -389,5 +489,3 @@ def test_list_provider_items_returns_items() -> None:
             }
         ],
     }
-
-
