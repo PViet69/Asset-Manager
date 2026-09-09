@@ -109,6 +109,44 @@ def test_search_passes_provider_filter(app: FastAPI) -> None:
     )
 
 
+@pytest.mark.integration
+def test_tag_search_passes_approved_tags_without_query(app: FastAPI) -> None:
+    service = make_search_service()
+    service.search.return_value = VectorSearchResponse(data=[])
+    override_ingestion_service(app, service)
+    tag_settings_store = Mock()
+    tag_settings_store.get_approved_tags.return_value = ("subject:laptop",)
+    app.state.tag_settings_store = tag_settings_store
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/search",
+            json={"query": "", "mode": "tag", "tags": ["subject:laptop"]},
+        )
+
+    assert response.status_code == 200
+    service.search.assert_called_once_with(
+        "", limit=10, provider=None, mode="tag", tags=["subject:laptop"]
+    )
+
+
+@pytest.mark.integration
+def test_tag_search_rejects_unapproved_tag(app: FastAPI) -> None:
+    service = make_search_service()
+    override_ingestion_service(app, service)
+    tag_settings_store = Mock()
+    tag_settings_store.get_approved_tags.return_value = ("subject:laptop",)
+    app.state.tag_settings_store = tag_settings_store
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/search",
+            json={"mode": "tag", "tags": ["color:black"]},
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "One or more tags are not approved for search"}
+    service.search.assert_not_called()
 
 
 @pytest.mark.integration
@@ -231,8 +269,26 @@ def test_list_providers_returns_all_storage_providers(app: FastAPI) -> None:
         for p in providers
     )
     assert any(
-        p["id"] == "dropbox" and p["display_name"] == "Dropbox"
-        for p in providers
+        p["id"] == "dropbox" and p["display_name"] == "Dropbox" for p in providers
     )
 
 
+@pytest.mark.integration
+def test_list_approved_tags_returns_grouped_settings(app: FastAPI) -> None:
+    tag_settings_store = Mock()
+    tag_settings_store.get_approved_tags.return_value = (
+        "color:black",
+        "subject:laptop",
+    )
+    app.state.tag_settings_store = tag_settings_store
+
+    with TestClient(app) as client:
+        response = client.get("/v1/search/tags")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "groups": [
+            {"category": "Colors", "tags": ["color:black"]},
+            {"category": "Subjects", "tags": ["subject:laptop"]},
+        ]
+    }

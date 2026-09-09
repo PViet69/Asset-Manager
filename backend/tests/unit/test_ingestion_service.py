@@ -542,6 +542,33 @@ def test_search_without_configured_threshold_raises_settings_error() -> None:
 
 
 @pytest.mark.unit
+def test_tag_search_does_not_embed_and_maps_hits() -> None:
+    service, _, model_client, qdrant_store = make_service()
+    qdrant_store.find_by_tags.return_value = [
+        SearchHit(
+            "point-1",
+            1.0,
+            {
+                "filename": "laptop.png",
+                "file_path": "assets/laptop.png",
+                "file_type": "image/png",
+                "content": "Subjects: laptop",
+            },
+        )
+    ]
+
+    response = service.search(
+        "", limit=10, mode="tag", tags=["subject:laptop"]
+    )
+
+    qdrant_store.find_by_tags.assert_called_once_with(
+        ["subject:laptop"], limit=10, provider=None
+    )
+    model_client.embed_text.assert_not_called()
+    assert response.data[0].filename == "laptop.png"
+
+
+@pytest.mark.unit
 def test_search_drops_hits_without_complete_payload() -> None:
     _, description_client, model_client, qdrant_store = make_service()
     service = FileIngestionService(

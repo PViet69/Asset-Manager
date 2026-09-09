@@ -10,6 +10,7 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    MatchAny,
     MatchValue,
     PointStruct,
     VectorParams,
@@ -57,6 +58,12 @@ class QdrantStore(Protocol):
     def find_by_filename(
         self,
         filename_query: str,
+        limit: int,
+        provider: str | None = None,
+    ) -> list[SearchHit]: ...
+    def find_by_tags(
+        self,
+        tags: list[str],
         limit: int,
         provider: str | None = None,
     ) -> list[SearchHit]: ...
@@ -161,6 +168,21 @@ class QdrantEmbeddingStore:
             and q in hit.payload["filename"].lower()
         ]
         return matched[:limit]
+
+    def find_by_tags(
+        self,
+        tags: list[str],
+        limit: int,
+        provider: str | None = None,
+    ) -> list[SearchHit]:
+        conditions = [
+            FieldCondition(key="tags", match=MatchAny(any=[tag])) for tag in tags
+        ]
+        if provider is not None:
+            conditions.append(
+                FieldCondition(key=PAYLOAD_PROVIDER, match=MatchValue(value=provider))
+            )
+        return self._scroll(Filter(must=conditions))[:limit]
 
     def find_by_storage_key(
         self, provider: str, storage_file_id: str
