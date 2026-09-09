@@ -1,17 +1,19 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
 import {
   ApiError,
   deleteAdminQdrantPoint,
+  discoverAdminTags,
   getAdminProviderItems,
   getAdminSession,
   getAdminSyncStatus,
   loginAdmin,
   refreshAdminProvider,
   reindexAdminStorageFile,
+  saveAdminTags,
   stopAdminSync,
   streamAdminSync,
 } from "../api/client";
@@ -28,23 +30,27 @@ vi.mock("../api/client", () => ({
     }
   },
   deleteAdminQdrantPoint: vi.fn(),
+  discoverAdminTags: vi.fn(),
   getAdminProviderItems: vi.fn(),
   getAdminSession: vi.fn(),
   getAdminSyncStatus: vi.fn(),
   loginAdmin: vi.fn(),
   refreshAdminProvider: vi.fn(),
   reindexAdminStorageFile: vi.fn(),
+  saveAdminTags: vi.fn(),
   stopAdminSync: vi.fn(),
   streamAdminSync: vi.fn(),
 }));
 
 const mockedDeleteAdminQdrantPoint = vi.mocked(deleteAdminQdrantPoint);
+const mockedDiscoverAdminTags = vi.mocked(discoverAdminTags);
 const mockedGetAdminProviderItems = vi.mocked(getAdminProviderItems);
 const mockedGetAdminSession = vi.mocked(getAdminSession);
 const mockedGetAdminSyncStatus = vi.mocked(getAdminSyncStatus);
 const mockedLoginAdmin = vi.mocked(loginAdmin);
 const mockedRefreshAdminProvider = vi.mocked(refreshAdminProvider);
 const mockedReindexAdminStorageFile = vi.mocked(reindexAdminStorageFile);
+const mockedSaveAdminTags = vi.mocked(saveAdminTags);
 const mockedStreamAdminSync = vi.mocked(streamAdminSync);
 
 
@@ -105,7 +111,7 @@ test("uses admin workspace styling for sign-in", () => {
   expect(screen.getByRole("main")).toHaveClass("admin-shell", "admin-login-shell");
 });
 
-test("includes a decorative interactive background outside sign-in controls", () => {
+test("loads decorative interactive background outside sign-in controls", async () => {
   // Arrange
   mockSignedOut();
 
@@ -113,7 +119,8 @@ test("includes a decorative interactive background outside sign-in controls", ()
   render(<AdminPage />);
 
   // Assert
-  expect(document.querySelector(".admin-login-background")).toHaveAttribute("aria-hidden", "true");
+  const background = await screen.findByTestId("admin-login-background");
+  expect(background).toHaveAttribute("aria-hidden", "true");
   expect(document.querySelector(".admin-login-background canvas")).toBeInTheDocument();
 });
 
@@ -318,6 +325,38 @@ test("closes embedded items dialog with Escape", async () => {
   await user.keyboard("{Escape}");
 
   expect(screen.queryByRole("dialog", { name: "Google Drive embedded items" })).not.toBeInTheDocument();
+});
+
+test("discovers tags into collapsed categories with a clearable selection", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedDiscoverAdminTags.mockResolvedValue({
+    indexed_assets: 2,
+    groups: [{ category: "Subjects", tags: ["subject:laptop"] }],
+  });
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Settings" }));
+  await user.click(screen.getByRole("button", { name: "Discover and index tags" }));
+
+  expect(mockedDiscoverAdminTags).toHaveBeenCalledOnce();
+  const subjects = await screen.findByRole("button", { name: "Subjects 0 selected" });
+  expect(screen.queryByRole("button", { name: "laptop" })).not.toBeInTheDocument();
+
+  await user.click(subjects);
+  await user.click(screen.getByRole("button", { name: "laptop" }));
+  expect(screen.getByText("1 tag selected")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Clear selection" }));
+  expect(screen.getByText("No tags selected")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "laptop" }));
+  await user.click(screen.getByRole("button", { name: "Save approved tags" }));
+
+  await waitFor(() => expect(mockedSaveAdminTags).toHaveBeenCalledWith(
+    ["subject:laptop"], ["subject:laptop"]
+  ));
 });
 
 test("opens mobile navigation from compact topbar", async () => {

@@ -1,9 +1,20 @@
-import { AdminPage } from "./components/AdminPage";
+import { lazy, Suspense } from "react";
+
 import { SearchPanel } from "./components/SearchPanel";
+
+const AdminPage = lazy(() =>
+  import("./components/AdminPage").then(({ AdminPage: Page }) => ({ default: Page }))
+);
 
 export function App(): JSX.Element {
   const path = window.location.pathname;
-  if (path === "/admin" || path.startsWith("/admin/")) return <AdminPage />;
+  if (path === "/admin" || path.startsWith("/admin/")) {
+    return (
+      <Suspense fallback={<div role="status" aria-label="Loading admin dashboard" />}>
+        <AdminPage />
+      </Suspense>
+    );
+  }
   document.title = "Asset Manager";
   return <MainPage />;
 }

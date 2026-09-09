@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import {
   ApiError,
   deleteAdminQdrantPoint,
+  discoverAdminTags,
   getAdminProviderItems,
   getAdminSession,
   getAdminSyncStatus,
   loginAdmin,
   logoutAdmin,
   refreshAdminProvider,
+  saveAdminTags,
   stopAdminSync,
   streamAdminSync,
 } from "../api/client";
@@ -17,14 +19,19 @@ import type {
   ModelHealthStatus,
   ProviderDashboardStatus,
   QdrantItem,
+  TagGroup,
   SyncActivityEvent,
 } from "../types";
-import { AdminLoginBackground } from "./AdminLoginBackground";
 import { AdminModelHealth } from "./AdminModelHealth";
 import { AdminNavigation, type AdminTab } from "./AdminNavigation";
 import { AdminProviderCard } from "./AdminProviderCard";
 
 const SAFE_SYNC_ERROR = "Provider sync failed. Try again.";
+const AdminLoginBackground = lazy(() =>
+  import("./AdminLoginBackground").then(({ AdminLoginBackground: Background }) => ({
+    default: Background,
+  }))
+);
 
 type DashboardState = {
   readonly providers: readonly ProviderDashboardStatus[];
@@ -82,6 +89,11 @@ export function AdminPage(): JSX.Element {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboards");
   const [selectedChartProvider, setSelectedChartProvider] = useState<string>("all");
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
+  const [discoveredTagGroups, setDiscoveredTagGroups] = useState<readonly TagGroup[]>([]);
+  const [selectedApprovedTags, setSelectedApprovedTags] = useState<readonly string[]>([]);
+  const [expandedTagCategories, setExpandedTagCategories] = useState<ReadonlySet<string>>(new Set());
+  const [isDiscoveringTags, setIsDiscoveringTags] = useState(false);
+  const [isSavingTags, setIsSavingTags] = useState(false);
   const [toasts, setToasts] = useState<readonly Toast[]>([]);
   const controllers = useRef<Record<string, AbortController>>({});
 
@@ -345,6 +357,49 @@ export function AdminPage(): JSX.Element {
     }
   }
 
+  async function discoverTags(): Promise<void> {
+    setIsDiscoveringTags(true);
+    try {
+      const response = await discoverAdminTags();
+      setDiscoveredTagGroups(response.groups);
+      setSelectedApprovedTags([]);
+      setExpandedTagCategories(new Set());
+      addToast(`Indexed tags for ${response.indexed_assets} assets.`, "status");
+    } catch (caught) {
+      handleAdminError(caught, "Could not discover tags");
+    } finally {
+      setIsDiscoveringTags(false);
+    }
+  }
+
+  function toggleApprovedTag(tag: string): void {
+    setSelectedApprovedTags((current) => current.includes(tag)
+      ? current.filter((selected) => selected !== tag)
+      : [...current, tag]);
+  }
+
+  function toggleTagCategory(category: string): void {
+    setExpandedTagCategories((current) => {
+      const next = new Set(current);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  }
+
+  async function saveApprovedTags(): Promise<void> {
+    const discoveredTags = discoveredTagGroups.flatMap((group) => group.tags);
+    setIsSavingTags(true);
+    try {
+      await saveAdminTags(discoveredTags, selectedApprovedTags);
+      addToast("Approved tags saved.", "status");
+    } catch (caught) {
+      handleAdminError(caught, "Could not save approved tags");
+    } finally {
+      setIsSavingTags(false);
+    }
+  }
+
   function selectTab(tab: AdminTab): void {
     setActiveTab(tab);
     setIsMobileNavigationOpen(false);
@@ -396,7 +451,9 @@ export function AdminPage(): JSX.Element {
   if (!isAuthenticated) {
     return (
       <main className="admin-shell admin-login-shell">
-        <AdminLoginBackground />
+        <Suspense fallback={null}>
+          <AdminLoginBackground />
+        </Suspense>
         <div className="admin-login-layout">
           <aside className="admin-login-intro" aria-label="Asset Manager administration">
             <a className="admin-login-brand" href="/" aria-label="Asset Manager home">
@@ -816,6 +873,75 @@ export function AdminPage(): JSX.Element {
           <section className="admin-settings-grid" aria-label="Admin settings">
             <article><h2>Session</h2><button type="button" className="admin-link-button" onClick={() => void handleLogout()}>Sign out</button></article>
             <article><h2>Status</h2><button type="button" className="admin-primary-button" onClick={() => void loadDashboard()} disabled={isLoadingDashboard}>{isLoadingDashboard ? "Refreshing" : "Refresh status"}</button></article>
+            <article className="admin-tag-manager">
+              <div className="admin-tag-manager__heading">
+                <div>
+                  <h2>Tag management</h2>
+                  <p>Discover content tags, then select tags to approve for search.</p>
+                </div>
+                <button type="button" className="admin-primary-button" onClick={() => void discoverTags()} disabled={isDiscoveringTags}>
+                  {isDiscoveringTags ? "Discovering tags" : "Discover and index tags"}
+                </button>
+              </div>
+              {discoveredTagGroups.length > 0 ? (
+                <>
+                  <div className="admin-tag-selection-summary" aria-live="polite">
+                    <strong>{selectedApprovedTags.length === 1 ? "1 tag selected" : selectedApprovedTags.length > 1 ? `${selectedApprovedTags.length} tags selected` : "No tags selected"}</strong>
+                    <button type="button" className="admin-link-button" onClick={() => setSelectedApprovedTags([])} disabled={selectedApprovedTags.length === 0}>
+                      Clear selection
+                    </button>
+                  </div>
+                  <div className="admin-tag-categories">
+                    {discoveredTagGroups.map((group) => {
+                      const selectedCount = group.tags.filter((tag) => selectedApprovedTags.includes(tag)).length;
+                      const isExpanded = expandedTagCategories.has(group.category);
+                      return (
+                        <section key={group.category} className="admin-tag-category">
+                          <button
+                            type="button"
+                            className="admin-tag-category__trigger"
+                            aria-expanded={isExpanded}
+                            aria-controls={`tag-category-${group.category}`}
+                            onClick={() => toggleTagCategory(group.category)}
+                          >
+                            <span>{group.category}</span>
+                            <span>{selectedCount} selected</span>
+                          </button>
+                          {isExpanded ? (
+                            <div id={`tag-category-${group.category}`} className="admin-tag-category__tags">
+                              {group.tags.map((tag) => {
+                                const isSelected = selectedApprovedTags.includes(tag);
+                                return (
+                                  <button
+                                    key={tag}
+                                    type="button"
+                                    className={`admin-tag-chip ${isSelected ? "admin-tag-chip--selected" : ""}`}
+                                    aria-pressed={isSelected}
+                                    onClick={() => toggleApprovedTag(tag)}
+                                  >
+                                    {tag.split(":", 2)[1] ?? tag}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </section>
+                      );
+                    })}
+                  </div>
+                  <div className="admin-tag-manager__actions">
+                    <button
+                      type="button"
+                      className="admin-primary-button"
+                      onClick={() => void saveApprovedTags()}
+                      disabled={isSavingTags}
+                    >
+                      {isSavingTags ? "Saving approved tags" : "Save approved tags"}
+                    </button>
+                  </div>
+                </>
+              ) : null}
+            </article>
           </section>
         ) : null}
         {renderItemsDialog()}

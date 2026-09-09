@@ -3389,6 +3389,130 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   box-sizing: border-box;
 }
 
+.admin-tag-manager {
+  grid-column: 1 / -1;
+}
+
+.admin-tag-manager__heading,
+.admin-tag-selection-summary,
+.admin-tag-manager__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-tag-manager__heading h2,
+.admin-tag-manager__heading p {
+  margin: 0;
+}
+
+.admin-tag-manager__heading p {
+  margin-top: 5px;
+  color: var(--admin-muted);
+}
+
+.admin-tag-selection-summary {
+  padding: 12px 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.76);
+  color: var(--admin-text);
+}
+
+.admin-tag-categories {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-tag-category {
+  overflow: hidden;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.admin-tag-category__trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  padding: 13px 14px;
+  color: var(--admin-text);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-tag-category__trigger:hover {
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.admin-tag-category__trigger span:last-child {
+  color: var(--admin-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-tag-category__tags {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.admin-tag-chip {
+  min-width: 0;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  overflow: hidden;
+  color: var(--admin-text);
+  background: rgba(255, 255, 255, 0.86);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.admin-tag-chip:hover {
+  border-color: rgba(37, 99, 235, 0.5);
+  transform: translateY(-1px);
+}
+
+.admin-tag-chip--selected {
+  border-color: var(--admin-blue);
+  color: #ffffff;
+  background: var(--admin-blue);
+}
+
+.admin-tag-chip--selected:hover {
+  background: #1d4ed8;
+}
+
+@media (max-width: 620px) {
+  .admin-tag-manager__heading,
+  .admin-tag-selection-summary,
+  .admin-tag-manager__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-tag-manager__heading .admin-primary-button,
+  .admin-tag-manager__actions .admin-primary-button {
+    width: 100%;
+  }
+}
+
 .admin-log-panel {
   padding: 20px;
   height: fit-content;
