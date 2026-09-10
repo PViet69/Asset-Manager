@@ -13,5 +13,6 @@ class HealthResponse(BaseModel):
 
     status: str
     qdrant: str
-    model: str
+    embedding_model: str
+    description_model: str
     providers: list[ProviderHealth] = Field(default_factory=list)

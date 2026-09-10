@@ -468,7 +468,8 @@ def test_health_is_ok_when_both_models_and_qdrant_are_available(
     assert response.json() == {
         "status": "ok",
         "qdrant": "ok",
-        "model": "ok",
+        "embedding_model": "ok",
+        "description_model": "ok",
         "providers": [],
     }
 
@@ -504,9 +505,8 @@ def test_health_is_degraded_when_any_dependency_is_unavailable(
     assert response.json() == {
         "status": "degraded",
         "qdrant": qdrant_status,
-        "model": "unavailable"
-        if "unavailable" in (description_status, embedding_status)
-        else "ok",
+        "embedding_model": embedding_status,
+        "description_model": description_status,
         "providers": [],
     }
 
@@ -530,7 +530,8 @@ def test_health_is_ok_without_registered_providers(
     assert response.json() == {
         "status": "ok",
         "qdrant": "ok",
-        "model": "ok",
+        "embedding_model": "ok",
+        "description_model": "ok",
         "providers": [],
     }
 
