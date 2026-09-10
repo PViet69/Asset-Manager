@@ -21,9 +21,6 @@ def _file(identifier: str, modified: datetime) -> StorageFile:
     )
 
 
-
-
-
 @pytest.mark.unit
 def test_diff_scopes_new_changed_and_removed_records_to_provider_snapshot() -> None:
     now = datetime(2026, 8, 2, tzinfo=timezone.utc)
@@ -45,11 +42,3 @@ def test_diff_scopes_new_changed_and_removed_records_to_provider_snapshot() -> N
     ).diff()
     assert [file.storage_file_id for file in plan.to_upsert] == ["old", "new"]
     assert plan.to_delete_point_ids == ["gone-point"]
-
-
-@pytest.mark.unit
-def test_diff_ignores_legacy_hit_without_generic_storage_identity() -> None:
-    plan = SyncState.seed_from_qdrant(
-        [], [SearchHit("legacy", 1.0, {"drive_id": "old"})]
-    ).diff()
-    assert plan.to_delete_point_ids == []

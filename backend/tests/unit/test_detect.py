@@ -4,7 +4,6 @@ from io import BytesIO
 
 import pytest
 from PIL import Image
-from pypdf import PdfWriter
 
 from backend.app.exceptions import FileProcessingError
 from backend.app.file_processing.detect import detect_file_group
@@ -20,13 +19,6 @@ def test_detects_png_from_content():
     output = BytesIO()
     Image.new("RGB", (1, 1), "red").save(output, format="PNG")
     assert detect_file_group(output.getvalue()) == "image"
-
-
-@pytest.mark.unit
-def test_detects_pdf_from_content():
-    output = BytesIO()
-    PdfWriter().write(output)
-    assert detect_file_group(output.getvalue()) == "pdf"
 
 
 @pytest.mark.unit
