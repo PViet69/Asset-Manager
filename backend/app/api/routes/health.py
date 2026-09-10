@@ -43,7 +43,7 @@ def health(
 ) -> HealthResponse:
     """Report image description, embedding, Qdrant, and Drive availability."""
     description_status = dependencies.description_client.check_health()
-    model_status = dependencies.model_client.check_health()
+    embedding_status = dependencies.model_client.check_health()
     qdrant_status = dependencies.qdrant_store.check_health()
     registry: ProviderRegistry = getattr(
         request.app.state, "provider_registry", ProviderRegistry(())
@@ -52,13 +52,10 @@ def health(
         ProviderHealth(provider=entry.name, status=entry.client.check_health())
         for entry in registry.providers
     ]
-    model_status_combined = (
-        "unavailable" if "unavailable" in (description_status, model_status) else "ok"
-    )
     # Disabled registered providers are expected, not a degradation.
     component_statuses = (
         description_status,
-        model_status,
+        embedding_status,
         qdrant_status,
         *(item.status for item in provider_health),
     )
@@ -70,6 +67,7 @@ def health(
     return HealthResponse(
         status=overall_status,
         qdrant=qdrant_status,
-        model=model_status_combined,
+        embedding_model=embedding_status,
+        description_model=description_status,
         providers=provider_health,
     )

@@ -67,23 +67,26 @@ def test_health_response_contains_provider_statuses() -> None:
     response = HealthResponse(
         status="ok",
         qdrant="ok",
-        model="ok",
-        providers=[
-            ProviderHealth(provider=StorageProvider.DROPBOX, status="disabled")
-        ],
+        embedding_model="ok",
+        description_model="ok",
+        providers=[ProviderHealth(provider=StorageProvider.DROPBOX, status="disabled")],
     )
 
-    assert response.model == "ok"
+    assert response.embedding_model == "ok"
+    assert response.description_model == "ok"
     assert response.providers == [
         ProviderHealth(provider=StorageProvider.DROPBOX, status="disabled")
     ]
 
 
-
-
 @pytest.mark.unit
 def test_health_response_defaults_to_no_registered_providers() -> None:
-    response = HealthResponse(status="ok", qdrant="ok", model="ok")
+    response = HealthResponse(
+        status="ok",
+        qdrant="ok",
+        embedding_model="ok",
+        description_model="ok",
+    )
 
     assert response.providers == []
 
@@ -179,7 +182,6 @@ def test_dashboard_contract_dtos_serialize_expected_fields() -> None:
         ),
     ],
 )
-
 def test_dashboard_contract_dtos_are_immutable(
     dto: object, field: str, value: object
 ) -> None:
