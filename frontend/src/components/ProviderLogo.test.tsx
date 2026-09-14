@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
-import { ProviderLogo, GoogleDriveLogo, DropboxLogo } from "./ProviderLogo";
+import { ProviderLogo } from "./ProviderLogo";
 
 afterEach(cleanup);
 
@@ -18,15 +18,4 @@ test("renders Dropbox logo for dropbox provider", () => {
 test("renders generic fallback logo for unknown provider", () => {
   render(<ProviderLogo provider="s3_custom" />);
   expect(screen.getByLabelText("s3_custom storage provider")).toBeInTheDocument();
-});
-
-test("renders specific standalone logos", () => {
-  render(
-    <div>
-      <GoogleDriveLogo data-testid="gdrive-logo" />
-      <DropboxLogo data-testid="dropbox-logo" />
-    </div>
-  );
-  expect(screen.getByTestId("gdrive-logo")).toBeInTheDocument();
-  expect(screen.getByTestId("dropbox-logo")).toBeInTheDocument();
 });

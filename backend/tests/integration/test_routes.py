@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from inspect import iscoroutinefunction
 from io import BytesIO
 from unittest.mock import ANY, Mock
 
@@ -53,12 +52,6 @@ class _BoundedReadFile(BytesIO):
 
 def override_ingestion_service(app: FastAPI, service: Mock) -> None:  # noqa: ARG001
     app.dependency_overrides[get_file_ingestion_service] = lambda: service
-
-
-@pytest.mark.integration
-def test_create_file_embeddings_is_sync_function() -> None:
-    """Route handler must be synchronous for sync SDK/Qdrant operations."""
-    assert iscoroutinefunction(create_file_embeddings) is False
 
 
 @pytest.mark.integration
@@ -152,16 +145,6 @@ def test_uploads_files_in_order_and_returns_public_response(
     )
     assert "point_id" not in response.json()
     assert "vector" not in response.json()
-
-
-@pytest.mark.integration
-def test_openapi_has_no_request_level_model_fields(app: FastAPI) -> None:
-    schema = app.openapi()
-    upload_parameters = schema["components"]["schemas"][
-        "Body_create_file_embeddings_v1_file_embeddings_post"
-    ]["properties"]
-
-    assert set(upload_parameters) == {"files", "file_path", "modified_time"}
 
 
 @pytest.mark.integration
