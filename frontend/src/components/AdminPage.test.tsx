@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -114,6 +117,35 @@ test("uses admin workspace styling for sign-in", () => {
 
   // Assert
   expect(screen.getByRole("main")).toHaveClass("admin-shell", "admin-login-shell");
+});
+
+test("scopes animated mesh styles to admin login background", () => {
+  // Arrange
+  const stylesheet = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+
+  // Act
+  const globalMeshSelector = "body::before";
+  const loginMeshSelector = ".admin-login-background::before";
+
+  // Assert
+  expect(stylesheet).not.toContain(globalMeshSelector);
+  expect(stylesheet).toContain(loginMeshSelector);
+  expect(stylesheet).toContain(`${loginMeshSelector} {`);
+  expect(stylesheet).toContain("animation: drift 22s ease-in-out infinite alternate;");
+});
+
+test("uses opaque surfaces instead of backdrop blur for dashboard cards", () => {
+  // Arrange
+  const stylesheet = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+
+  // Act
+  const cardsStart = stylesheet.indexOf("/* Glass Panels */");
+  const cardsEnd = stylesheet.indexOf("/* 2-Card Metrics Grid */");
+  const dashboardCardStyles = stylesheet.slice(cardsStart, cardsEnd);
+
+  // Assert
+  expect(dashboardCardStyles).not.toContain("backdrop-filter");
+  expect(dashboardCardStyles).not.toContain("-webkit-backdrop-filter");
 });
 
 test("loads decorative interactive background outside sign-in controls", async () => {

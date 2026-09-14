@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from backend.app.admin_dashboard import status_service
 from backend.app.admin_dashboard.status_service import AdminDashboardStatusService
 from backend.app.exceptions import QdrantStorageError
 from backend.app.integrations.qdrant_store import SearchHit
@@ -128,6 +129,49 @@ async def test_disabled_provider_avoids_storage_and_qdrant_reads() -> None:
     assert response.providers[0].embedded_count is None
     assert client.list_count == 0
     assert qdrant.lookup_count == 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_status_reuses_snapshot_within_ten_seconds() -> None:
+    client = _Client([_file()])
+    service = _service(client=client)
+
+    first_response = await service.get_status()
+    second_response = await service.get_status()
+
+    assert second_response == first_response
+    assert client.list_count == 1
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_refresh_invalidates_cached_status() -> None:
+    client = _Client([_file()])
+    service = _service(client=client)
+
+    await service.get_status()
+    await service.refresh_provider(StorageProvider.GOOGLE_DRIVE)
+    await service.get_status()
+
+    assert client.list_count == 3
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_status_refreshes_after_cache_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _Client([_file()])
+    service = _service(client=client)
+    now = 100.0
+    monkeypatch.setattr(status_service, "monotonic", lambda: now)
+
+    await service.get_status()
+    now += 11
+    await service.get_status()
+
+    assert client.list_count == 2
 
 
 @pytest.mark.unit
