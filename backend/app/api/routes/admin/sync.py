@@ -14,13 +14,19 @@ from backend.app.api.schemas.admin import (
     AdminQdrantItemsResponse,
     AdminReindexResponse,
     AdminSyncResponse,
+    AdminTagDiscoveryResponse,
+    AdminTagGroup,
+    AdminTagGroupsResponse,
     QdrantItemSchema,
+    SaveAdminTagsRequest,
 )
 from backend.app.exceptions import QdrantStorageError
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.security import require_admin_access, require_admin_origin
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 from backend.app.storage.scheduler import StorageSyncScheduler
+from backend.app.tag_settings.parser import group_tags
+from backend.app.tag_settings.store import TagSettingsStore
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -31,6 +37,10 @@ def _registry(request: Request) -> ProviderRegistry:
 
 def _dashboard_service(request: Request) -> AdminDashboardStatusService:
     return request.app.state.admin_dashboard_status_service
+
+
+def _tag_settings_store(request: Request) -> TagSettingsStore:
+    return request.app.state.tag_settings_store
 
 
 def _provider_or_404(request: Request, provider: str) -> ProviderSync:
@@ -49,6 +59,87 @@ def _scheduler_or_503(entry: ProviderSync) -> StorageSyncScheduler:
             detail=f"{entry.display_name} sync is not configured",
         )
     return entry.scheduler
+
+
+@router.get(
+    "/tags",
+    response_model=AdminTagGroupsResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access)],
+)
+async def list_tags(request: Request) -> AdminTagGroupsResponse:
+    """List saved approved tags for administration."""
+    try:
+        tags = await asyncio.to_thread(_tag_settings_store(request).get_approved_tags)
+    except QdrantStorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.safe_message
+        ) from exc
+    groups = group_tags(tags)
+    return AdminTagGroupsResponse(
+        groups=[
+            AdminTagGroup(category=category, tags=tags)
+            for category, tags in groups.items()
+        ]
+    )
+
+
+@router.put(
+    "/tags",
+    response_model=AdminTagGroupsResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
+)
+async def save_tags(
+    payload: SaveAdminTagsRequest, request: Request
+) -> AdminTagGroupsResponse:
+    """Persist selected tags from admin's discovery snapshot."""
+    if not payload.selected_tags_are_discovered():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Approved tags must come from discovered tags",
+        )
+    try:
+        saved = await asyncio.to_thread(
+            _tag_settings_store(request).replace_approved_tags, payload.approved_tags
+        )
+    except QdrantStorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.safe_message
+        ) from exc
+    groups = group_tags(saved)
+    return AdminTagGroupsResponse(
+        groups=[
+            AdminTagGroup(category=category, tags=tags)
+            for category, tags in groups.items()
+        ]
+    )
+
+
+@router.post(
+    "/tags/discover",
+    response_model=AdminTagDiscoveryResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
+)
+async def discover_tags(request: Request) -> AdminTagDiscoveryResponse:
+    """Index content-derived tags and return current discovery results."""
+    try:
+        result = await asyncio.to_thread(
+            _tag_settings_store(request).discover_and_index
+        )
+    except QdrantStorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.safe_message
+        ) from exc
+    groups = group_tags(result.tags)
+    return AdminTagDiscoveryResponse(
+        indexed_assets=result.indexed_assets,
+        groups=[
+            AdminTagGroup(category=category, tags=tags)
+            for category, tags in groups.items()
+        ],
+    )
 
 
 @router.post(
@@ -159,9 +250,7 @@ async def list_provider_items(
     _provider_or_404(request, provider)
     qdrant_store = request.app.state.health_dependencies.qdrant_store
     try:
-        hits = await asyncio.to_thread(
-            qdrant_store.find_all_with_storage_key, provider
-        )
+        hits = await asyncio.to_thread(qdrant_store.find_all_with_storage_key, provider)
     except QdrantStorageError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.safe_message
@@ -199,13 +288,9 @@ async def delete_qdrant_point(
 ) -> AdminDeletePointResponse:
     qdrant_store = request.app.state.health_dependencies.qdrant_store
     try:
-        deleted = await asyncio.to_thread(
-            qdrant_store.delete_by_point_ids, [point_id]
-        )
+        deleted = await asyncio.to_thread(qdrant_store.delete_by_point_ids, [point_id])
     except QdrantStorageError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.safe_message
         ) from exc
     return AdminDeletePointResponse(point_id=point_id, deleted=deleted)
-
-

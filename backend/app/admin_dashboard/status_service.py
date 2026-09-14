@@ -2,7 +2,8 @@
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from time import monotonic
 from typing import Protocol
 
 from backend.app.api.schemas.admin import (
@@ -17,6 +18,27 @@ from backend.app.model.description_client import ImageDescriptionClient
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 
 logger = logging.getLogger(__name__)
+
+STATUS_CACHE_TTL_SECONDS = 10
+
+
+@dataclass
+class _StatusCache:
+    response: AdminDashboardStatusResponse | None = None
+    expires_at: float = 0.0
+
+    def get(self) -> AdminDashboardStatusResponse | None:
+        if self.response is None or self.expires_at <= monotonic():
+            return None
+        return self.response
+
+    def set(self, response: AdminDashboardStatusResponse) -> None:
+        self.response = response
+        self.expires_at = monotonic() + STATUS_CACHE_TTL_SECONDS
+
+    def clear(self) -> None:
+        self.response = None
+        self.expires_at = 0.0
 
 
 class _ModelHealthClient(Protocol):
@@ -34,9 +56,14 @@ class AdminDashboardStatusService:
     qdrant_store: QdrantStore
     embedding_client: ModelClient
     description_client: ImageDescriptionClient
+    _cache: _StatusCache = field(default_factory=_StatusCache, init=False)
 
     async def get_status(self) -> AdminDashboardStatusResponse:
-        """Return current independent provider and model snapshots."""
+        # Return a short-lived cached snapshot to avoid repeated health checks.
+        cached_status = self._cache.get()
+        if cached_status is not None:
+            return cached_status
+
         provider_tasks = tuple(
             self._provider_status(entry, force_health=False)
             for entry in self.registry.providers
@@ -46,14 +73,17 @@ class AdminDashboardStatusService:
             self._model_health(self.embedding_client),
             self._model_health(self.description_client),
         )
-        return AdminDashboardStatusResponse(
+        status = AdminDashboardStatusResponse(
             providers=list(providers),
             embedding_model=embedding_model,
             description_model=description_model,
         )
+        self._cache.set(status)
+        return status
 
     async def refresh_provider(self, provider: str) -> AdminProviderRefreshResponse:
-        """Refresh one provider snapshot and global model health only."""
+        # Force the following dashboard status request to collect a new snapshot.
+        self._cache.clear()
         entry = self.registry.get(provider)
         if entry is None:
             raise KeyError(provider)

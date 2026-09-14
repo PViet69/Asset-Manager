@@ -117,6 +117,42 @@ class SyncTerminalEvent(BaseModel):
     terminal: bool = True
 
 
+class AdminTagGroup(BaseModel):
+    """One categorized canonical tag group for administration."""
+
+    model_config = ConfigDict(frozen=True)
+
+    category: str
+    tags: list[str]
+
+
+class AdminTagGroupsResponse(BaseModel):
+    """Current approved tags grouped for administration."""
+
+    model_config = ConfigDict(frozen=True)
+
+    groups: list[AdminTagGroup]
+
+
+class AdminTagDiscoveryResponse(AdminTagGroupsResponse):
+    """Completed asset tag discovery and indexing summary."""
+
+    indexed_assets: int
+
+
+class SaveAdminTagsRequest(BaseModel):
+    """Discovered tag snapshot and selected tags to approve."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    discovered_tags: list[str]
+    approved_tags: list[str]
+
+    def selected_tags_are_discovered(self) -> bool:
+        """Return whether all selected tags originated in current discovery."""
+        return set(self.approved_tags).issubset(set(self.discovered_tags))
+
+
 class AdminReindexResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -149,5 +185,3 @@ class AdminQdrantItemsResponse(BaseModel):
 
     provider: str
     items: list[QdrantItemSchema]
-
-

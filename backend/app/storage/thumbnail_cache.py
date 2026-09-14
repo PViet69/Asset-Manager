@@ -9,7 +9,7 @@ from time import monotonic
 
 from backend.app.storage.client import Thumbnail
 
-THUMBNAIL_CACHE_TTL_SECONDS = 300
+THUMBNAIL_CACHE_TTL_SECONDS = 365 * 24 * 60 * 60
 MAX_THUMBNAIL_CACHE_ENTRIES = 256
 
 

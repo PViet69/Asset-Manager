@@ -28,11 +28,11 @@ test("shows Asset Manager title on public search route", () => {
   expect(document.title).toBe("Asset Manager");
 });
 
-test("renders AdminPage for /admin, /admin/login, and /admin/dashboard routes", () => {
+test("lazy-loads AdminPage for admin routes", async () => {
   for (const path of ["/admin", "/admin/login", "/admin/dashboard"]) {
     window.history.replaceState({}, "", path);
     const { unmount } = render(<App />);
-    expect(screen.getByText("Admin page")).toBeInTheDocument();
+    expect(await screen.findByText("Admin page")).toBeInTheDocument();
     unmount();
   }
 });

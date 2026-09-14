@@ -5,6 +5,7 @@ import {
   deleteAdminQdrantPoint,
   fetchThumbnail,
   getAdminProviderItems,
+  getApprovedTags,
   getProviders,
   refreshAdminProvider,
   streamAdminSync,
@@ -83,6 +84,24 @@ test("fetches providers from backend", async () => {
     { id: "google_drive", displayName: "Google Drive" },
     { id: "dropbox", displayName: "Dropbox" },
   ]);
+});
+
+test("fetches approved tag groups from backend", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({ groups: [{ category: "Subjects", tags: ["subject:laptop"] }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    )
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(getApprovedTags()).resolves.toEqual({
+    groups: [{ category: "Subjects", tags: ["subject:laptop"] }],
+  });
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/v1/search/tags",
+    expect.objectContaining({ headers: expect.any(Headers) })
+  );
 });
 
 test("parses complete SSE frames", async () => {

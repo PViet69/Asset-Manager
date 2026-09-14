@@ -2,11 +2,13 @@ import { config } from "../config";
 import type {
   AdminAccount,
   AdminDashboardStatusResponse,
+  AdminTagDiscoveryResponse,
   AdminDeletePointResponse,
   AdminProviderRefreshResponse,
   AdminQdrantItemsResponse,
   AdminReindexResponse,
   AdminSyncResponse,
+  ApprovedTagGroupsResponse,
   ProviderMeta,
   StorageProvider,
   SyncEvent,
@@ -76,7 +78,8 @@ export function searchVectors(
   query: string,
   limit: number = 10,
   provider?: StorageProvider,
-  mode: "semantic" | "filename" = "semantic"
+  mode: "semantic" | "filename" | "tag" = "semantic",
+  tags?: readonly string[]
 ): Promise<VectorSearchResponse> {
 
   const body = {
@@ -84,8 +87,17 @@ export function searchVectors(
     limit,
     mode,
     ...(provider !== undefined && { provider }),
+    ...(tags !== undefined && { tags }),
   };
   return postJson<VectorSearchResponse>("/v1/search", body);
+}
+
+export async function getApprovedTags(): Promise<ApprovedTagGroupsResponse> {
+  const res = await fetch(`${config.apiBase}/v1/search/tags`, {
+    headers: buildHeaders(),
+  });
+  if (!res.ok) await parseError(res);
+  return (await res.json()) as ApprovedTagGroupsResponse;
 }
 
 export async function getProviders(): Promise<ProviderMeta[]> {
@@ -129,14 +141,35 @@ export async function logoutAdmin(): Promise<void> {
 
 async function adminRequest<T>(
   path: string,
-  method: "GET" | "POST" = "GET"
+  method: "GET" | "POST" | "PUT" = "GET",
+  body?: unknown
 ): Promise<T> {
   const res = await fetch(`${config.apiBase}${path}`, {
     method,
     credentials: "include",
+    headers: body === undefined ? undefined : buildHeaders({ "Content-Type": "application/json" }),
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!res.ok) await parseError(res);
   return (await res.json()) as T;
+}
+
+export function discoverAdminTags(): Promise<AdminTagDiscoveryResponse> {
+  return adminRequest("/admin/tags/discover", "POST");
+}
+
+export function getAdminTags(): Promise<ApprovedTagGroupsResponse> {
+  return adminRequest("/admin/tags");
+}
+
+export function saveAdminTags(
+  discoveredTags: readonly string[],
+  approvedTags: readonly string[]
+): Promise<ApprovedTagGroupsResponse> {
+  return adminRequest("/admin/tags", "PUT", {
+    discovered_tags: discoveredTags,
+    approved_tags: approvedTags,
+  });
 }
 
 export function getAdminSyncStatus(): Promise<AdminDashboardStatusResponse> {

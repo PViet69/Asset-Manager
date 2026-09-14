@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
         "/health": { target: proxyTarget, changeOrigin: true },
         "/auth": { target: proxyTarget, changeOrigin: true },
         "/admin/sync": { target: proxyTarget, changeOrigin: true },
+        "/admin/tags": { target: proxyTarget, changeOrigin: true },
       },
     },
     build: {

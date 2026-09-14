@@ -1,9 +1,20 @@
-import { AdminPage } from "./components/AdminPage";
+import { lazy, Suspense } from "react";
+
 import { SearchPanel } from "./components/SearchPanel";
+
+const AdminPage = lazy(() =>
+  import("./components/AdminPage").then(({ AdminPage: Page }) => ({ default: Page }))
+);
 
 export function App(): JSX.Element {
   const path = window.location.pathname;
-  if (path === "/admin" || path.startsWith("/admin/")) return <AdminPage />;
+  if (path === "/admin" || path.startsWith("/admin/")) {
+    return (
+      <Suspense fallback={<div role="status" aria-label="Loading admin dashboard" />}>
+        <AdminPage />
+      </Suspense>
+    );
+  }
   document.title = "Asset Manager";
   return <MainPage />;
 }
@@ -40,10 +51,10 @@ function MainPage(): JSX.Element {
       <main className="search-main">
         <div className="search-hero">
           <h2 className="search-hero__title">
-            Search Assets &amp; Documents
+            Search Media
           </h2>
           <p className="search-hero__subtitle">
-            Find documents, media, and records across your storage providers using natural language queries or exact filename match.
+            Find media, across your storage providers using natural language queries or exact filename match.
           </p>
         </div>
 

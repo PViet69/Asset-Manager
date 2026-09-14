@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from backend.app.storage import StorageProvider
 
@@ -19,6 +19,11 @@ SearchQuery = Annotated[
         max_length=MAX_SEARCH_QUERY_LENGTH,
     ),
 ]
+SearchTag = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+]
+MAX_SEARCH_TAGS = 20
 
 
 class VectorSearchRequest(BaseModel):
@@ -26,14 +31,32 @@ class VectorSearchRequest(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    query: SearchQuery
-    mode: Literal["semantic", "filename"] = "semantic"
+    query: str = ""
+    mode: Literal["semantic", "filename", "tag"] = "semantic"
+    tags: list[SearchTag] = Field(default_factory=list, max_length=MAX_SEARCH_TAGS)
     limit: int = Field(
         default=DEFAULT_SEARCH_LIMIT, ge=MIN_SEARCH_LIMIT, le=MAX_SEARCH_LIMIT
     )
     provider: StorageProvider | None = None
 
-
+    @model_validator(mode="after")
+    def validate_mode_fields(self) -> "VectorSearchRequest":
+        query = self.query.strip()
+        tags = list(dict.fromkeys(self.tags))
+        if self.mode == "tag":
+            if not tags:
+                raise ValueError("Tag search requires at least one tag")
+            return self.model_copy(update={"query": "", "tags": tags})
+        if not query:
+            raise ValueError("Search query must not be blank")
+        if len(query) > MAX_SEARCH_QUERY_LENGTH:
+            raise ValueError(
+                "Search query exceeds maximum allowed length of "
+                f"{MAX_SEARCH_QUERY_LENGTH} characters"
+            )
+        if tags:
+            raise ValueError("Tags are only allowed for tag search")
+        return self.model_copy(update={"query": query})
 
 
 class VectorSearchItem(BaseModel):
@@ -63,6 +86,23 @@ class VectorSearchResponse(BaseModel):
     data: list[VectorSearchItem]
 
 
+class TagGroup(BaseModel):
+    """One category of canonical searchable tags."""
+
+    model_config = ConfigDict(frozen=True)
+
+    category: str
+    tags: list[str]
+
+
+class ApprovedTagGroupsResponse(BaseModel):
+    """Approved tags available to public tag search."""
+
+    model_config = ConfigDict(frozen=True)
+
+    groups: list[TagGroup]
+
+
 class StorageProviderInfo(BaseModel):
     """Storage provider metadata returned to clients."""
 
@@ -70,4 +110,3 @@ class StorageProviderInfo(BaseModel):
 
     id: str
     display_name: str
-

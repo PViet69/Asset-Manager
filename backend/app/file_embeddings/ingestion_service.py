@@ -105,13 +105,19 @@ class FileIngestionService:
         limit: int,
         provider: str | None = None,
         mode: str = "semantic",
+        tags: list[str] | None = None,
     ) -> VectorSearchResponse:
         query = query.strip()
         if len(query) > MAX_SEARCH_QUERY_LENGTH:
             raise ValueError(
-                f"Search query exceeds maximum allowed length of {MAX_SEARCH_QUERY_LENGTH} characters"
+                "Search query exceeds maximum allowed length of "
+                f"{MAX_SEARCH_QUERY_LENGTH} characters"
             )
-        if mode == "filename":
+        if mode == "tag":
+            hits = self._qdrant_store.find_by_tags(
+                tags or [], limit=limit, provider=provider
+            )
+        elif mode == "filename":
             hits = self._qdrant_store.find_by_filename(
                 query, limit=limit, provider=provider
             )

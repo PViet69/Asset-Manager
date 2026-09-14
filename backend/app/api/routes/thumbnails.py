@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from backend.app.api.dependencies import get_file_ingestion_service
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.security import require_upload_access
+from backend.app.storage.thumbnail_cache import THUMBNAIL_CACHE_TTL_SECONDS
 from backend.app.storage.thumbnail_service import (
     ThumbnailProviderDisabled,
     ThumbnailProviderUnavailable,
@@ -55,5 +56,5 @@ def get_thumbnail(
     return Response(
         content=thumbnail.content,
         media_type=thumbnail.media_type,
-        headers={"Cache-Control": "private, max-age=300"},
+        headers={"Cache-Control": f"private, max-age={THUMBNAIL_CACHE_TTL_SECONDS}"},
     )

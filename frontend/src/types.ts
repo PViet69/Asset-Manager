@@ -47,6 +47,19 @@ export type VectorSearchResponse = {
   data: VectorSearchItem[];
 };
 
+export type TagGroup = {
+  category: string;
+  tags: string[];
+};
+
+export type ApprovedTagGroupsResponse = {
+  groups: TagGroup[];
+};
+
+export type AdminTagDiscoveryResponse = ApprovedTagGroupsResponse & {
+  indexed_assets: number;
+};
+
 export type SyncTraceItem = {
   timestamp: string;
   provider: string;

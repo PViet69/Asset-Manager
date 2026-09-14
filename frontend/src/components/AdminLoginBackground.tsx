@@ -159,7 +159,7 @@ export function AdminLoginBackground(): JSX.Element {
   }, []);
 
   return (
-    <div className="admin-login-background" aria-hidden="true">
+    <div className="admin-login-background" aria-hidden="true" data-testid="admin-login-background">
       <canvas ref={canvasRef} role="presentation" data-engine="three.js r180" />
     </div>
   );
