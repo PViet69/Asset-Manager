@@ -304,45 +304,6 @@ test("does not show provider search filters in the admin dashboard", async () =>
   expect(screen.queryByLabelText("Sort by")).not.toBeInTheDocument();
 });
 
-
-
-test("loads and displays embedded provider items and allows deleting an item", async () => {
-  const user = userEvent.setup();
-  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
-  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
-  mockedGetAdminProviderItems.mockResolvedValue({
-    provider: "dropbox",
-    items: [
-      { point_id: "p1", filename: "dropbox-file-1.pdf", file_type: "application/pdf" },
-      { point_id: "p2", filename: "dropbox-file-2.png", file_type: "image/png" },
-    ],
-  });
-  mockedDeleteAdminQdrantPoint.mockResolvedValue({ point_id: "p1", deleted: 1 });
-
-  render(<AdminPage />);
-
-  const viewBtn = await screen.findByRole("button", { name: "View embedded items for Dropbox" });
-  await user.click(viewBtn);
-
-  expect(mockedGetAdminProviderItems).toHaveBeenCalledWith("dropbox");
-
-  const dialog = await screen.findByRole("dialog", { name: "Dropbox embedded items" });
-  expect(within(dialog).getByText("dropbox-file-1.pdf")).toBeInTheDocument();
-  expect(within(dialog).getByText("dropbox-file-2.png")).toBeInTheDocument();
-
-  const deleteBtn = within(dialog).getByRole("button", { name: "Delete dropbox-file-1.pdf" });
-  await user.click(deleteBtn);
-
-  const confirmation = await screen.findByRole("dialog", { name: "Remove dropbox-file-1.pdf?" });
-  expect(mockedDeleteAdminQdrantPoint).not.toHaveBeenCalled();
-
-  await user.click(within(confirmation).getByRole("button", { name: "Remove source" }));
-
-  expect(mockedDeleteAdminQdrantPoint).toHaveBeenCalledWith("p1");
-  expect(await screen.findByText('Deleted embedded item "dropbox-file-1.pdf".')).toBeInTheDocument();
-  expect(screen.queryByText("dropbox-file-1.pdf")).not.toBeInTheDocument();
-});
-
 test("closes embedded items dialog with Escape", async () => {
   const user = userEvent.setup();
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });

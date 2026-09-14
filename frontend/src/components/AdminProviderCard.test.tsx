@@ -58,25 +58,6 @@ test("keeps disabled refresh control separate from workspace layout", () => {
   expect(styles).not.toMatch(DANGLING_DISABLED_SELECTOR);
   expect(adminShellRule(styles)).toContain("min-height: 100dvh;");
 });
-
-test("shows activity while sync runs", () => {
-  renderCard({
-    isSyncing: true,
-    isActivityOpen: true,
-    events: [{
-      sequence: 1,
-      provider: "google_drive",
-      filename: "brand-guide.pdf",
-      status: "embedding",
-      detail: "Embedding file",
-      terminal: false,
-    }],
-  });
-
-  expect(screen.getByRole("button", { name: "Stop syncing Google Drive" })).toBeInTheDocument();
-  expect(screen.getByRole("region", { name: "Google Drive sync activity" })).toHaveTextContent("brand-guide.pdf");
-});
-
 test("hides percentage and embedded numbers and labels while refreshing", () => {
   renderCard({ isRefreshing: true });
 

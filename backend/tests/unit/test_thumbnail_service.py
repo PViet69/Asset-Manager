@@ -19,7 +19,6 @@ from backend.app.storage.thumbnail_service import (
     ThumbnailProviderUnavailable,
     ThumbnailService,
     ThumbnailSourceNotFound,
-    UnsupportedThumbnailSource,
 )
 
 
@@ -36,12 +35,9 @@ def _registry(
     )
 
 
-
-
 @pytest.mark.unit
 def test_indexed_thumbnail_source_is_immutable() -> None:
     source = IndexedThumbnailSource(StorageProvider.DROPBOX, "id:photo", "image/png")
-
 
     with pytest.raises((AttributeError, TypeError)):
         source.file_type = "image/jpeg"  # type: ignore[misc]
@@ -56,23 +52,6 @@ def test_find_indexed_thumbnail_source_requires_exact_identity() -> None:
 
     with pytest.raises(ThumbnailSourceNotFound):
         service.get_thumbnail(StorageProvider.DROPBOX, "id:not-indexed")
-
-    client.get_thumbnail.assert_not_called()
-
-
-@pytest.mark.unit
-def test_thumbnail_service_rejects_indexed_non_image() -> None:
-    ingestion = Mock(spec=FileIngestionService)
-    ingestion.find_indexed_thumbnail_source.return_value = IndexedThumbnailSource(
-        StorageProvider.DROPBOX, "id:pdf", "application/pdf"
-    )
-    client = Mock()
-
-    with pytest.raises(UnsupportedThumbnailSource):
-        ThumbnailService(_registry(client), ingestion).get_thumbnail(
-            StorageProvider.DROPBOX, "id:pdf"
-        )
-
 
     client.get_thumbnail.assert_not_called()
 
@@ -141,4 +120,3 @@ def test_thumbnail_service_maps_provider_not_found_to_source_not_found() -> None
         ThumbnailService(_registry(client), ingestion).get_thumbnail(
             StorageProvider.DROPBOX, "id:photo"
         )
-

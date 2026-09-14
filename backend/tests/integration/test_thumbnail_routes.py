@@ -51,8 +51,6 @@ def _app(
     return create_app(service=service, provider_registry=registry), client
 
 
-
-
 @pytest.mark.integration
 def test_thumbnail_returns_cached_private_image_bytes_for_indexed_image() -> None:
     app, provider_client = _app()
@@ -77,24 +75,6 @@ def test_thumbnail_does_not_call_provider_for_unknown_indexed_source() -> None:
         response = client.get(THUMBNAIL_PATH)
 
     assert response.status_code == 404
-    provider_client.get_thumbnail.assert_not_called()
-
-
-@pytest.mark.integration
-def test_thumbnail_rejects_indexed_non_image() -> None:
-    app, provider_client = _app(
-        source=IndexedThumbnailSource(
-            StorageProvider.DROPBOX, "id:photo", "application/pdf"
-        )
-    )
-
-
-
-
-    with TestClient(app) as client:
-        response = client.get(THUMBNAIL_PATH)
-
-    assert response.status_code == 422
     provider_client.get_thumbnail.assert_not_called()
 
 

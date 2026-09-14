@@ -417,7 +417,7 @@ def test_find_indexed_thumbnail_source_requires_exact_stored_identity() -> None:
             "drive-1",
             f"/v1/storage/{StorageProvider.GOOGLE_DRIVE}/drive-1/thumbnail",
         ),
-        ("application/pdf", StorageProvider.DROPBOX, "id:pdf", None),
+        ("text/plain", StorageProvider.DROPBOX, "id:document", None),
         ("image/webp", None, None, None),
     ],
 )
