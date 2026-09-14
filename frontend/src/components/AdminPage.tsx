@@ -8,6 +8,7 @@ import {
   getAdminProviderItems,
   getAdminSession,
   getAdminSyncStatus,
+  getAdminTags,
   loginAdmin,
   logoutAdmin,
   refreshAdminProvider,
@@ -94,6 +95,8 @@ export function AdminPage(): JSX.Element {
   const [expandedTagCategories, setExpandedTagCategories] = useState<ReadonlySet<string>>(new Set());
   const [isDiscoveringTags, setIsDiscoveringTags] = useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
+  const [isLoadingTags, setIsLoadingTags] = useState(false);
+  const hasLoadedApprovedTags = useRef(false);
   const [toasts, setToasts] = useState<readonly Toast[]>([]);
   const controllers = useRef<Record<string, AbortController>>({});
 
@@ -109,6 +112,10 @@ export function AdminPage(): JSX.Element {
     setIsMobileNavigationOpen(false);
     setDashboard(EMPTY_DASHBOARD);
     setSyncingProviders(new Set());
+    setDiscoveredTagGroups([]);
+    setSelectedApprovedTags([]);
+    setExpandedTagCategories(new Set());
+    hasLoadedApprovedTags.current = false;
     if (window.location.pathname.startsWith("/admin")) window.history.replaceState({}, "", "/admin/login");
   }
 
@@ -132,6 +139,27 @@ export function AdminPage(): JSX.Element {
     }
   }
 
+  async function loadSavedTags(): Promise<void> {
+    setIsLoadingTags(true);
+    try {
+      const response = await getAdminTags();
+      const approved = response.groups.flatMap((group) => group.tags);
+      setSelectedApprovedTags(approved);
+      setDiscoveredTagGroups((current) => (current.length === 0 ? response.groups : current));
+      hasLoadedApprovedTags.current = true;
+      if (response.groups.length > 0) {
+        setExpandedTagCategories((current) => {
+          if (current.size > 0) return current;
+          return new Set(response.groups.map((group) => group.category));
+        });
+      }
+    } catch (caught) {
+      handleAdminError(caught, "Could not load approved tags");
+    } finally {
+      setIsLoadingTags(false);
+    }
+  }
+
   useEffect(() => {
     void (async () => {
       try {
@@ -139,6 +167,7 @@ export function AdminPage(): JSX.Element {
         setIsAuthenticated(true);
         if (window.location.pathname === "/admin" || window.location.pathname === "/admin/login") window.history.replaceState({}, "", "/admin/dashboard");
         await loadDashboard();
+        await loadSavedTags();
       } catch (caught) {
         if (window.location.pathname === "/admin" || window.location.pathname === "/admin/dashboard") window.history.replaceState({}, "", "/admin/login");
         handleAdminError(caught, "Could not restore session");
@@ -146,6 +175,12 @@ export function AdminPage(): JSX.Element {
     })();
     return () => Object.values(controllers.current).forEach((controller) => controller.abort());
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated && activeTab === "settings" && !hasLoadedApprovedTags.current) {
+      void loadSavedTags();
+    }
+  }, [isAuthenticated, activeTab]);
 
   async function handleLogin(enteredUsername: string, enteredPassword: string): Promise<void> {
     setLoginError(null);
@@ -169,6 +204,7 @@ export function AdminPage(): JSX.Element {
     setIsAuthenticated(true);
     window.history.pushState({}, "", "/admin/dashboard");
     await loadDashboard();
+    await loadSavedTags();
   }
 
   async function handleLogout(): Promise<void> {
@@ -360,10 +396,26 @@ export function AdminPage(): JSX.Element {
   async function discoverTags(): Promise<void> {
     setIsDiscoveringTags(true);
     try {
-      const response = await discoverAdminTags();
+      const [response, savedResponse] = await Promise.all([
+        discoverAdminTags(),
+        !hasLoadedApprovedTags.current ? getAdminTags().catch(() => null) : Promise.resolve(null),
+      ]);
+      const discoveredTags = new Set(response.groups.flatMap((group) => group.tags));
+      const sourceApproved = hasLoadedApprovedTags.current
+        ? selectedApprovedTags
+        : (savedResponse?.groups.flatMap((group) => group.tags) ?? []);
+      const nextApproved = sourceApproved.filter((tag) => discoveredTags.has(tag));
+
+      hasLoadedApprovedTags.current = true;
       setDiscoveredTagGroups(response.groups);
-      setSelectedApprovedTags([]);
-      setExpandedTagCategories(new Set());
+      setSelectedApprovedTags(nextApproved);
+
+      const categoriesWithSelected = new Set(
+        response.groups
+          .filter((group) => group.tags.some((tag) => nextApproved.includes(tag)))
+          .map((group) => group.category)
+      );
+      setExpandedTagCategories((current) => new Set([...current, ...categoriesWithSelected]));
       addToast(`Indexed tags for ${response.indexed_assets} assets.`, "status");
     } catch (caught) {
       handleAdminError(caught, "Could not discover tags");
@@ -391,7 +443,9 @@ export function AdminPage(): JSX.Element {
     const discoveredTags = discoveredTagGroups.flatMap((group) => group.tags);
     setIsSavingTags(true);
     try {
-      await saveAdminTags(discoveredTags, selectedApprovedTags);
+      const response = await saveAdminTags(discoveredTags, selectedApprovedTags);
+      const approved = response.groups.flatMap((group) => group.tags);
+      setSelectedApprovedTags(approved);
       addToast("Approved tags saved.", "status");
     } catch (caught) {
       handleAdminError(caught, "Could not save approved tags");
@@ -872,7 +926,7 @@ export function AdminPage(): JSX.Element {
         {activeTab === "settings" ? (
           <section className="admin-settings-grid" aria-label="Admin settings">
             <article><h2>Session</h2><button type="button" className="admin-link-button" onClick={() => void handleLogout()}>Sign out</button></article>
-            <article><h2>Status</h2><button type="button" className="admin-primary-button" onClick={() => void loadDashboard()} disabled={isLoadingDashboard}>{isLoadingDashboard ? "Refreshing" : "Refresh status"}</button></article>
+            <article><h2>Status</h2><button type="button" className="admin-primary-button" onClick={() => { void loadDashboard(); void loadSavedTags(); }} disabled={isLoadingDashboard}>{isLoadingDashboard ? "Refreshing" : "Refresh status"}</button></article>
             <article className="admin-tag-manager">
               <div className="admin-tag-manager__heading">
                 <div>
@@ -883,7 +937,9 @@ export function AdminPage(): JSX.Element {
                   {isDiscoveringTags ? "Discovering tags" : "Discover and index tags"}
                 </button>
               </div>
-              {discoveredTagGroups.length > 0 ? (
+              {isLoadingTags && discoveredTagGroups.length === 0 ? (
+                <p className="admin-status-desc">Loading saved tags…</p>
+              ) : discoveredTagGroups.length > 0 ? (
                 <>
                   <div className="admin-tag-selection-summary" aria-live="polite">
                     <strong>{selectedApprovedTags.length === 1 ? "1 tag selected" : selectedApprovedTags.length > 1 ? `${selectedApprovedTags.length} tags selected` : "No tags selected"}</strong>

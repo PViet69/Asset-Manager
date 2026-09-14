@@ -10,6 +10,7 @@ import {
   getAdminProviderItems,
   getAdminSession,
   getAdminSyncStatus,
+  getAdminTags,
   loginAdmin,
   refreshAdminProvider,
   reindexAdminStorageFile,
@@ -34,10 +35,11 @@ vi.mock("../api/client", () => ({
   getAdminProviderItems: vi.fn(),
   getAdminSession: vi.fn(),
   getAdminSyncStatus: vi.fn(),
+  getAdminTags: vi.fn().mockResolvedValue({ groups: [] }),
   loginAdmin: vi.fn(),
   refreshAdminProvider: vi.fn(),
   reindexAdminStorageFile: vi.fn(),
-  saveAdminTags: vi.fn(),
+  saveAdminTags: vi.fn().mockResolvedValue({ groups: [] }),
   stopAdminSync: vi.fn(),
   streamAdminSync: vi.fn(),
 }));
@@ -47,6 +49,7 @@ const mockedDiscoverAdminTags = vi.mocked(discoverAdminTags);
 const mockedGetAdminProviderItems = vi.mocked(getAdminProviderItems);
 const mockedGetAdminSession = vi.mocked(getAdminSession);
 const mockedGetAdminSyncStatus = vi.mocked(getAdminSyncStatus);
+const mockedGetAdminTags = vi.mocked(getAdminTags);
 const mockedLoginAdmin = vi.mocked(loginAdmin);
 const mockedRefreshAdminProvider = vi.mocked(refreshAdminProvider);
 const mockedReindexAdminStorageFile = vi.mocked(reindexAdminStorageFile);
@@ -69,6 +72,8 @@ const dashboard = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mockedGetAdminTags.mockResolvedValue({ groups: [] });
+  mockedSaveAdminTags.mockResolvedValue({ groups: [] });
 });
 
 function mockSignedOut(): void {
@@ -421,4 +426,84 @@ test("renders real assets detected chart with provider breakdown and filters", a
   expect(within(chartViewport).getByText("Detected")).toBeInTheDocument();
   expect(within(chartViewport).getByText("Indexed")).toBeInTheDocument();
   expect(within(chartViewport).getByText("Pending")).toBeInTheDocument();
+});
+
+test("shows previously chosen tags on settings so admin can turn them off and save", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedGetAdminTags.mockResolvedValue({
+    groups: [
+      { category: "Formats", tags: ["format:png", "format:svg"] },
+      { category: "Sources", tags: ["source:gdrive"] },
+    ],
+  });
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Settings" }));
+
+  // Both categories are auto-expanded and chips are selected
+  expect(await screen.findByText("3 tags selected")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Formats 2 selected" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Sources 1 selected" })).toBeInTheDocument();
+
+  const pngChip = screen.getByRole("button", { name: "png" });
+  const svgChip = screen.getByRole("button", { name: "svg" });
+  const gdriveChip = screen.getByRole("button", { name: "gdrive" });
+
+  expect(pngChip).toHaveAttribute("aria-pressed", "true");
+  expect(svgChip).toHaveAttribute("aria-pressed", "true");
+  expect(gdriveChip).toHaveAttribute("aria-pressed", "true");
+
+  // Admin turns off "png"
+  await user.click(pngChip);
+  expect(pngChip).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByText("2 tags selected")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Formats 1 selected" })).toBeInTheDocument();
+
+  // Admin saves updated tags
+  await user.click(screen.getByRole("button", { name: "Save approved tags" }));
+
+  await waitFor(() => {
+    expect(mockedSaveAdminTags).toHaveBeenCalledWith(
+      ["format:png", "format:svg", "source:gdrive"],
+      ["format:svg", "source:gdrive"]
+    );
+  });
+});
+
+test("preserves previously approved tags when discovering new tags", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedGetAdminTags.mockResolvedValue({
+    groups: [{ category: "Formats", tags: ["format:png"] }],
+  });
+  mockedDiscoverAdminTags.mockResolvedValue({
+    indexed_assets: 10,
+    groups: [
+      { category: "Formats", tags: ["format:png", "format:jpg"] },
+      { category: "Subjects", tags: ["subject:car"] },
+    ],
+  });
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Settings" }));
+
+  // Initial state shows saved tag
+  expect(await screen.findByText("1 tag selected")).toBeInTheDocument();
+
+  // Run discovery
+  await user.click(screen.getByRole("button", { name: "Discover and index tags" }));
+
+  expect(mockedDiscoverAdminTags).toHaveBeenCalledOnce();
+  // Formats category has 1 selected (format:png preserved)
+  expect(await screen.findByRole("button", { name: "Formats 1 selected" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Subjects 0 selected" })).toBeInTheDocument();
+
+  // Formats was expanded because it has a selected tag
+  const pngChip = screen.getByRole("button", { name: "png" });
+  const jpgChip = screen.getByRole("button", { name: "jpg" });
+  expect(pngChip).toHaveAttribute("aria-pressed", "true");
+  expect(jpgChip).toHaveAttribute("aria-pressed", "false");
 });
