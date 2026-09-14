@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { ApiError, getApprovedTags, getProviders, searchVectors } from "../api/client";
 import type {
   ProviderMeta,
@@ -65,6 +65,7 @@ export function SearchPanel({
   const [searchMode, setSearchMode] = useState<SearchMode>("semantic");
   const [sortBy, setSortBy] = useState<SortOrder>("relevance");
   const [state, setState] = useState<SearchState>({ kind: "idle" });
+  const searchRequestIdRef = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -92,6 +93,7 @@ export function SearchPanel({
   }
 
   function changeSearchMode(mode: SearchMode): void {
+    searchRequestIdRef.current++;
     setSearchMode(mode);
     setState({ kind: "idle" });
   }
@@ -118,10 +120,12 @@ export function SearchPanel({
 
     const trimmed = query.trim();
     if (trimmed.length === 0) {
+      searchRequestIdRef.current++;
       setState({ kind: "idle" });
       return;
     }
 
+    const reqId = ++searchRequestIdRef.current;
     let isMounted = true;
     const timer = setTimeout(async () => {
       try {
@@ -131,11 +135,11 @@ export function SearchPanel({
           provider || undefined,
           "filename"
         );
-        if (isMounted) {
+        if (isMounted && searchRequestIdRef.current === reqId) {
           setState({ kind: "result", items: res.data });
         }
       } catch (err) {
-        if (isMounted) {
+        if (isMounted && searchRequestIdRef.current === reqId) {
           const message =
             err instanceof ApiError ? err.message : "Search failed";
           setState({ kind: "error", message });
@@ -149,30 +153,54 @@ export function SearchPanel({
     };
   }, [query, provider, searchMode]);
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (query.length > MAX_QUERY_LENGTH) return;
-    const trimmed = query.trim();
-    if (searchMode !== "tag" && trimmed.length === 0) return;
-    if (searchMode === "tag" && selectedTags.length === 0) return;
+  async function performSearch(
+    targetQuery: string,
+    targetProvider: ProviderFilter,
+    targetMode: SearchMode,
+    targetTags: readonly string[]
+  ): Promise<void> {
+    if (targetQuery.length > MAX_QUERY_LENGTH) return;
+    const trimmed = targetQuery.trim();
+    if (targetMode !== "tag" && trimmed.length === 0) return;
+    if (targetMode === "tag" && targetTags.length === 0) return;
+
+    const reqId = ++searchRequestIdRef.current;
     setState({ kind: "submitting" });
     try {
       const args = [
-        searchMode === "tag" ? "" : trimmed,
-        searchMode === "semantic" ? clampTopK(topK) : MAX_TOP_K,
-        provider || undefined,
-        searchMode,
+        targetMode === "tag" ? "" : trimmed,
+        targetMode === "semantic" ? clampTopK(topK) : MAX_TOP_K,
+        targetProvider || undefined,
+        targetMode,
       ] as const;
       const res =
-        searchMode === "tag"
-          ? await searchVectors(...args, [...selectedTags])
+        targetMode === "tag"
+          ? await searchVectors(...args, [...targetTags])
           : await searchVectors(...args);
-      setState({ kind: "result", items: res.data });
+      if (searchRequestIdRef.current === reqId) {
+        setState({ kind: "result", items: res.data });
+      }
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : "Search failed";
-      setState({ kind: "error", message });
+      if (searchRequestIdRef.current === reqId) {
+        const message =
+          err instanceof ApiError ? err.message : "Search failed";
+        setState({ kind: "error", message });
+      }
     }
+  }
+
+  function handleProviderChange(nextProvider: ProviderFilter): void {
+    setProvider(nextProvider);
+    if (state.kind === "result" || state.kind === "submitting") {
+      if (searchMode === "semantic" || searchMode === "tag") {
+        void performSearch(query, nextProvider, searchMode, selectedTags);
+      }
+    }
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    await performSearch(query, provider, searchMode, selectedTags);
   }
 
   const sortedItems =
@@ -235,33 +263,90 @@ export function SearchPanel({
           className={`search-mode-chip ${searchMode === "tag" ? "search-mode-chip--active" : ""}`}
           onClick={() => changeSearchMode("tag")}
         >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+            <line x1="7" y1="7" x2="7.01" y2="7" />
+          </svg>
           <span>Tag Search</span>
         </button>
       </div>
 
       <form onSubmit={onSubmit}>
-        <div className="search-bar-box">
+        <div className={`search-bar-box ${searchMode === "tag" ? "search-bar-box--tag" : ""}`}>
           {searchMode === "tag" ? (
             <div className="search-tag-picker" aria-label="Approved tags">
-              {tagGroups.length === 0 ? (
-                <span className="hint">No approved tags are available.</span>
-              ) : (
-                tagGroups.map((group) => (
-                  <fieldset key={group.category} className="search-tag-group">
-                    <legend>{group.category}</legend>
-                    {group.tags.map((tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        className={`search-filter-chip ${selectedTags.includes(tag) ? "search-filter-chip--active" : ""}`}
-                        onClick={() => toggleTag(tag)}
-                        aria-pressed={selectedTags.includes(tag)}
-                      >
-                        {displayTag(tag)}
-                      </button>
+              <div className="search-tag-picker__header">
+                <div className="search-tag-picker__title-group">
+                  <span className="search-tag-picker__title">Filter by Tags</span>
+                  <span className="search-tag-picker__sub">Select approved tags to find matching assets</span>
+                </div>
+
+                {selectedTags.length > 0 && (
+                  <button
+                    type="button"
+                    className="search-tag-picker__clear-btn"
+                    onClick={() => setSelectedTags([])}
+                    aria-label="Clear selected tags"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+
+              {selectedTags.length > 0 && (
+                <div className="search-tag-selected-tray" aria-label="Selected tags">
+                  <span className="search-tag-selected-tray__label">Selected:</span>
+                  <span className="search-tag-picker__badge" aria-label={`${selectedTags.length} selected`}>
+                    {selectedTags.length}
+                  </span>
+                  <div className="search-tag-selected-tray__chips">
+                    {selectedTags.map((tag) => (
+                      <span key={tag} className="search-tag-selected-chip">
+                        <span>{displayTag(tag)}</span>
+                        <button
+                          type="button"
+                          className="search-tag-selected-chip__remove"
+                          onClick={() => toggleTag(tag)}
+                          aria-label={`Remove tag ${displayTag(tag)}`}
+                        >
+                          ✕
+                        </button>
+                      </span>
                     ))}
-                  </fieldset>
-                ))
+                  </div>
+                </div>
+              )}
+
+              {tagGroups.length === 0 ? (
+                <div className="search-tag-picker__empty">
+                  <span className="hint">No approved tags are available.</span>
+                </div>
+              ) : (
+                <div className="search-tag-groups">
+                  {tagGroups.map((group) => (
+                    <fieldset key={group.category} className="search-tag-group">
+                      <div className="search-tag-group__header">
+                        <legend className="search-tag-group__legend">{group.category}</legend>
+                        <span className="search-tag-group__count">
+                          {group.tags.length}
+                        </span>
+                      </div>
+                      <div className="search-tag-group__chips">
+                        {group.tags.map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            className={`search-filter-chip ${selectedTags.includes(tag) ? "search-filter-chip--active" : ""}`}
+                            onClick={() => toggleTag(tag)}
+                            aria-pressed={selectedTags.includes(tag)}
+                          >
+                            {displayTag(tag)}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ))}
+                </div>
               )}
             </div>
           ) : (
@@ -334,7 +419,7 @@ export function SearchPanel({
           <button
             type="button"
             className={`search-filter-chip ${provider === "" ? "search-filter-chip--active" : ""}`}
-            onClick={() => setProvider("")}
+            onClick={() => handleProviderChange("")}
           >
             All providers
           </button>
@@ -343,7 +428,7 @@ export function SearchPanel({
               key={p.id}
               type="button"
               className={`search-filter-chip ${provider === p.id ? "search-filter-chip--active" : ""}`}
-              onClick={() => setProvider(provider === p.id ? "" : (p.id as ProviderFilter))}
+              onClick={() => handleProviderChange(provider === p.id ? "" : (p.id as ProviderFilter))}
             >
               <ProviderLogo provider={p.id} size={13} />
               <span>{p.displayName}</span>
@@ -472,10 +557,15 @@ export function SearchPanel({
                         )}
                       </div>
                       {item.provider && (
-                        <span className="result-provider-pill" title={`Storage provider: ${item.provider}`}>
+                        <button
+                          type="button"
+                          className="result-provider-pill"
+                          title={`Filter by ${item.provider.replace(/_/g, " ")}`}
+                          onClick={() => handleProviderChange(provider === item.provider ? "" : (item.provider as ProviderFilter))}
+                        >
                           <ProviderLogo provider={item.provider} size={12} />
                           <span style={{ textTransform: "capitalize" }}>{item.provider.replace(/_/g, " ")}</span>
-                        </span>
+                        </button>
                       )}
                       {formattedDate && (
                         <span

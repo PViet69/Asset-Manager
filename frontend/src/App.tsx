@@ -51,10 +51,10 @@ function MainPage(): JSX.Element {
       <main className="search-main">
         <div className="search-hero">
           <h2 className="search-hero__title">
-            Search Assets &amp; Documents
+            Search Media
           </h2>
           <p className="search-hero__subtitle">
-            Find documents, media, and records across your storage providers using natural language queries or exact filename match.
+            Find media, across your storage providers using natural language queries or exact filename match.
           </p>
         </div>
 

@@ -236,4 +236,112 @@ test("does not render the settings button", () => {
   expect(screen.queryByRole("button", { name: "Settings" })).not.toBeInTheDocument();
 });
 
+test("re-triggers search when changing provider during search", async () => {
+  mockedSearchVectors.mockResolvedValue({
+    object: "list",
+    data: [
+      {
+        point_id: "p-1",
+        score: 0.95,
+        filename: "doc-dropbox.pdf",
+        file_path: "/doc-dropbox.pdf",
+        file_type: "application/pdf",
+        content: "Dropbox content",
+        provider: "dropbox",
+      },
+    ],
+  });
+  render(<SearchPanel />);
+
+  fireEvent.change(screen.getByLabelText("Query"), {
+    target: { value: "quarterly report" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+  await waitFor(() => {
+    expect(mockedSearchVectors).toHaveBeenCalledWith(
+      "quarterly report",
+      10,
+      undefined,
+      "semantic"
+    );
+  });
+  expect(await screen.findByText("doc-dropbox.pdf")).toBeInTheDocument();
+
+  // Now change provider during search to Google Drive
+  const gdriveBtn = await screen.findByRole("button", { name: /Google Drive/i });
+  fireEvent.click(gdriveBtn);
+
+  await waitFor(() => {
+    expect(mockedSearchVectors).toHaveBeenCalledWith(
+      "quarterly report",
+      10,
+      "google_drive",
+      "semantic"
+    );
+  });
+
+  // Clicking provider pill on a search result item also changes provider filter
+  const providerPill = screen.getByTitle("Filter by dropbox");
+  fireEvent.click(providerPill);
+
+  await waitFor(() => {
+    expect(mockedSearchVectors).toHaveBeenCalledWith(
+      "quarterly report",
+      10,
+      "dropbox",
+      "semantic"
+    );
+  });
+});
+
+test("re-triggers search when changing provider during tag search", async () => {
+  mockedSearchVectors.mockResolvedValue({
+    object: "list",
+    data: [],
+  });
+  render(<SearchPanel />);
+
+  fireEvent.click(screen.getByRole("tab", { name: "Tag Search" }));
+  fireEvent.click(await screen.findByRole("button", { name: "laptop" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+  await waitFor(() => {
+    expect(mockedSearchVectors).toHaveBeenCalledWith(
+      "",
+      100,
+      undefined,
+      "tag",
+      ["subject:laptop"]
+    );
+  });
+
+  const dropboxBtn = await screen.findByRole("button", { name: /Dropbox/i });
+  fireEvent.click(dropboxBtn);
+
+  await waitFor(() => {
+    expect(mockedSearchVectors).toHaveBeenCalledWith(
+      "",
+      100,
+      "dropbox",
+      "tag",
+      ["subject:laptop"]
+    );
+  });
+});
+
+test("allows selecting and clearing tags in tag search mode", async () => {
+  render(<SearchPanel />);
+
+  fireEvent.click(screen.getByRole("tab", { name: "Tag Search" }));
+  const laptopBtn = await screen.findByRole("button", { name: "laptop" });
+  fireEvent.click(laptopBtn);
+
+  expect(screen.getByLabelText("1 selected")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Clear selected tags" })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Clear selected tags" }));
+  expect(screen.queryByLabelText("1 selected")).not.toBeInTheDocument();
+});
+
 

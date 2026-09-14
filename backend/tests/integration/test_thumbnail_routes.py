@@ -14,6 +14,7 @@ from backend.app.storage.client import (
     Thumbnail,
 )
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
+from backend.app.storage.thumbnail_cache import THUMBNAIL_CACHE_TTL_SECONDS
 from backend.app.storage.thumbnail_service import IndexedThumbnailSource
 
 THUMBNAIL_PATH = f"/v1/storage/{StorageProvider.DROPBOX}/id:photo/thumbnail"
@@ -62,7 +63,10 @@ def test_thumbnail_returns_cached_private_image_bytes_for_indexed_image() -> Non
     assert first_response.status_code == 200
     assert first_response.content == b"small-image"
     assert first_response.headers["content-type"] == "image/jpeg"
-    assert first_response.headers["cache-control"] == "private, max-age=300"
+    assert (
+        first_response.headers["cache-control"]
+        == f"private, max-age={THUMBNAIL_CACHE_TTL_SECONDS}"
+    )
     assert second_response.content == first_response.content
     provider_client.get_thumbnail.assert_called_once_with("id:photo")
 
