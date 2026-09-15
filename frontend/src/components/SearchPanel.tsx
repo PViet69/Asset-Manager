@@ -375,7 +375,7 @@ export function SearchPanel({
                 placeholder={
                   searchMode === "semantic"
                     ? "Describe what you're looking for (e.g. 'financial forecast Q3', 'brand logo')..."
-                    : "Enter filename or extension (e.g. 'invoice.pdf', 'quarterly')..."
+                    : "Enter filename or extension (e.g. 'brand-logo.png', 'quarterly')..."
                 }
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
