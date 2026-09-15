@@ -69,15 +69,21 @@ class OpenAICompatibleModelClient:
                 raise ModelNotFoundError(exc) from exc
             except (APITimeoutError, APIConnectionError, APIError) as exc:
                 last_exc = exc
-                logger.warning("Embedding model attempt %d failed: %s", attempt + 1, exc)
+                logger.warning(
+                    "Embedding model attempt %d failed: %s", attempt + 1, exc
+                )
                 if attempt < 2:
                     time.sleep(1.0 * (attempt + 1))
                     continue
 
         if last_exc is not None:
             if isinstance(last_exc, APITimeoutError):
-                raise ModelEndpointError("Model endpoint timed out", last_exc) from last_exc
-            raise ModelEndpointError("Model endpoint rejected input", last_exc) from last_exc
+                raise ModelEndpointError(
+                    "Model endpoint timed out", last_exc
+                ) from last_exc
+            raise ModelEndpointError(
+                "Model endpoint rejected input", last_exc
+            ) from last_exc
         raise ModelEndpointError("Model endpoint rejected input")
 
     def check_health(self) -> str:

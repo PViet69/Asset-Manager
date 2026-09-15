@@ -104,8 +104,5 @@ async def test_two_provider_streams_keep_events_isolated() -> None:
     )
 
 
-
-
-
 async def _collect(stream: ProviderSyncStream) -> list[bytes]:
     return [frame async for frame in stream.run()]

@@ -28,6 +28,3 @@ def test_thumbnail_cache_evicts_oldest_live_entry_when_full() -> None:
     assert cache.get(StorageProvider.DROPBOX, "photo-2") == Thumbnail(
         b"second", "image/jpeg"
     )
-
-
-

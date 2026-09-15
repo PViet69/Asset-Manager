@@ -32,7 +32,6 @@ def test_formats_description_in_stable_field_order() -> None:
     )
 
 
-
 @pytest.mark.unit
 def test_omits_empty_collection_fields() -> None:
     description = make_description(

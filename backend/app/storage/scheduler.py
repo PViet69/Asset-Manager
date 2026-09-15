@@ -70,7 +70,6 @@ class StorageSyncScheduler:
         finally:
             self._cancel_event.clear()
 
-
     def _tick_blocking(
         self,
         observer: Callable[[SyncTraceItem], None] | None = None,
@@ -111,7 +110,9 @@ class StorageSyncScheduler:
         for file in plan.to_upsert:
             if cancel_event is not None and cancel_event.is_set():
                 trace("sync_cancel", "ok", "Sync operation stopped by user")
-                logger.info("Storage sync stopped by user for provider %s", self._provider)
+                logger.info(
+                    "Storage sync stopped by user for provider %s", self._provider
+                )
                 break
             if self._upsert(file, trace):
                 upserted += 1
@@ -150,7 +151,8 @@ class StorageSyncScheduler:
                 trace("file_download", "ok", "Downloaded file", file)
                 upload = FileUpload(
                     filename=downloaded.file.name,
-                    content_type=downloaded.export_mime_type or downloaded.file.mime_type,
+                    content_type=downloaded.export_mime_type
+                    or downloaded.file.mime_type,
                     content=downloaded.content,
                     file_path=downloaded.file.name,
                     modified_time=downloaded.file.modified_time,
@@ -194,7 +196,6 @@ class StorageSyncScheduler:
                 logger.exception("Storage file ingestion failed for %s", file.name)
                 trace("file_ingestion", "failed", "File ingestion failed", file)
         return 0
-
 
     async def delete_for_reindex(self, storage_file_id: str) -> int:
         async with self._lock:

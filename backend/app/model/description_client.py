@@ -137,8 +137,12 @@ class InstructorImageDescriptionClient:
                 _failure_detail(last_exc),
             )
             if isinstance(last_exc, APITimeoutError):
-                raise ModelEndpointError("Model endpoint timed out", last_exc) from last_exc
-            raise ModelEndpointError("Model endpoint failed to describe image", last_exc) from last_exc
+                raise ModelEndpointError(
+                    "Model endpoint timed out", last_exc
+                ) from last_exc
+            raise ModelEndpointError(
+                "Model endpoint failed to describe image", last_exc
+            ) from last_exc
         raise ModelEndpointError("Model endpoint returned an invalid image description")
 
     def check_health(self) -> str:
