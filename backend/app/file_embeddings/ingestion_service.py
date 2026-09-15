@@ -270,7 +270,5 @@ class FileIngestionService:
         )
 
     def _to_embedding_text(self, processed: ProcessedInput) -> str:
-        if processed.kind == "text":
-            return str(processed.value)
-        description = self._description_client.describe(bytes(processed.value))
-        return description.to_embedding_text()
+        """Describe validated image bytes for embedding."""
+        return self._description_client.describe(processed.value).to_embedding_text()
