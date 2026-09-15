@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-FileGroup = Literal["text", "image", "pdf"]
+FileGroup = Literal["image"]
 
 
 class ProcessedInput:
@@ -10,10 +10,10 @@ class ProcessedInput:
 
     __slots__ = ("kind", "value")
 
-    kind: Literal["text", "image"]
-    value: str | bytes
+    kind: Literal["image"]
+    value: bytes
 
-    def __init__(self, kind: Literal["text", "image"], value: str | bytes) -> None:
+    def __init__(self, kind: Literal["image"], value: bytes) -> None:
         object.__setattr__(self, "kind", kind)
         object.__setattr__(self, "value", value)
 

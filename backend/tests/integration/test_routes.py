@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import ANY, Mock, patch
 
 import pytest
@@ -27,8 +28,12 @@ from backend.app.integrations.model_client import ModelClient
 from backend.app.integrations.qdrant_store import QdrantStore
 from backend.app.main import create_app
 from backend.app.model.description_client import ImageDescriptionClient
+from backend.app.model.prompt_model import ImageDescription
 from backend.app.security import MAX_REQUEST_SIZE
 from backend.app.tag_settings.store import TagSettingsStore
+
+REPO_ROOT = Path(__file__).parents[3]
+SMALL_PNG_PATH = REPO_ROOT / "backend" / "tests" / "fixtures" / "small.png"
 
 
 @dataclass(frozen=True)
@@ -63,8 +68,8 @@ def test_upload_uses_configured_ingestion_service_without_model_field(
     service.process_files.return_value = FileEmbeddingResponse(
         data=[
             FileEmbeddingItem(
-                filename="note.txt",
-                content_type="text/plain",
+                filename="photo.png",
+                content_type="image/png",
                 status="success",
             )
         ]
@@ -74,15 +79,15 @@ def test_upload_uses_configured_ingestion_service_without_model_field(
     with TestClient(app) as client:
         response = client.post(
             "/v1/file-embeddings",
-            files=[("files", ("note.txt", b"hello", "text/plain"))],
+            files=[("files", ("photo.png", b"image", "image/png"))],
         )
 
     assert response.status_code == 200
     uploads = service.process_files.call_args.args[0]
     assert len(uploads) == 1
-    assert uploads[0].filename == "note.txt"
+    assert uploads[0].filename == "photo.png"
     assert uploads[0].file_path == ""
-    assert uploads[0].content == b"hello"
+    assert uploads[0].content == b"image"
     assert uploads[0].provider is None
     assert uploads[0].storage_file_id is None
     assert service.process_files.call_args.kwargs == {}
@@ -96,14 +101,14 @@ def test_uploads_files_in_order_and_returns_public_response(
     service.process_files.return_value = FileEmbeddingResponse(
         data=[
             FileEmbeddingItem(
-                filename="first.txt",
-                content_type="text/plain",
+                filename="first.png",
+                content_type="image/png",
                 status="success",
                 reason=None,
             ),
             FileEmbeddingItem(
-                filename="second.txt",
-                content_type="text/plain",
+                filename="second.png",
+                content_type="image/png",
                 status="success",
                 reason=None,
             ),
@@ -115,8 +120,8 @@ def test_uploads_files_in_order_and_returns_public_response(
         response = client.post(
             "/v1/file-embeddings",
             files=[
-                ("files", ("first.txt", b"first content", "text/plain")),
-                ("files", ("second.txt", b"second content", "text/plain")),
+                ("files", ("first.png", b"first image", "image/png")),
+                ("files", ("second.png", b"second image", "image/png")),
             ],
         )
 
@@ -125,14 +130,14 @@ def test_uploads_files_in_order_and_returns_public_response(
         "object": "list",
         "data": [
             {
-                "filename": "first.txt",
-                "content_type": "text/plain",
+                "filename": "first.png",
+                "content_type": "image/png",
                 "status": "success",
                 "reason": None,
             },
             {
-                "filename": "second.txt",
-                "content_type": "text/plain",
+                "filename": "second.png",
+                "content_type": "image/png",
                 "status": "success",
                 "reason": None,
             },
@@ -140,8 +145,8 @@ def test_uploads_files_in_order_and_returns_public_response(
     }
     service.process_files.assert_called_once_with(
         (
-            FileUpload("first.txt", "text/plain", b"first content", "", ANY),
-            FileUpload("second.txt", "text/plain", b"second content", "", ANY),
+            FileUpload("first.png", "image/png", b"first image", "", ANY),
+            FileUpload("second.png", "image/png", b"second image", "", ANY),
         ),
     )
     assert "point_id" not in response.json()
@@ -183,8 +188,7 @@ def test_uploading_more_than_ten_files_returns_bad_request(app: FastAPI) -> None
     service = Mock(spec=FileIngestionService)
     override_ingestion_service(app, service)
     files = [
-        ("files", (f"file-{index}.txt", b"content", "text/plain"))
-        for index in range(11)
+        ("files", (f"file-{index}.png", b"content", "image/png")) for index in range(11)
     ]
 
     with TestClient(app) as client:
@@ -206,7 +210,7 @@ def test_route_closes_all_uploads_before_rejecting_more_than_ten(
     override_ingestion_service(app, service)
     file_handles = [_BoundedReadFile(b"content") for _ in range(11)]
     uploads = [
-        UploadFile(file=handle, filename=f"file-{index}.txt")
+        UploadFile(file=handle, filename=f"file-{index}.png")
         for index, handle in enumerate(file_handles)
     ]
 
@@ -233,8 +237,8 @@ def test_route_bounds_oversized_upload_read_and_returns_file_error(
     file_handle = _BoundedReadFile(b"x" * (MAX_FILE_SIZE + 1))
     upload = UploadFile(
         file=file_handle,
-        filename="oversized.txt",
-        headers={"content-type": "text/plain"},
+        filename="oversized.png",
+        headers={"content-type": "image/png"},
     )
 
     response = create_file_embeddings(
@@ -243,7 +247,7 @@ def test_route_bounds_oversized_upload_read_and_returns_file_error(
         service=service,
     )
 
-    assert response.data[0].filename == "oversized.txt"
+    assert response.data[0].filename == "oversized.png"
     assert response.data[0].status == "failed"
     assert response.data[0].reason == "File exceeds 25 MB limit"
     assert file_handle.read_sizes == [MAX_FILE_SIZE + 1]
@@ -266,14 +270,14 @@ def test_real_service_reports_empty_file_without_embedding_or_storage(
     with TestClient(app_with_service) as client:
         response = client.post(
             "/v1/file-embeddings",
-            files=[("files", ("empty.txt", b"", "text/plain"))],
+            files=[("files", ("empty.png", b"", "image/png"))],
         )
 
     assert response.status_code == 200
     assert response.json()["data"] == [
         {
-            "filename": "empty.txt",
-            "content_type": "text/plain",
+            "filename": "empty.png",
+            "content_type": "image/png",
             "status": "failed",
             "reason": "Empty file",
         }
@@ -284,14 +288,12 @@ def test_real_service_reports_empty_file_without_embedding_or_storage(
 
 
 @pytest.mark.integration
-def test_real_service_preserves_order_for_oversized_and_valid_files(
+def test_real_service_preserves_order_for_oversized_and_unsupported_files(
     app: FastAPI,
 ) -> None:
     description_client = Mock(spec=ImageDescriptionClient)
     model_client = Mock(spec=ModelClient)
-    model_client.embed_text.return_value = [0.123456, -0.654321]
     qdrant_store = Mock(spec=QdrantStore)
-    qdrant_store.store_embedding.return_value = "point-secret"
     service = FileIngestionService(description_client, model_client, qdrant_store)
     app_with_service = create_app(service=service)
     oversized = b"x" * (25 * 1024 * 1024 + 1)
@@ -300,40 +302,32 @@ def test_real_service_preserves_order_for_oversized_and_valid_files(
         response = client.post(
             "/v1/file-embeddings",
             files=[
-                ("files", ("oversized.txt", oversized, "text/plain")),
-                ("files", ("valid.txt", b"valid text", "text/plain")),
+                ("files", ("oversized.png", oversized, "image/png")),
+                (
+                    "files",
+                    ("unsupported.bin", b"unsupported", "application/octet-stream"),
+                ),
             ],
         )
 
     assert response.status_code == 200
     assert response.json()["data"] == [
         {
-            "filename": "oversized.txt",
-            "content_type": "text/plain",
+            "filename": "oversized.png",
+            "content_type": "image/png",
             "status": "failed",
             "reason": "File exceeds 25 MB limit",
         },
         {
-            "filename": "valid.txt",
-            "content_type": "text/plain",
-            "status": "success",
-            "reason": None,
+            "filename": "unsupported.bin",
+            "content_type": "application/octet-stream",
+            "status": "failed",
+            "reason": "Unsupported file type",
         },
     ]
-    serialized = response.text
-    for forbidden in (
-        "0.123456",
-        "-0.654321",
-        "point-secret",
-        "sk-test-api-key",
-        "Traceback (most recent call last)",
-        "/Users/narutojaki/private.txt",
-    ):
-        assert forbidden not in serialized
-    model_client.embed_text.assert_called_once_with("valid text")
-    qdrant_store.store_embedding.assert_called_once_with(
-        [0.123456, -0.654321], payload=None
-    )
+    description_client.describe.assert_not_called()
+    model_client.embed_text.assert_not_called()
+    qdrant_store.store_embedding.assert_not_called()
 
 
 @pytest.mark.integration
@@ -346,6 +340,15 @@ def test_real_service_returns_safe_model_error_per_file(
     error_message: str,
 ) -> None:
     description_client = Mock(spec=ImageDescriptionClient)
+    description_client.describe.return_value = ImageDescription(
+        subjects=("square",),
+        attributes=("green",),
+        actions=("static",),
+        setting=("fixture",),
+        colors=("green",),
+        style=("pixel art",),
+        visible_text=(),
+    )
     model_client = Mock(spec=ModelClient)
     model_client.embed_text.side_effect = ModelEndpointError(error_message)
     qdrant_store = Mock(spec=QdrantStore)
@@ -355,7 +358,7 @@ def test_real_service_returns_safe_model_error_per_file(
     with TestClient(app_with_service) as client:
         response = client.post(
             "/v1/file-embeddings",
-            files=[("files", ("file.txt", b"valid text", "text/plain"))],
+            files=[("files", ("file.png", SMALL_PNG_PATH.read_bytes(), "image/png"))],
         )
 
     assert response.status_code == 200
@@ -411,6 +414,15 @@ def test_real_service_returns_safe_qdrant_error_per_file(
     app: FastAPI,
 ) -> None:
     description_client = Mock(spec=ImageDescriptionClient)
+    description_client.describe.return_value = ImageDescription(
+        subjects=("square",),
+        attributes=("green",),
+        actions=("static",),
+        setting=("fixture",),
+        colors=("green",),
+        style=("pixel art",),
+        visible_text=(),
+    )
     model_client = Mock(spec=ModelClient)
     model_client.embed_text.return_value = [0.1, 0.2]
     qdrant_store = Mock(spec=QdrantStore)
@@ -423,13 +435,15 @@ def test_real_service_returns_safe_qdrant_error_per_file(
     with TestClient(app_with_service) as client:
         response = client.post(
             "/v1/file-embeddings",
-            files=[("files", ("file.txt", b"valid text", "text/plain"))],
+            files=[("files", ("file.png", SMALL_PNG_PATH.read_bytes(), "image/png"))],
         )
 
     assert response.status_code == 200
     assert response.json()["data"][0]["status"] == "failed"
     assert response.json()["data"][0]["reason"] == "Qdrant storage failure"
-    model_client.embed_text.assert_called_once_with("valid text")
+    model_client.embed_text.assert_called_once_with(
+        description_client.describe.return_value.to_embedding_text()
+    )
     qdrant_store.store_embedding.assert_called_once_with([0.1, 0.2], payload=None)
 
 
@@ -598,7 +612,7 @@ def test_file_upload_returns_503_when_model_not_found(
     with TestClient(app) as client:
         response = client.post(
             "/v1/file-embeddings",
-            files=[("files", ("file.txt", b"content", "text/plain"))],
+            files=[("files", ("file.png", b"content", "image/png"))],
         )
 
     assert response.status_code == 503

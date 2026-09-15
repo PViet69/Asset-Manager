@@ -48,6 +48,3 @@ def test_stable_point_id_is_provider_qualified() -> None:
     assert stable_point_id(StorageProvider.DROPBOX, "same") != stable_point_id(
         StorageProvider.GOOGLE_DRIVE, "same"
     )
-
-
-

@@ -51,8 +51,6 @@ def test_registry_maps_each_configured_root_to_its_provider_entry() -> None:
     assert registry.get(StorageProvider.DROPBOX).root == "/team-assets"
 
 
-
-
 @pytest.mark.unit
 def test_registry_enables_each_configured_provider_independently() -> None:
     drive_client = Mock()
@@ -86,5 +84,3 @@ def test_registry_enables_each_configured_provider_independently() -> None:
     assert registry.get(StorageProvider.GOOGLE_DRIVE) is registry.providers[0]
     assert registry.get(StorageProvider.DROPBOX) is registry.providers[1]
     assert registry.get("unknown") is None
-
-

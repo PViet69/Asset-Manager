@@ -75,8 +75,6 @@ def _registry(client: _Client, *, enabled: bool = True) -> ProviderRegistry:
     )
 
 
-
-
 def _service(
     *,
     client: _Client | None = None,
@@ -185,5 +183,3 @@ async def test_refresh_rechecks_only_selected_provider_health_and_counts() -> No
     assert response.provider.health == "ok"
     assert response.provider.detected_count == 1
     assert client.list_count == 1
-
-

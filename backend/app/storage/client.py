@@ -15,37 +15,12 @@ from backend.app.storage import StorageProvider
 logger = logging.getLogger(__name__)
 
 
-_GOOGLE_NATIVE_MIMES: dict[str, str] = {
-    "application/vnd.google-apps.document": (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ),
-    "application/vnd.google-apps.spreadsheet": (
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    ),
-    "application/vnd.google-apps.presentation": (
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    ),
-    "application/vnd.google-apps.drawing": "image/png",
-}
-_SUPPORTED_MIMES: frozenset[str] = frozenset(
-    {
-        "text/plain",
-        "text/markdown",
-        "application/pdf",
-        "image/png",
-        "image/jpeg",
-        "image/webp",
-        *_GOOGLE_NATIVE_MIMES,
-    }
-)
+_SUPPORTED_MIMES: frozenset[str] = frozenset({"image/png", "image/jpeg", "image/webp"})
 _THUMBNAIL_MIME_TYPES: frozenset[str] = frozenset(
     {"image/png", "image/jpeg", "image/webp"}
 )
 
 _EXTENSION_MIMES = {
-    ".txt": "text/plain",
-    ".md": "text/markdown",
-    ".pdf": "application/pdf",
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
@@ -147,7 +122,6 @@ def build_dropbox_client(settings: Settings) -> StorageClient:
     )  # type: ignore[arg-type]
 
 
-
 def _parse_modified_time(raw: str | None) -> datetime:
     if not raw:
         return datetime.fromtimestamp(0, tz=timezone.utc)
@@ -228,17 +202,9 @@ class GoogleDriveClient:
                 .execute()
             )
             file = _to_google_file(metadata)
-            export_mime = _GOOGLE_NATIVE_MIMES.get(file.mime_type)
-            if export_mime:
-                content = (
-                    self._service.files()
-                    .export(fileId=storage_file_id, mimeType=export_mime)
-                    .execute()
-                )
-            else:
-                content = self._service.files().get_media(fileId=storage_file_id).execute()
+            content = self._service.files().get_media(fileId=storage_file_id).execute()
             return DownloadedStorageFile(
-                file, content if isinstance(content, bytes) else b"", export_mime
+                file, content if isinstance(content, bytes) else b""
             )
 
     def get_thumbnail(self, storage_file_id: str) -> Thumbnail:
@@ -250,11 +216,15 @@ class GoogleDriveClient:
                     .execute()
                 )
                 thumbnail_link = metadata.get("thumbnailLink")
-                session = getattr(self, "_thumbnail_session", None) or getattr(self, "_session", None)
+                session = getattr(self, "_thumbnail_session", None) or getattr(
+                    self, "_session", None
+                )
                 if session is None:
                     raise StorageThumbnailUnavailable()
                 response = session.get(thumbnail_link)
-                media_type = str(response.headers.get("content-type", "")).split(";", 1)[0]
+                media_type = str(response.headers.get("content-type", "")).split(
+                    ";", 1
+                )[0]
                 content = bytes(response.content)
                 if (
                     not response.ok
@@ -288,7 +258,6 @@ def _to_google_file(item: dict[str, Any]) -> StorageFile:
         StorageProvider.GOOGLE_DRIVE,
         storage_file_id,
         str(item.get("name", "")),
-
         str(item.get("mimeType", "")),
         _parse_modified_time(item.get("modifiedTime")),
         int(item.get("size") or 0),
@@ -330,7 +299,9 @@ class DropboxClient:
                 page = self._client.files_list_folder_continue(page.cursor)
                 entries.extend(page.entries)
             return [
-                file for entry in entries if (file := _to_dropbox_file(entry)) is not None
+                file
+                for entry in entries
+                if (file := _to_dropbox_file(entry)) is not None
             ]
 
     def download(self, storage_file_id: str) -> DownloadedStorageFile:
@@ -388,7 +359,6 @@ def _to_dropbox_file(entry: Any, require_supported: bool = True) -> StorageFile 
     return StorageFile(
         StorageProvider.DROPBOX,
         file_id,
-
         str(getattr(entry, "name", PurePosixPath(path).name)),
         mime_type or "application/octet-stream",
         modified_time,

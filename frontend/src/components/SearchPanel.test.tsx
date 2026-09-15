@@ -35,7 +35,7 @@ vi.mock("./SearchResultThumbnail", () => ({
 }));
 
 const LONG_FILENAME =
-  "quarterly-asset-inventory-and-regional-campaign-performance-report-2026-final-final-final.pdf";
+  "quarterly-asset-inventory-and-regional-campaign-performance-report-2026-final-final-final.png";
 
 const mockedSearchVectors = vi.mocked(searchVectors);
 
@@ -53,19 +53,19 @@ test("keeps a long source filename accessible while showing its score", async ()
         point_id: "point-1",
         score: 0.872,
         filename: LONG_FILENAME,
-        file_path: "/reports/quarterly.pdf",
-        file_type: "application/pdf",
-        content: "Quarterly campaign report",
-        source_url: "https://example.com/reports/quarterly.pdf",
+        file_path: "/assets/quarterly.png",
+        file_type: "image/png",
+        content: "Quarterly campaign asset",
+        source_url: "https://example.com/assets/quarterly.png",
         thumbnail_url: "/v1/storage/dropbox/id:photo/thumbnail",
       },
       {
         point_id: "point-2",
         score: 0.701,
-        filename: "campaign-summary.pdf",
-        file_path: "/reports/summary.pdf",
-        file_type: "application/pdf",
-        content: "Campaign summary",
+        filename: "campaign-summary.png",
+        file_path: "/assets/summary.png",
+        file_type: "image/png",
+        content: "Campaign summary asset",
       },
     ],
   });
@@ -80,7 +80,7 @@ test("keeps a long source filename accessible while showing its score", async ()
   // Assert
   const filename = await screen.findByRole("link", { name: new RegExp(LONG_FILENAME) });
   expect(filename).toHaveAttribute("title", LONG_FILENAME);
-  expect(filename).toHaveAttribute("href", "https://example.com/reports/quarterly.pdf");
+  expect(filename).toHaveAttribute("href", "https://example.com/assets/quarterly.png");
   expect(filename.parentElement).toHaveClass("result-name");
   await waitFor(() => expect(screen.getByText("0.872")).toBeInTheDocument());
   expect(
@@ -127,13 +127,13 @@ test("triggers real-time search on typing in filename mode", async () => {
 
   // Act: type query
   fireEvent.change(screen.getByLabelText("Query"), {
-    target: { value: "report.pdf" },
+    target: { value: "report.png" },
   });
 
   // Assert real-time debounced trigger
   await waitFor(() => {
     expect(mockedSearchVectors).toHaveBeenCalledWith(
-      "report.pdf",
+      "report.png",
       100,
       undefined,
       "filename"
@@ -178,19 +178,19 @@ test("sorts search results by date in filename search mode (newest and oldest fi
       {
         point_id: "point-1",
         score: 0.9,
-        filename: "old-doc.pdf",
-        file_path: "/old-doc.pdf",
-        file_type: "application/pdf",
-        content: "Old document",
+        filename: "old-asset.png",
+        file_path: "/old-asset.png",
+        file_type: "image/png",
+        content: "Old asset",
         modified_time: "2025-01-15T10:00:00Z",
       },
       {
         point_id: "point-2",
         score: 0.8,
-        filename: "new-doc.pdf",
-        file_path: "/new-doc.pdf",
-        file_type: "application/pdf",
-        content: "New document",
+        filename: "new-asset.png",
+        file_path: "/new-asset.png",
+        file_type: "image/png",
+        content: "New asset",
         modified_time: "2026-08-20T10:00:00Z",
       },
     ],
@@ -201,10 +201,10 @@ test("sorts search results by date in filename search mode (newest and oldest fi
   fireEvent.click(screen.getByRole("tab", { name: "Filename Search" }));
 
   fireEvent.change(screen.getByLabelText("Query"), {
-    target: { value: "doc.pdf" },
+    target: { value: "asset.png" },
   });
 
-  await screen.findByText("old-doc.pdf");
+  await screen.findByText("old-asset.png");
 
   // Score is omitted in filename search mode
   expect(screen.queryByText("0.900")).not.toBeInTheDocument();
@@ -212,23 +212,23 @@ test("sorts search results by date in filename search mode (newest and oldest fi
 
   // Default order
   let resultList = screen.getByRole("list", { name: "Search results" });
-  expect(resultList.children[0]).toHaveTextContent("old-doc.pdf");
-  expect(resultList.children[1]).toHaveTextContent("new-doc.pdf");
+  expect(resultList.children[0]).toHaveTextContent("old-asset.png");
+  expect(resultList.children[1]).toHaveTextContent("new-asset.png");
 
   // Sort by date (Newest first)
   const sortSelect = screen.getByLabelText("Sort by date");
   fireEvent.change(sortSelect, { target: { value: "date_desc" } });
 
   resultList = screen.getByRole("list", { name: "Search results" });
-  expect(resultList.children[0]).toHaveTextContent("new-doc.pdf");
-  expect(resultList.children[1]).toHaveTextContent("old-doc.pdf");
+  expect(resultList.children[0]).toHaveTextContent("new-asset.png");
+  expect(resultList.children[1]).toHaveTextContent("old-asset.png");
 
   // Sort by date (Oldest first)
   fireEvent.change(sortSelect, { target: { value: "date_asc" } });
 
   resultList = screen.getByRole("list", { name: "Search results" });
-  expect(resultList.children[0]).toHaveTextContent("old-doc.pdf");
-  expect(resultList.children[1]).toHaveTextContent("new-doc.pdf");
+  expect(resultList.children[0]).toHaveTextContent("old-asset.png");
+  expect(resultList.children[1]).toHaveTextContent("new-asset.png");
 });
 
 test("does not render the settings button", () => {
@@ -243,9 +243,9 @@ test("re-triggers search when changing provider during search", async () => {
       {
         point_id: "p-1",
         score: 0.95,
-        filename: "doc-dropbox.pdf",
-        file_path: "/doc-dropbox.pdf",
-        file_type: "application/pdf",
+        filename: "asset-dropbox.png",
+        file_path: "/asset-dropbox.png",
+        file_type: "image/png",
         content: "Dropbox content",
         provider: "dropbox",
       },
@@ -266,7 +266,7 @@ test("re-triggers search when changing provider during search", async () => {
       "semantic"
     );
   });
-  expect(await screen.findByText("doc-dropbox.pdf")).toBeInTheDocument();
+  expect(await screen.findByText("asset-dropbox.png")).toBeInTheDocument();
 
   // Now change provider during search to Google Drive
   const gdriveBtn = await screen.findByRole("button", { name: /Google Drive/i });

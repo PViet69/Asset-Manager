@@ -10,8 +10,10 @@ from backend.app.file_processing.detect import detect_file_group
 
 
 @pytest.mark.unit
-def test_detects_plain_text_from_content():
-    assert detect_file_group(b"hello") == "text"
+@pytest.mark.parametrize("content", [b"hello", b"%PDF-1.7\n"])
+def test_rejects_text_and_pdf_content(content: bytes) -> None:
+    with pytest.raises(FileProcessingError, match="Unsupported file type"):
+        detect_file_group(content)
 
 
 @pytest.mark.unit
