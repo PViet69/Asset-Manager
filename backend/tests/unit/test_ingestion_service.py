@@ -89,21 +89,21 @@ def make_storage_upload(
 
 @pytest.mark.unit
 def test_file_upload_is_immutable() -> None:
-    upload = make_upload("note.txt", "text/plain", b"hello", "note.txt")
+    upload = make_upload("photo.png", "image/png", b"image", "photo.png")
 
     with pytest.raises((AttributeError, TypeError)):
-        upload.filename = "changed.txt"
+        upload.filename = "changed.png"
 
-    assert upload.filename == "note.txt"
-    assert upload.content_type == "text/plain"
-    assert upload.content == b"hello"
+    assert upload.filename == "photo.png"
+    assert upload.content_type == "image/png"
+    assert upload.content == b"image"
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("provider", "storage_file_id", "source_url"),
     [
-        (StorageProvider.DROPBOX, None, "https://www.dropbox.com/home/note.txt"),
+        (StorageProvider.DROPBOX, None, "https://www.dropbox.com/home/photo.png"),
         (None, "id:example", "https://drive.google.com/file/d/id:example/view"),
         (StorageProvider.DROPBOX, "id:example", None),
     ],
@@ -115,10 +115,10 @@ def test_file_upload_requires_complete_provider_source_identity(
 ) -> None:
     with pytest.raises(ValueError, match="provider-backed files"):
         FileUpload(
-            filename="note.txt",
-            content_type="text/plain",
-            content=b"hello",
-            file_path="note.txt",
+            filename="photo.png",
+            content_type="image/png",
+            content=b"image",
+            file_path="photo.png",
             modified_time=TEST_MODIFIED_TIME,
             provider=provider,
             storage_file_id=storage_file_id,
@@ -169,25 +169,6 @@ def test_image_description_text_is_embedded_and_only_vector_is_stored() -> None:
 
 
 @pytest.mark.unit
-def test_text_bypasses_description_and_embeds_extracted_text() -> None:
-    service, description_client, model_client, qdrant_store = make_service()
-    model_client.embed_text.return_value = [0.1, 0.2]
-    upload = make_upload("note.txt", "text/plain", b"source-bytes", "note.txt")
-
-    with patch(
-        "backend.app.file_embeddings.ingestion_service.process_file",
-        return_value=ProcessedInput("text", "hello"),
-    ) as process_file:
-        response = service.process_files((upload,))
-
-    process_file.assert_called_once_with(b"source-bytes", "note.txt", "text/plain")
-    description_client.describe.assert_not_called()
-    model_client.embed_text.assert_called_once_with("hello")
-    qdrant_store.store_embedding.assert_called_once_with([0.1, 0.2], payload=None)
-    assert response.data[0].status == "success"
-
-
-@pytest.mark.unit
 def test_embed_text_uses_configured_embedding_client_without_storage() -> None:
     service, description_client, model_client, qdrant_store = make_service()
     model_client.embed_text.return_value = [0.7]
@@ -200,32 +181,37 @@ def test_embed_text_uses_configured_embedding_client_without_storage() -> None:
 
 
 @pytest.mark.unit
-def test_description_error_is_safe_and_later_files_continue_in_order() -> None:
+def test_description_error_is_safe_for_each_image_and_later_images_continue_in_order() -> (
+    None
+):
     service, description_client, model_client, qdrant_store = make_service()
-    description_client.describe.side_effect = ModelEndpointError(
-        "Model endpoint failed to describe image"
+    description_client.describe.side_effect = (
+        ModelEndpointError("Model endpoint failed to describe image"),
+        make_description(),
     )
     model_client.embed_text.return_value = [0.4]
     uploads = (
-        make_upload("bad.png", "image/png", b"image", "bad.png"),
-        make_upload("good.txt", "text/plain", b"text", "good.txt"),
+        make_upload("bad.png", "image/png", b"bad-image", "bad.png"),
+        make_upload("good.png", "image/png", b"good-image", "good.png"),
     )
 
     with patch(
         "backend.app.file_embeddings.ingestion_service.process_file",
         side_effect=(
-            ProcessedInput("image", b"image"),
-            ProcessedInput("text", "good"),
+            ProcessedInput("image", b"bad-image"),
+            ProcessedInput("image", b"good-image"),
         ),
     ):
         response = service.process_files(uploads)
 
-    assert [item.filename for item in response.data] == ["bad.png", "good.txt"]
+    assert [item.filename for item in response.data] == ["bad.png", "good.png"]
     assert [(item.status, item.reason) for item in response.data] == [
         ("failed", "Model endpoint failed to describe image"),
         ("success", None),
     ]
-    model_client.embed_text.assert_called_once_with("good")
+    model_client.embed_text.assert_called_once_with(
+        make_description().to_embedding_text()
+    )
     qdrant_store.store_embedding.assert_called_once_with([0.4], payload=None)
 
 
@@ -276,19 +262,20 @@ def test_file_processing_error_returns_safe_message() -> None:
 
 @pytest.mark.unit
 def test_qdrant_storage_error_returns_safe_message() -> None:
-    _, _, model_client, qdrant_store = make_service()
+    _, description_client, model_client, qdrant_store = make_service()
+    description_client.describe.return_value = make_description()
     model_client.embed_text.return_value = [0.1]
     qdrant_store.store_embedding.side_effect = QdrantStorageError(
         "Qdrant storage failure"
     )
-    service = FileIngestionService(Mock(), model_client, qdrant_store)
+    service = FileIngestionService(description_client, model_client, qdrant_store)
 
     with patch(
         "backend.app.file_embeddings.ingestion_service.process_file",
-        return_value=ProcessedInput("text", "hello"),
+        return_value=ProcessedInput("image", b"image"),
     ):
         response = service.process_files(
-            (make_upload("note.txt", "text/plain", b"bytes", "note.txt"),),
+            (make_upload("photo.png", "image/png", b"image", "photo.png"),),
         )
 
     assert response.data[0].status == "failed"
@@ -301,7 +288,7 @@ def test_unexpected_error_logs_context_without_sensitive_content(
 ) -> None:
     service, _, _, _ = make_service()
     file_content = b"secret file content"
-    filename = "private\nforged.txt"
+    filename = "private\nforged.png"
 
     caplog.set_level(ERROR)
     with patch(
@@ -309,7 +296,7 @@ def test_unexpected_error_logs_context_without_sensitive_content(
         side_effect=RuntimeError("secret provider response"),
     ):
         response = service.process_files(
-            (make_upload(filename, "text/plain", file_content, filename),),
+            (make_upload(filename, "image/png", file_content, filename),),
         )
 
     assert response.data[0].reason == "Processing failed"
@@ -360,21 +347,6 @@ def make_settings(search_threshold: float | None = 0.2) -> Settings:
 
 
 @pytest.mark.unit
-def test_text_ingestion_stores_vector_without_payload() -> None:
-    service, _, model_client, qdrant_store = make_service()
-    model_client.embed_text.return_value = [0.5]
-    upload = make_upload("note.txt", "text/plain", b"hello world", "note.txt")
-
-    with patch(
-        "backend.app.file_embeddings.ingestion_service.process_file",
-        return_value=ProcessedInput("text", "hello world"),
-    ):
-        service.process_files((upload,))
-
-    qdrant_store.store_embedding.assert_called_once_with([0.5], payload=None)
-
-
-@pytest.mark.unit
 def test_find_indexed_thumbnail_source_requires_exact_stored_identity() -> None:
     service, _, _, qdrant_store = make_service()
     qdrant_store.find_by_storage_key.return_value = [
@@ -386,7 +358,6 @@ def test_find_indexed_thumbnail_source_requires_exact_stored_identity() -> None:
                 "storage_file_id": "id:photo",
                 "file_type": "image/png",
             },
-
         )
     ]
 
@@ -417,12 +388,9 @@ def test_find_indexed_thumbnail_source_requires_exact_stored_identity() -> None:
             "drive-1",
             f"/v1/storage/{StorageProvider.GOOGLE_DRIVE}/drive-1/thumbnail",
         ),
-        ("text/plain", StorageProvider.DROPBOX, "id:document", None),
         ("image/webp", None, None, None),
     ],
 )
-
-
 def test_search_thumbnail_url_requires_image_type_and_complete_source_identity(
     file_type: str,
     provider: str | None,
@@ -478,7 +446,6 @@ def test_search_returns_stored_source_metadata() -> None:
     assert response.data[0].source_url == "https://www.dropbox.com/home/team/photo.png"
     assert response.data[0].provider == StorageProvider.DROPBOX
     assert response.data[0].storage_file_id == "id:abc123"
-
 
 
 @pytest.mark.unit
@@ -557,9 +524,7 @@ def test_tag_search_does_not_embed_and_maps_hits() -> None:
         )
     ]
 
-    response = service.search(
-        "", limit=10, mode="tag", tags=["subject:laptop"]
-    )
+    response = service.search("", limit=10, mode="tag", tags=["subject:laptop"])
 
     qdrant_store.find_by_tags.assert_called_once_with(
         ["subject:laptop"], limit=10, provider=None

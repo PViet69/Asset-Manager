@@ -86,8 +86,8 @@ def test_google_drive_lists_recursively_and_maps_provider_metadata() -> None:
                     },
                     {
                         "id": "file",
-                        "name": "note.txt",
-                        "mimeType": "text/plain",
+                        "name": "unsupported.bin",
+                        "mimeType": "application/octet-stream",
                         "modifiedTime": "2026-08-01T00:00:00Z",
                     },
                 ]
@@ -105,7 +105,7 @@ def test_google_drive_lists_recursively_and_maps_provider_metadata() -> None:
         }
     )
     files = client.list_files("root")
-    assert [file.storage_file_id for file in files] == ["image", "file"]
+    assert [file.storage_file_id for file in files] == ["image"]
     assert all(file.provider == StorageProvider.GOOGLE_DRIVE for file in files)
     assert files[0].source_url == "https://drive.google.com/file/d/image/view"
 
@@ -114,8 +114,8 @@ def test_google_drive_lists_recursively_and_maps_provider_metadata() -> None:
 def test_dropbox_lists_paged_supported_files_and_downloads() -> None:
     metadata = SimpleNamespace(
         id="id-1",
-        path_display="/team/note.txt",
-        name="note.txt",
+        path_display="/team/image.png",
+        name="image.png",
         size=5,
         client_modified=datetime(2026, 8, 1),
     )
@@ -143,8 +143,8 @@ def test_storage_file_is_immutable() -> None:
     file = StorageFile(
         StorageProvider.GOOGLE_DRIVE,
         "id",
-        "x",
-        "text/plain",
+        "x.png",
+        "image/png",
         datetime.now(timezone.utc),
         0,
     )
@@ -157,7 +157,6 @@ def test_storage_file_is_immutable() -> None:
 def test_disabled_storage_thumbnail_raises_safe_unavailable_error() -> None:
     with pytest.raises(StorageThumbnailUnavailable, match="thumbnail unavailable"):
         DisabledStorageClient(StorageProvider.DROPBOX).get_thumbnail("id:photo")
-
 
 
 @pytest.mark.unit

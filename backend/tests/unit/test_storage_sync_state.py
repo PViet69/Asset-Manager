@@ -14,8 +14,8 @@ def _file(identifier: str, modified: datetime) -> StorageFile:
     return StorageFile(
         StorageProvider.DROPBOX,
         identifier,
-        f"{identifier}.txt",
-        "text/plain",
+        f"{identifier}.png",
+        "image/png",
         modified,
         0,
     )

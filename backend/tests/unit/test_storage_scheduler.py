@@ -76,8 +76,8 @@ def _file(identifier: str) -> StorageFile:
     return StorageFile(
         StorageProvider.DROPBOX,
         identifier,
-        f"{identifier}.txt",
-        "text/plain",
+        f"{identifier}.png",
+        "image/png",
         datetime(2026, 8, 1, tzinfo=timezone.utc),
         0,
         f"https://dropbox.example.test/{identifier}",
@@ -167,5 +167,3 @@ async def test_ingestion_failure_retries_and_allows_subsequent_sync_retry() -> N
     assert result.provider == StorageProvider.DROPBOX
     assert call_count == 2
     assert any(trace.status == "retry" for trace in result.traces)
-
-

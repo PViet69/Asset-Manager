@@ -25,8 +25,6 @@ from backend.app.storage import StorageProvider
 COLLECTION = "configured_embeddings"
 
 
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "missing_field",
@@ -433,8 +431,6 @@ def test_search_filters_by_provider_when_requested() -> None:
     )
 
 
-
-
 @pytest.mark.unit
 def test_search_without_payload_returns_empty_payload_dict() -> None:
     client = Mock()
@@ -462,11 +458,14 @@ def test_find_by_tags_requires_every_tag_and_provider() -> None:
     )
     client.scroll.return_value = ([], None)
 
-    assert store.find_by_tags(
-        ["subject:laptop", "color:black"],
-        limit=5,
-        provider=StorageProvider.GOOGLE_DRIVE,
-    ) == []
+    assert (
+        store.find_by_tags(
+            ["subject:laptop", "color:black"],
+            limit=5,
+            provider=StorageProvider.GOOGLE_DRIVE,
+        )
+        == []
+    )
 
     client.scroll.assert_called_once_with(
         collection_name=COLLECTION,
@@ -514,7 +513,7 @@ def test_find_by_filename_filters_case_insensitively() -> None:
     )
     p1 = Mock()
     p1.id = "point-1"
-    p1.payload = {"filename": "Q3_Report_Final.pdf"}
+    p1.payload = {"filename": "Q3_Report_Final.png"}
     p2 = Mock()
     p2.id = "point-2"
     p2.payload = {"filename": "photo_sunset.jpg"}
@@ -525,4 +524,4 @@ def test_find_by_filename_filters_case_insensitively() -> None:
 
     assert len(hits) == 1
     assert hits[0].point_id == "point-1"
-    assert hits[0].payload["filename"] == "Q3_Report_Final.pdf"
+    assert hits[0].payload["filename"] == "Q3_Report_Final.png"
