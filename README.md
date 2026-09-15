@@ -1,18 +1,15 @@
 # OpenAI-Compatible File Embeddings
 
-FastAPI service that accepts text, image, and PDF uploads, runs each image through a configurable vision-language model that returns a structured image description, embeds that description (or the raw text) via a configured text-embedding model, and stores the resulting vectors in Qdrant. Image points also store a payload with the filename, MIME type, and description text for vector search. Raw vectors are never returned.
+FastAPI service that accepts PNG, JPEG, and WEBP uploads, runs every image through a configurable vision-language model that returns a structured image description, embeds that description through a configured text-embedding model, and stores resulting vectors in Qdrant. Points store filename, MIME type, and description text for vector search. Raw vectors are never returned.
 
 ## Pipeline at a glance
 
 ```
-upload ─▶ MIME detect ─▶ text/PDF? ─▶ raw text ─┐
-                  │                              ├─▶ text embedding ─▶ Qdrant
-                  └─ PNG/JPEG/WEBP? ─▶ structured description ─▶ formatted text ─┘
+upload ─▶ byte-level image detection ─▶ structured description ─▶ formatted text ─▶ text embedding ─▶ Qdrant
 ```
 
-- Images (PNG/JPEG/WEBP) are sent to `DESCRIPTION_MODEL` via Instructor (JSON mode) and validated into a Pydantic `ImageDescription`. The description is converted into a deterministic multi-section string and embedded through `EMBEDDING_MODEL`.
-- Text and PDF content is embedded directly through `EMBEDDING_MODEL`. PDFs use text extraction only.
-- All vectors live in a single shared collection. Image and text vectors share the same embedding space.
+- Images (PNG/JPEG/WEBP) are sent to `DESCRIPTION_MODEL` via Instructor (JSON mode) and validated into a Pydantic `ImageDescription`. Description converts into deterministic multi-section text then embeds through `EMBEDDING_MODEL`.
+- All vectors represent images in one shared collection.
 
 ## Local development
 
@@ -47,7 +44,7 @@ uv run uvicorn backend.app.main:create_app --factory --reload
 | `DESCRIPTION_MODEL` | Yes | None | Vision-language model used to generate structured image descriptions (PNG/JPEG/WEBP). |
 | `DESCRIPTION_ENDPOINT_URL` | Yes | None | OpenAI-compatible base URL for the description model. May differ from `MODEL_ENDPOINT_URL`. |
 | `DESCRIPTION_ENDPOINT_API_KEY` | No | Empty | Description endpoint API key. |
-| `EMBEDDING_MODEL` | Yes | None | Text-embedding model used for description text, raw text, and PDF text. |
+| `EMBEDDING_MODEL` | Yes | None | Text-embedding model used for image description text. |
 | `ADMIN_USERNAME` | Yes | None | Username for sole administrator account. |
 | `ADMIN_PASSWORD_HASH` | Yes | None | Argon2id hash for administrator password. |
 | `ADMIN_SESSION_SECRET` | Yes | None | Secret used to sign administrator session cookies. |
@@ -90,7 +87,6 @@ When the model API runs on the Docker Desktop host, set `MODEL_ENDPOINT_URL=http
 
 ```bash
 curl -X POST http://localhost:8000/v1/file-embeddings \
-  -F files=@README.md \
   -F files=@photo.png
 ```
 
@@ -101,8 +97,8 @@ The response contains one result per uploaded file:
   "object": "list",
   "data": [
     {
-      "filename": "README.md",
-      "content_type": "text/markdown",
+      "filename": "photo.png",
+      "content_type": "image/png",
       "status": "success",
       "reason": null
     },
@@ -122,11 +118,8 @@ Public items contain filename, content type, status (`success` or `failed`), and
 
 Type detection uses file bytes through `python-magic`; filename extensions do not determine type.
 
-- UTF-8 text: `text/plain`, `text/csv`, `text/markdown`, `application/json`, `application/xml`, `text/yaml`, `text/x-yaml`, `text/html`, `text/css`, and `text/x-*`
-- Images: PNG, JPEG, WEBP — routed through the description pipeline
-- PDFs: text extraction only — routed through the text embedding path
-
-Scanned PDFs are unsupported because OCR is out of scope.
+- Images: PNG, JPEG, WEBP — routed through description pipeline
+- Text and PDF files are unsupported.
 
 ### Limits and errors
 
@@ -140,7 +133,7 @@ Scanned PDFs are unsupported because OCR is out of scope.
 
 ## Vector search
 
-`POST /v1/search` embeds the query text with the configured `EMBEDDING_MODEL` and returns stored vectors scoring at or above `SEARCH_THRESHOLD`, ordered by similarity. Results come from image points carrying a payload with the upload filename, MIME type, and stored description text. Text/PDF points and legacy payload-less points are excluded from results.
+`POST /v1/search` embeds query text with configured `EMBEDDING_MODEL` and returns image vectors scoring at or above `SEARCH_THRESHOLD`, ordered by similarity. Results carry upload filename, MIME type, and stored description text. Legacy payload-less points are excluded.
 
 ```bash
 curl -X POST http://localhost:8000/v1/search \
