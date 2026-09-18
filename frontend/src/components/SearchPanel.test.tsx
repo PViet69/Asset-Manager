@@ -156,6 +156,7 @@ test("keeps tag filters collapsed until opened from search box", async () => {
   expect(await screen.findByRole("button", { name: "Tags" })).toBeInTheDocument();
   expect(screen.getByRole("dialog", { name: "Filter by tags" })).toBeInTheDocument();
   expect(toggle).toHaveAttribute("aria-expanded", "true");
+
 });
 
 test("sends selected tags as semantic search filters", async () => {

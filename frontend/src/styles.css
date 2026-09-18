@@ -1391,6 +1391,37 @@ ul.list li:hover {
   font-weight: 500;
 }
 
+.search-tag-picker__close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #5f6368;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.search-tag-picker__close-btn:hover {
+  background-color: #f1f3f4;
+  color: #202124;
+}
+
+.search-tag-picker__close-btn:active {
+  background-color: #e8eaed;
+}
+
+.search-tag-picker__close-btn:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 1px;
+}
+
 .search-tag-picker__badge {
   font-size: 11px;
   font-weight: 700;
