@@ -432,6 +432,42 @@ def test_search_filters_by_provider_when_requested() -> None:
 
 
 @pytest.mark.unit
+def test_search_filters_by_tags_before_vector_distance_calculation() -> None:
+    client = Mock()
+    store = QdrantEmbeddingStore.from_client(
+        client,
+        vector_size=2,
+        collection=COLLECTION,
+    )
+    client.query_points.return_value = Mock(points=[])
+
+    store.search(
+        [0.1, 0.2],
+        limit=5,
+        score_threshold=0.4,
+        provider=StorageProvider.GOOGLE_DRIVE,
+        tags=["subject:laptop", "color:black"],
+    )
+
+    client.query_points.assert_called_once_with(
+        collection_name=COLLECTION,
+        query=[0.1, 0.2],
+        limit=5,
+        score_threshold=0.4,
+        query_filter=Filter(
+            must=[
+                FieldCondition(key="tags", match=MatchAny(any=["subject:laptop"])),
+                FieldCondition(key="tags", match=MatchAny(any=["color:black"])),
+                FieldCondition(
+                    key=PAYLOAD_PROVIDER,
+                    match=MatchValue(value=StorageProvider.GOOGLE_DRIVE),
+                ),
+            ]
+        ),
+    )
+
+
+@pytest.mark.unit
 def test_search_without_payload_returns_empty_payload_dict() -> None:
     client = Mock()
     store = QdrantEmbeddingStore.from_client(

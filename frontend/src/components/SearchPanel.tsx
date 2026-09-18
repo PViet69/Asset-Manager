@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { ApiError, getApprovedTags, getProviders, searchVectors } from "../api/client";
 import type {
   ProviderMeta,
@@ -19,9 +20,10 @@ const MAX_QUERY_LENGTH = 4190;
 
 type ProviderFilter = "" | StorageProvider;
 
-type SearchMode = "semantic" | "filename" | "tag";
+type SearchMode = "semantic" | "filename";
 
-function displayTag(tag: string): string {
+function displayTag(tag?: string): string {
+  if (!tag) return "";
   return tag.split(":", 2)[1] ?? tag;
 }
 type SortOrder = "relevance" | "date_desc" | "date_asc";
@@ -59,9 +61,16 @@ export function SearchPanel({
   const [query, setQuery] = useState<string>("");
   const topK = externalTopK ?? String(DEFAULT_TOP_K);
   const [provider, setProvider] = useState<ProviderFilter>("");
+  const [draftProvider, setDraftProvider] = useState<ProviderFilter>("");
   const [providers, setProviders] = useState<readonly ProviderMeta[]>([]);
   const [tagGroups, setTagGroups] = useState<readonly TagGroup[]>([]);
   const [selectedTags, setSelectedTags] = useState<readonly string[]>([]);
+  const [draftTags, setDraftTags] = useState<readonly string[]>([]);
+  const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
+  const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
+  const [isTagsDropdownOpen, setIsTagsDropdownOpen] = useState(false);
+  const providerDropdownRef = useRef<HTMLDivElement>(null);
+  const tagsDropdownRef = useRef<HTMLDivElement>(null);
   const [searchMode, setSearchMode] = useState<SearchMode>("semantic");
   const [sortBy, setSortBy] = useState<SortOrder>("relevance");
   const [state, setState] = useState<SearchState>({ kind: "idle" });
@@ -84,12 +93,55 @@ export function SearchPanel({
     };
   }, []);
 
+  useEffect(() => {
+    if (!isProviderDropdownOpen && !isTagsDropdownOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        isProviderDropdownOpen &&
+        providerDropdownRef.current &&
+        !providerDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsProviderDropdownOpen(false);
+      }
+      if (
+        isTagsDropdownOpen &&
+        tagsDropdownRef.current &&
+        !tagsDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsTagsDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isProviderDropdownOpen, isTagsDropdownOpen]);
+
   function toggleTag(tag: string): void {
-    setSelectedTags((current) =>
+    setDraftTags((current) =>
       current.includes(tag)
         ? current.filter((selected) => selected !== tag)
         : [...current, tag]
     );
+  }
+
+  function openTagPicker(): void {
+    setDraftTags(selectedTags);
+    setDraftProvider(provider);
+    setIsProviderDropdownOpen(false);
+    setIsTagsDropdownOpen(false);
+    setIsTagPickerOpen(true);
+  }
+
+  function closeTagPicker(): void {
+    setIsTagPickerOpen(false);
+  }
+
+  function confirmTagPicker(): void {
+    setSelectedTags(draftTags);
+    setProvider(draftProvider);
+    setIsTagPickerOpen(false);
+    if (state.kind === "result" || state.kind === "submitting") {
+      void performSearch(query, draftProvider, searchMode, draftTags);
+    }
   }
 
   function changeSearchMode(mode: SearchMode): void {
@@ -107,11 +159,7 @@ export function SearchPanel({
   }, [state]);
 
   useEffect(() => {
-    if (searchMode === "semantic") {
-      setSortBy("relevance");
-    } else if (searchMode === "tag") {
-      setSortBy("date_desc");
-    }
+    if (searchMode === "semantic") setSortBy("relevance");
   }, [searchMode]);
 
   useEffect(() => {
@@ -133,7 +181,8 @@ export function SearchPanel({
           trimmed,
           MAX_TOP_K,
           provider || undefined,
-          "filename"
+          "filename",
+          ...(selectedTags.length > 0 ? [[...selectedTags]] : [])
         );
         if (isMounted && searchRequestIdRef.current === reqId) {
           setState({ kind: "result", items: res.data });
@@ -151,7 +200,7 @@ export function SearchPanel({
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [query, provider, searchMode]);
+  }, [query, provider, searchMode, selectedTags]);
 
   async function performSearch(
     targetQuery: string,
@@ -161,22 +210,20 @@ export function SearchPanel({
   ): Promise<void> {
     if (targetQuery.length > MAX_QUERY_LENGTH) return;
     const trimmed = targetQuery.trim();
-    if (targetMode !== "tag" && trimmed.length === 0) return;
-    if (targetMode === "tag" && targetTags.length === 0) return;
+    if (trimmed.length === 0) return;
 
     const reqId = ++searchRequestIdRef.current;
     setState({ kind: "submitting" });
     try {
       const args = [
-        targetMode === "tag" ? "" : trimmed,
+        trimmed,
         targetMode === "semantic" ? clampTopK(topK) : MAX_TOP_K,
         targetProvider || undefined,
         targetMode,
       ] as const;
-      const res =
-        targetMode === "tag"
-          ? await searchVectors(...args, [...targetTags])
-          : await searchVectors(...args);
+      const res = targetTags.length > 0
+        ? await searchVectors(...args, [...targetTags])
+        : await searchVectors(...args);
       if (searchRequestIdRef.current === reqId) {
         setState({ kind: "result", items: res.data });
       }
@@ -192,9 +239,7 @@ export function SearchPanel({
   function handleProviderChange(nextProvider: ProviderFilter): void {
     setProvider(nextProvider);
     if (state.kind === "result" || state.kind === "submitting") {
-      if (searchMode === "semantic" || searchMode === "tag") {
-        void performSearch(query, nextProvider, searchMode, selectedTags);
-      }
+      void performSearch(query, nextProvider, searchMode, selectedTags);
     }
   }
 
@@ -256,101 +301,11 @@ export function SearchPanel({
           </svg>
           <span>Filename Search</span>
         </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={searchMode === "tag"}
-          className={`search-mode-chip ${searchMode === "tag" ? "search-mode-chip--active" : ""}`}
-          onClick={() => changeSearchMode("tag")}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-            <line x1="7" y1="7" x2="7.01" y2="7" />
-          </svg>
-          <span>Tag Search</span>
-        </button>
       </div>
 
       <form onSubmit={onSubmit}>
-        <div className={`search-bar-box ${searchMode === "tag" ? "search-bar-box--tag" : ""}`}>
-          {searchMode === "tag" ? (
-            <div className="search-tag-picker" aria-label="Approved tags">
-              <div className="search-tag-picker__header">
-                <div className="search-tag-picker__title-group">
-                  <span className="search-tag-picker__title">Filter by Tags</span>
-                  <span className="search-tag-picker__sub">Select approved tags to find matching assets</span>
-                </div>
-
-                {selectedTags.length > 0 && (
-                  <button
-                    type="button"
-                    className="search-tag-picker__clear-btn"
-                    onClick={() => setSelectedTags([])}
-                    aria-label="Clear selected tags"
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
-
-              {selectedTags.length > 0 && (
-                <div className="search-tag-selected-tray" aria-label="Selected tags">
-                  <span className="search-tag-selected-tray__label">Selected:</span>
-                  <span className="search-tag-picker__badge" aria-label={`${selectedTags.length} selected`}>
-                    {selectedTags.length}
-                  </span>
-                  <div className="search-tag-selected-tray__chips">
-                    {selectedTags.map((tag) => (
-                      <span key={tag} className="search-tag-selected-chip">
-                        <span>{displayTag(tag)}</span>
-                        <button
-                          type="button"
-                          className="search-tag-selected-chip__remove"
-                          onClick={() => toggleTag(tag)}
-                          aria-label={`Remove tag ${displayTag(tag)}`}
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {tagGroups.length === 0 ? (
-                <div className="search-tag-picker__empty">
-                  <span className="hint">No approved tags are available.</span>
-                </div>
-              ) : (
-                <div className="search-tag-groups">
-                  {tagGroups.map((group) => (
-                    <fieldset key={group.category} className="search-tag-group">
-                      <div className="search-tag-group__header">
-                        <legend className="search-tag-group__legend">{group.category}</legend>
-                        <span className="search-tag-group__count">
-                          {group.tags.length}
-                        </span>
-                      </div>
-                      <div className="search-tag-group__chips">
-                        {group.tags.map((tag) => (
-                          <button
-                            key={tag}
-                            type="button"
-                            className={`search-filter-chip ${selectedTags.includes(tag) ? "search-filter-chip--active" : ""}`}
-                            onClick={() => toggleTag(tag)}
-                            aria-pressed={selectedTags.includes(tag)}
-                          >
-                            {displayTag(tag)}
-                          </button>
-                        ))}
-                      </div>
-                    </fieldset>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="search-input-wrapper">
+        <div className="search-bar-box">
+          <div className="search-input-wrapper">
               <svg
                 className="search-bar-icon"
                 width="20"
@@ -392,46 +347,330 @@ export function SearchPanel({
                   ✕
                 </button>
               )}
-            </div>
-          )}
+          </div>
 
           <div className="search-bar-actions">
             <button
-              className="primary"
-              type="submit"
-              disabled={
-                state.kind === "submitting" ||
-                (searchMode === "tag"
-                  ? selectedTags.length === 0
-                  : query.trim().length === 0)
-              }
+              type="button"
+              className={`search-filter-btn ${isTagPickerOpen ? "search-filter-btn--active" : ""} ${selectedTags.length > 0 || Boolean(provider) ? "search-filter-btn--has-filters" : ""}`}
+              aria-label="Tag filters"
+              aria-expanded={isTagPickerOpen}
+              aria-controls="tag-filter-picker"
+              onClick={() => (isTagPickerOpen ? closeTagPicker() : openTagPicker())}
             >
-              {state.kind === "submitting" ? "Searching…" : "Search"}
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
+              </svg>
             </button>
           </div>
+
+          {isTagPickerOpen && createPortal(
+            <div
+              className="search-tag-modal-backdrop"
+              onClick={closeTagPicker}
+            >
+              <div
+                id="tag-filter-picker"
+                className="search-tag-picker search-tag-picker--modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Filter by tags"
+                onClick={(event) => event.stopPropagation()}
+              >
+        <div className="search-tag-picker__header">
+          <div className="search-tag-picker__title-group">
+            <span className="search-tag-picker__title">Filter</span>
+          </div>
+        </div>
+        {(draftTags.length > 0 || Boolean(draftProvider)) && (
+          <div className="search-tag-selected-tray" aria-label="Selected tags">
+            <span className="search-tag-selected-tray__label">Selected:</span>
+            <span
+              className="search-tag-picker__badge"
+              aria-label={`${draftTags.length + (draftProvider ? 1 : 0)} selected`}
+            >
+              {draftTags.length + (draftProvider ? 1 : 0)}
+            </span>
+            <div className="search-tag-selected-tray__chips">
+              {draftProvider && (
+                <span key={draftProvider} className="search-tag-selected-chip">
+                  <ProviderLogo provider={draftProvider} size={12} />
+                  <span>{providers.find((p) => p.id === draftProvider)?.displayName ?? draftProvider}</span>
+                  <button
+                    type="button"
+                    className="search-tag-selected-chip__remove"
+                    onClick={() => setDraftProvider("")}
+                    aria-label={`Remove provider filter ${draftProvider}`}
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+              {draftTags.map((tag) => (
+                <span key={tag} className="search-tag-selected-chip">
+                  <span>{displayTag(tag)}</span>
+                  <button
+                    type="button"
+                    className="search-tag-selected-chip__remove"
+                    onClick={() => toggleTag(tag)}
+                    aria-label={`Remove tag ${displayTag(tag)}`}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="search-filter-dialog-body">
+          {providers.length > 0 && (
+            <div className="search-filter-row">
+              <span className="search-filter-row__label" id="filter-provider-label">
+                Provider
+              </span>
+              <div className="search-filter-row__control" ref={providerDropdownRef}>
+                <div className="gdrive-select-container">
+                  <button
+                    type="button"
+                    id="filter-provider-select"
+                    aria-labelledby="filter-provider-label"
+                    aria-haspopup="listbox"
+                    aria-expanded={isProviderDropdownOpen}
+                    className={`gdrive-select-trigger ${isProviderDropdownOpen ? "gdrive-select-trigger--open" : ""}`}
+                    onClick={() => setIsProviderDropdownOpen((open) => !open)}
+                  >
+                    <span className="gdrive-select-trigger__value">
+                      {draftProvider ? (
+                        <>
+                          <ProviderLogo provider={draftProvider} size={18} />
+                          <span>{providers.find((p) => p.id === draftProvider)?.displayName ?? draftProvider}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="gdrive-select-item__icon-spacer" />
+                          <span>Any</span>
+                        </>
+                      )}
+                    </span>
+                    <span className="gdrive-select-trigger__caret">
+                      <svg width="10" height="6" viewBox="0 0 10 6" fill="currentColor" aria-hidden="true">
+                        {isProviderDropdownOpen ? (
+                          <path d="M0 6L5 0L10 6H0Z" />
+                        ) : (
+                          <path d="M0 0L5 6L10 0H0Z" />
+                        )}
+                      </svg>
+                    </span>
+                  </button>
+
+                  {isProviderDropdownOpen && (
+                    <div className="gdrive-select-menu" role="listbox" aria-labelledby="filter-provider-label">
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={draftProvider === ""}
+                        className={`gdrive-select-item ${draftProvider === "" ? "gdrive-select-item--selected" : ""}`}
+                        onClick={() => {
+                          setDraftProvider("");
+                          setIsProviderDropdownOpen(false);
+                        }}
+                      >
+                        <span className="gdrive-select-item__icon-spacer" />
+                        <span>Any</span>
+                      </button>
+                      {providers.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          role="option"
+                          aria-selected={draftProvider === p.id}
+                          className={`gdrive-select-item ${draftProvider === p.id ? "gdrive-select-item--selected" : ""}`}
+                          onClick={() => {
+                            setDraftProvider(p.id as ProviderFilter);
+                            setIsProviderDropdownOpen(false);
+                          }}
+                        >
+                          <ProviderLogo provider={p.id} size={18} />
+                          <span>{p.displayName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tagGroups.length === 0 ? (
+            providers.length === 0 ? (
+              <div className="search-tag-picker__empty">
+                <span className="hint">No filters are available.</span>
+              </div>
+            ) : null
+          ) : (
+            <div className="search-filter-row search-filter-row--tags">
+              <span className="search-filter-row__label" id="filter-tags-label">
+                Tags
+              </span>
+              <div className="search-filter-row__control" ref={tagsDropdownRef}>
+                <div className="gdrive-select-container">
+                  <button
+                    type="button"
+                    id="filter-tags-select"
+                    aria-labelledby="filter-tags-label"
+                    aria-haspopup="listbox"
+                    aria-expanded={isTagsDropdownOpen}
+                    className={`gdrive-select-trigger ${isTagsDropdownOpen ? "gdrive-select-trigger--open" : ""}`}
+                    onClick={() => setIsTagsDropdownOpen((open) => !open)}
+                  >
+                    <span className="gdrive-select-trigger__value">
+                      {draftTags.length === 0 ? (
+                        <>
+                          <span className="gdrive-select-item__icon-spacer" />
+                          <span>Any</span>
+                        </>
+                      ) : draftTags.length === 1 ? (
+                        <>
+                          <span className="gdrive-select-item__tag-icon">🏷️</span>
+                          <span>{displayTag(draftTags[0])}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="gdrive-select-item__tag-icon">🏷️</span>
+                          <span>{draftTags.length} tags selected</span>
+                        </>
+                      )}
+                    </span>
+                    <span className="gdrive-select-trigger__caret">
+                      <svg width="10" height="6" viewBox="0 0 10 6" fill="currentColor" aria-hidden="true">
+                        {isTagsDropdownOpen ? (
+                          <path d="M0 6L5 0L10 6H0Z" />
+                        ) : (
+                          <path d="M0 0L5 6L10 0H0Z" />
+                        )}
+                      </svg>
+                    </span>
+                  </button>
+
+                  {isTagsDropdownOpen && (
+                    <div className="gdrive-select-menu gdrive-select-menu--tags" role="listbox" aria-labelledby="filter-tags-label">
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={draftTags.length === 0}
+                        className={`gdrive-select-item ${draftTags.length === 0 ? "gdrive-select-item--selected" : ""}`}
+                        onClick={() => {
+                          setDraftTags([]);
+                          setIsTagsDropdownOpen(false);
+                        }}
+                      >
+                        <span className="gdrive-select-item__icon-spacer" />
+                        <span>Any</span>
+                      </button>
+
+                      {tagGroups.map((group) => (
+                        <div key={group.category} className="gdrive-select-group">
+                          <div className="gdrive-select-group__title">
+                            {group.category}
+                          </div>
+                          {group.tags.map((tag) => {
+                            const isSelected = draftTags.includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                type="button"
+                                role="option"
+                                aria-selected={isSelected}
+                                className={`gdrive-select-item ${isSelected ? "gdrive-select-item--selected" : ""}`}
+                                onClick={() => toggleTag(tag)}
+                              >
+                                <span className="gdrive-select-item__check">
+                                  {isSelected ? (
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                      <polyline points="20 6 9 17 4 12" />
+                                    </svg>
+                                  ) : (
+                                    <span className="gdrive-select-item__check-placeholder" />
+                                  )}
+                                </span>
+                                <span>{displayTag(tag)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="search-tag-picker__footer">
+          <button
+            type="button"
+            className="search-tag-picker__clear-btn"
+            onClick={() => {
+              setDraftTags([]);
+              setDraftProvider("");
+            }}
+            disabled={draftTags.length === 0 && draftProvider === ""}
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            className="search-tag-picker__confirm-btn"
+            onClick={confirmTagPicker}
+          >
+            Confirm
+          </button>
+        </div>
+              </div>
+            </div>,
+            document.body
+          )}
         </div>
       </form>
 
-      {/* Quick Provider Filters */}
-      {providers.length > 0 && (
-        <div className="search-quick-providers" aria-label="Filter by provider">
-          <span className="search-quick-providers__label">Provider:</span>
-          <button
-            type="button"
-            className={`search-filter-chip ${provider === "" ? "search-filter-chip--active" : ""}`}
-            onClick={() => handleProviderChange("")}
-          >
-            All providers
-          </button>
-          {providers.map((p) => (
+      {/* Active Filters Bar */}
+      {(selectedTags.length > 0 || Boolean(provider)) && (
+        <div className="search-quick-providers" aria-label="Active filters">
+          <span className="search-quick-providers__label">Filters:</span>
+          {provider && (
             <button
-              key={p.id}
               type="button"
-              className={`search-filter-chip ${provider === p.id ? "search-filter-chip--active" : ""}`}
-              onClick={() => handleProviderChange(provider === p.id ? "" : (p.id as ProviderFilter))}
+              className="search-filter-chip search-filter-chip--active"
+              onClick={() => handleProviderChange("")}
+              title="Click to clear provider filter"
             >
-              <ProviderLogo provider={p.id} size={13} />
-              <span>{p.displayName}</span>
+              <ProviderLogo provider={provider} size={13} />
+              <span>{providers.find((p) => p.id === provider)?.displayName ?? provider}</span>
+              <span aria-hidden="true" style={{ marginLeft: 4, fontSize: 11, opacity: 0.8 }}>✕</span>
+            </button>
+          )}
+          {selectedTags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className="search-filter-chip search-filter-chip--active"
+              onClick={() => {
+                const nextTags = selectedTags.filter((t) => t !== tag);
+                setSelectedTags(nextTags);
+                if (state.kind === "result" || state.kind === "submitting") {
+                  void performSearch(query, provider, searchMode, nextTags);
+                }
+              }}
+              title={`Click to clear tag ${displayTag(tag)}`}
+            >
+              <span>{displayTag(tag)}</span>
+              <span aria-hidden="true" style={{ marginLeft: 4, fontSize: 11, opacity: 0.8 }}>✕</span>
             </button>
           ))}
         </div>
@@ -479,7 +718,7 @@ export function SearchPanel({
                 {sortedItems.length} {sortedItems.length === 1 ? "match" : "matches"}
               </span>
             </div>
-            {(searchMode === "filename" || searchMode === "tag") && (
+            {searchMode === "filename" && (
               <div
                 className="results-sort"
                 style={{ display: "flex", alignItems: "center", gap: "8px" }}
@@ -510,10 +749,8 @@ export function SearchPanel({
               <h4>No matching assets found</h4>
               <p>
                 {searchMode === "semantic"
-                  ? "Try using different keywords or describing concepts more broadly."
-                  : searchMode === "filename"
-                    ? "Check the filename spelling or switch to Semantic Search."
-                    : "Choose different approved tags or remove a filter."}
+                  ? "Try using different keywords, broadening description, or removing tag filters."
+                  : "Check filename spelling, remove tag filters, or switch to Semantic Search."}
               </p>
             </div>
           ) : (

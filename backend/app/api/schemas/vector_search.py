@@ -32,7 +32,7 @@ class VectorSearchRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     query: str = ""
-    mode: Literal["semantic", "filename", "tag"] = "semantic"
+    mode: Literal["semantic", "filename"] = "semantic"
     tags: list[SearchTag] = Field(default_factory=list, max_length=MAX_SEARCH_TAGS)
     limit: int = Field(
         default=DEFAULT_SEARCH_LIMIT, ge=MIN_SEARCH_LIMIT, le=MAX_SEARCH_LIMIT
@@ -43,10 +43,6 @@ class VectorSearchRequest(BaseModel):
     def validate_mode_fields(self) -> "VectorSearchRequest":
         query = self.query.strip()
         tags = list(dict.fromkeys(self.tags))
-        if self.mode == "tag":
-            if not tags:
-                raise ValueError("Tag search requires at least one tag")
-            return self.model_copy(update={"query": "", "tags": tags})
         if not query:
             raise ValueError("Search query must not be blank")
         if len(query) > MAX_SEARCH_QUERY_LENGTH:
@@ -54,9 +50,7 @@ class VectorSearchRequest(BaseModel):
                 "Search query exceeds maximum allowed length of "
                 f"{MAX_SEARCH_QUERY_LENGTH} characters"
             )
-        if tags:
-            raise ValueError("Tags are only allowed for tag search")
-        return self.model_copy(update={"query": query})
+        return self.model_copy(update={"query": query, "tags": tags})
 
 
 class VectorSearchItem(BaseModel):
