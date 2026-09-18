@@ -661,42 +661,6 @@ export function SearchPanel({
         </div>
       </form>
 
-      {/* Active Filters Bar */}
-      {(selectedTags.length > 0 || Boolean(provider)) && (
-        <div className="search-quick-providers" aria-label="Active filters">
-          <span className="search-quick-providers__label">Filters:</span>
-          {provider && (
-            <button
-              type="button"
-              className="search-filter-chip search-filter-chip--active"
-              onClick={() => handleProviderChange("")}
-              title="Click to clear provider filter"
-            >
-              <ProviderLogo provider={provider} size={13} />
-              <span>{providers.find((p) => p.id === provider)?.displayName ?? provider}</span>
-              <span aria-hidden="true" style={{ marginLeft: 4, fontSize: 11, opacity: 0.8 }}>✕</span>
-            </button>
-          )}
-          {selectedTags.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className="search-filter-chip search-filter-chip--active"
-              onClick={() => {
-                const nextTags = selectedTags.filter((t) => t !== tag);
-                setSelectedTags(nextTags);
-                if (state.kind === "result" || state.kind === "submitting") {
-                  void performSearch(query, provider, searchMode, nextTags);
-                }
-              }}
-              title={`Click to clear tag ${displayTag(tag)}`}
-            >
-              <span>{displayTag(tag)}</span>
-              <span aria-hidden="true" style={{ marginLeft: 4, fontSize: 11, opacity: 0.8 }}>✕</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       {state.kind === "submitting" && (
         <div className="results" aria-busy="true" aria-label="Loading search results">
