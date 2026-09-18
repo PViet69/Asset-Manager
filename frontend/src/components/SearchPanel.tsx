@@ -306,6 +306,12 @@ export function SearchPanel({
       <form onSubmit={onSubmit}>
         <div className="search-bar-box">
           <div className="search-input-wrapper">
+            <button
+              type="submit"
+              className="search-bar-submit-btn"
+              aria-label="Search"
+              title="Search"
+            >
               <svg
                 className="search-bar-icon"
                 width="20"
@@ -321,6 +327,7 @@ export function SearchPanel({
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
+            </button>
 
               <input
                 id="search-q"
