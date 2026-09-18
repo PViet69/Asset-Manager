@@ -1,4 +1,4 @@
-# Approved Tag Search Design
+# Approved tag filter Design
 
 ## Goal
 
@@ -10,7 +10,7 @@ Add tag-only asset search. Admin manually extracts categorized tags from existin
 - Extract tags from existing Qdrant asset payload `content`; current content follows labeled category-line format.
 - On manual discovery, write derived `tags` string array back to each affected asset payload in main Qdrant collection.
 - Admin selects approved discovered tags and persists selection.
-- Users select only approved tags from grouped Tag Search picker.
+- Users select only approved tags from grouped tag filter picker.
 - Persist approved tags in separate Qdrant settings collection. No SQL, Postgres, SQLite, external database, cache, scheduler, or background scan.
 - Keep semantic and filename search behavior unchanged.
 - Preserve optional provider filtering.
@@ -55,9 +55,9 @@ Category qualification prevents collisions between identical values in different
 8. Backend writes selected approved tags as one durable settings record in separate Qdrant settings collection.
 9. Later manual discovery/index runs update asset payload tags and show newly discovered tags. It does not alter saved approved selection until admin explicitly saves.
 
-### User tag search
+### User tag filter
 
-1. User opens Tag Search.
+1. User opens tag filter.
 2. Frontend fetches currently approved tags from backend, organized by category.
 3. User clicks one or more approved tags. Each selection appends removable filter chip.
 4. User submits search.
@@ -89,7 +89,7 @@ Existing Qdrant asset collection remains source of truth for asset data and sear
 
 Separate Qdrant collection stores one durable settings record containing approved canonical tags. It has no semantic-search use; stored vector can be fixed minimal placeholder because only payload read/write operations are needed. Collection name derives from existing main collection name with deterministic settings suffix. Backend ensures collection during startup and creates it only when absent.
 
-Read/save operations use stable record ID so save replaces prior approved selection atomically. Empty approved set is valid: public picker returns category groups with no values and Tag Search has no selectable tags.
+Read/save operations use stable record ID so save replaces prior approved selection atomically. Empty approved set is valid: public picker returns category groups with no values and tag filter has no selectable tags.
 
 ## Backend Design
 
@@ -104,15 +104,15 @@ Add focused tag-management storage/service separate from asset `QdrantStore` sea
 
 Index operation must make pagination safe while payload updates occur: retain next scroll offset before update, use point IDs from returned page, and do not delete or upsert main asset points.
 
-Extend asset `QdrantStore` with tag search. Tag search uses Qdrant payload `must` conditions: one required `tags` condition per selected canonical tag. Since all conditions are required, every selected tag must match. Optional provider condition joins same requirement list. Query retrieves payloads only; tag search needs no embedding or semantic score. Return at most requested limit.
+Extend asset `QdrantStore` with tag filter. tag filter uses Qdrant payload `must` conditions: one required `tags` condition per selected canonical tag. Since all conditions are required, every selected tag must match. Optional provider condition joins same requirement list. Query retrieves payloads only; tag filter needs no embedding or semantic score. Return at most requested limit.
 
-`FileIngestionService.search` routes `tag` mode to tag search after approved-tag validation. Results retain existing full-payload filtering and `VectorSearchItem` conversion. Existing route continues translating storage failures to safe `502` responses.
+`FileIngestionService.search` routes `tag` mode to tag filter after approved-tag validation. Results retain existing full-payload filtering and `VectorSearchItem` conversion. Existing route continues translating storage failures to safe `502` responses.
 
 ## Frontend Design
 
-Add Tag Search third tab in `SearchPanel`.
+Add tag filter third tab in `SearchPanel`.
 
-Tag Search fetches and displays approved tags in category groups. Users cannot enter arbitrary tag text. Selected tags remain local panel state and appear as removable chips with human-readable category/value labels. Search enables only with at least one selected tag. Switching out of tag mode clears selected tags. Existing search endpoint client submits selected canonical tags, empty query, `tag` mode, top result limit, and selected provider.
+tag filter fetches and displays approved tags in category groups. Users cannot enter arbitrary tag text. Selected tags remain local panel state and appear as removable chips with human-readable category/value labels. Search enables only with at least one selected tag. Switching out of tag mode clears selected tags. Existing search endpoint client submits selected canonical tags, empty query, `tag` mode, top result limit, and selected provider.
 
 Show tag-mode results in descending `modified_time` order. Semantic mode still shows relevance score. Filename mode retains user-selectable date sorting. Tag mode has no relevance score or sort selector.
 
@@ -125,8 +125,8 @@ Add Admin dashboard Tag Management section: Discover and index tags button, disc
 - Discovery/index report safe Qdrant failure and must not partially claim success. UI shows error status.
 - Public approved-tags read returns empty grouped result when no settings record exists.
 - Settings read/write failures use safe Qdrant storage errors; admin UI shows existing dashboard error pattern.
-- Tag search Qdrant errors use existing `QdrantStorageError` translation and expose only safe message.
-- Frontend Tag Search and admin UI show existing error presentation for API failures.
+- tag filter Qdrant errors use existing `QdrantStorageError` translation and expose only safe message.
+- Frontend tag filter and admin UI show existing error presentation for API failures.
 - Missing/unparseable `modified_time` sorts after valid timestamps.
 
 ## Testing

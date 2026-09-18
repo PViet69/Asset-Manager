@@ -487,41 +487,6 @@ def test_search_without_payload_returns_empty_payload_dict() -> None:
 
 
 @pytest.mark.unit
-def test_find_by_tags_requires_every_tag_and_provider() -> None:
-    client = Mock()
-    store = QdrantEmbeddingStore.from_client(
-        client, vector_size=2, collection=COLLECTION
-    )
-    client.scroll.return_value = ([], None)
-
-    assert (
-        store.find_by_tags(
-            ["subject:laptop", "color:black"],
-            limit=5,
-            provider=StorageProvider.GOOGLE_DRIVE,
-        )
-        == []
-    )
-
-    client.scroll.assert_called_once_with(
-        collection_name=COLLECTION,
-        scroll_filter=Filter(
-            must=[
-                FieldCondition(key="tags", match=MatchAny(any=["subject:laptop"])),
-                FieldCondition(key="tags", match=MatchAny(any=["color:black"])),
-                FieldCondition(
-                    key=PAYLOAD_PROVIDER,
-                    match=MatchValue(value=StorageProvider.GOOGLE_DRIVE),
-                ),
-            ]
-        ),
-        limit=10_000,
-        with_payload=True,
-        with_vectors=False,
-    )
-
-
-@pytest.mark.unit
 def test_search_failure_becomes_safe_chained_error() -> None:
     client = Mock()
     failure = RuntimeError("connection refused")

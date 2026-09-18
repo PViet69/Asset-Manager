@@ -90,7 +90,7 @@ class TagGroup(BaseModel):
 
 
 class ApprovedTagGroupsResponse(BaseModel):
-    """Approved tags available to public tag search."""
+    """Approved tags available to public tag filter."""
 
     model_config = ConfigDict(frozen=True)
 

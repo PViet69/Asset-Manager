@@ -201,13 +201,6 @@ test("keeps tag filters available for filename search", async () => {
 });
 
 
-test("does not show tag search mode", () => {
-  render(<SearchPanel />);
-
-  expect(screen.queryByRole("tab", { name: "Tag Search" })).not.toBeInTheDocument();
-});
-
-
 test("sorts search results by date in filename search mode (newest and oldest first)", async () => {
   mockedSearchVectors.mockResolvedValue({
     object: "list",

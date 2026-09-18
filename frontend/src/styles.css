@@ -1033,7 +1033,7 @@ ul.list li:hover {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.search-bar-box:not(.search-bar-box--tag):focus-within {
+.search-bar-box:focus-within {
   border-color: #2563eb;
   box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12), 0 8px 24px rgba(37, 99, 235, 0.06);
 }
@@ -1052,7 +1052,7 @@ ul.list li:hover {
   transition: color 0.15s ease;
 }
 
-.search-bar-box:not(.search-bar-box--tag):focus-within .search-bar-icon {
+.search-bar-box:focus-within .search-bar-icon {
   color: #2563eb;
 }
 
@@ -1315,19 +1315,7 @@ ul.list li:hover {
   box-shadow: 0 3px 8px rgba(37, 99, 235, 0.16);
 }
 
-/* Tag Search Redesign */
-.search-bar-box--tag {
-  flex-direction: column;
-  align-items: stretch;
-  padding: 16px 20px;
-  gap: 14px;
-}
-
-.search-bar-box--tag:focus-within {
-  border-color: rgba(203, 213, 225, 0.9);
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-}
-
+/* Tag filters */
 .search-tag-picker {
   display: flex;
   flex-direction: column;
@@ -1861,14 +1849,6 @@ ul.list li:hover {
 
 .search-tag-group .search-filter-chip--active:hover {
   box-shadow: 0 3px 8px rgba(37, 99, 235, 0.16);
-}
-
-.search-bar-box--tag .search-bar-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 10px;
-  border-top: 1px solid rgba(226, 232, 240, 0.8);
-  margin-top: 2px;
 }
 
 /* Search Topbar Layout */

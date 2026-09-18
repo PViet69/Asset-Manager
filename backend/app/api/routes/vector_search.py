@@ -85,7 +85,7 @@ def search_vectors(
     status_code=status.HTTP_200_OK,
 )
 async def list_approved_tags(request: Request) -> ApprovedTagGroupsResponse:
-    """List persisted tags users may select for tag search."""
+    """List persisted tags users may select for tag filter."""
     store: TagSettingsStore = request.app.state.tag_settings_store
     try:
         groups = group_tags(await asyncio.to_thread(store.get_approved_tags))
