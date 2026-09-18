@@ -1046,13 +1046,39 @@ ul.list li:hover {
   min-width: 0;
 }
 
-.search-bar-icon {
+.search-bar-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 4px;
+  margin-left: -4px;
+  border-radius: 8px;
+  cursor: pointer;
   color: #64748b;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.search-bar-submit-btn:hover {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.search-bar-submit-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.search-bar-icon {
+  display: block;
+  color: inherit;
   flex-shrink: 0;
   transition: color 0.15s ease;
 }
 
-.search-bar-box:focus-within .search-bar-icon {
+.search-bar-box:focus-within .search-bar-submit-btn {
   color: #2563eb;
 }
 
