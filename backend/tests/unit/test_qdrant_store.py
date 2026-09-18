@@ -432,6 +432,42 @@ def test_search_filters_by_provider_when_requested() -> None:
 
 
 @pytest.mark.unit
+def test_search_filters_by_tags_before_vector_distance_calculation() -> None:
+    client = Mock()
+    store = QdrantEmbeddingStore.from_client(
+        client,
+        vector_size=2,
+        collection=COLLECTION,
+    )
+    client.query_points.return_value = Mock(points=[])
+
+    store.search(
+        [0.1, 0.2],
+        limit=5,
+        score_threshold=0.4,
+        provider=StorageProvider.GOOGLE_DRIVE,
+        tags=["subject:laptop", "color:black"],
+    )
+
+    client.query_points.assert_called_once_with(
+        collection_name=COLLECTION,
+        query=[0.1, 0.2],
+        limit=5,
+        score_threshold=0.4,
+        query_filter=Filter(
+            must=[
+                FieldCondition(key="tags", match=MatchAny(any=["subject:laptop"])),
+                FieldCondition(key="tags", match=MatchAny(any=["color:black"])),
+                FieldCondition(
+                    key=PAYLOAD_PROVIDER,
+                    match=MatchValue(value=StorageProvider.GOOGLE_DRIVE),
+                ),
+            ]
+        ),
+    )
+
+
+@pytest.mark.unit
 def test_search_without_payload_returns_empty_payload_dict() -> None:
     client = Mock()
     store = QdrantEmbeddingStore.from_client(
@@ -448,41 +484,6 @@ def test_search_without_payload_returns_empty_payload_dict() -> None:
     hits = store.search([0.1, 0.2], limit=5, score_threshold=0.4)
 
     assert hits[0].payload == {}
-
-
-@pytest.mark.unit
-def test_find_by_tags_requires_every_tag_and_provider() -> None:
-    client = Mock()
-    store = QdrantEmbeddingStore.from_client(
-        client, vector_size=2, collection=COLLECTION
-    )
-    client.scroll.return_value = ([], None)
-
-    assert (
-        store.find_by_tags(
-            ["subject:laptop", "color:black"],
-            limit=5,
-            provider=StorageProvider.GOOGLE_DRIVE,
-        )
-        == []
-    )
-
-    client.scroll.assert_called_once_with(
-        collection_name=COLLECTION,
-        scroll_filter=Filter(
-            must=[
-                FieldCondition(key="tags", match=MatchAny(any=["subject:laptop"])),
-                FieldCondition(key="tags", match=MatchAny(any=["color:black"])),
-                FieldCondition(
-                    key=PAYLOAD_PROVIDER,
-                    match=MatchValue(value=StorageProvider.GOOGLE_DRIVE),
-                ),
-            ]
-        ),
-        limit=10_000,
-        with_payload=True,
-        with_vectors=False,
-    )
 
 
 @pytest.mark.unit

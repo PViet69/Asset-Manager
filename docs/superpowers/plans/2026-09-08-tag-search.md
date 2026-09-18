@@ -1,4 +1,4 @@
-# Categorized Approved Tag Search Implementation Plan
+# Categorized Approved tag filter Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -260,13 +260,13 @@ Expected: PASS.
 **Interfaces:**
 - Produces: typed grouped public/admin API calls.
 - Produces: admin Discover and index / explicit Save flow.
-- Produces: Tag Search grouped picker and newest-first results.
+- Produces: tag filter grouped picker and newest-first results.
 
 - [ ] **Step 1: Write failing frontend tests**
 
 Admin test: click **Discover and index tags**, see groups and indexed count, verify no save request until **Save approved tags** click; selection changes are immutable and safe API errors render feedback.
 
-SearchPanel test: mock public groups for Subjects and Colors; switch to Tag Search, select `subject:laptop` and `color:black`, see human labels and removable chips; provider plus submit calls `searchVectors("", 100, "google_drive", "tag", ["subject:laptop", "color:black"])`; empty selection disables submit; results order by valid `modified_time` newest first and scores/sort selector remain absent.
+SearchPanel test: mock public groups for Subjects and Colors; switch to tag filter, select `subject:laptop` and `color:black`, see human labels and removable chips; provider plus submit calls `searchVectors("", 100, "google_drive", "tag", ["subject:laptop", "color:black"])`; empty selection disables submit; results order by valid `modified_time` newest first and scores/sort selector remain absent.
 
 - [ ] **Step 2: Run tests to verify failure**
 
@@ -278,7 +278,7 @@ Expected: FAIL because components/API/types absent.
 
 Add grouped tag types/client APIs. Add focused `AdminTagManagement`, mount in AdminPage Settings, use existing toast/error patterns. Discovery must not mutate saved approval state until explicit save.
 
-Add Tag Search tab. Fetch public groups on opening. Render group headings plus buttons/checkboxes. No free-text tag field. Selected canonical tags render category/value chips. Clear selection when mode changes. Submit selected canonical tags with empty query/max limit. Sort tag results descending date; missing timestamps last. Keep old modes unchanged.
+Add tag filter tab. Fetch public groups on opening. Render group headings plus buttons/checkboxes. No free-text tag field. Selected canonical tags render category/value chips. Clear selection when mode changes. Submit selected canonical tags with empty query/max limit. Sort tag results descending date; missing timestamps last. Keep old modes unchanged.
 
 - [ ] **Step 4: Verify frontend**
 

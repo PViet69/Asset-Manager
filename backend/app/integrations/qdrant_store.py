@@ -54,16 +54,11 @@ class QdrantStore(Protocol):
         limit: int,
         score_threshold: float,
         provider: str | None = None,
+        tags: list[str] | None = None,
     ) -> list[SearchHit]: ...
     def find_by_filename(
         self,
         filename_query: str,
-        limit: int,
-        provider: str | None = None,
-    ) -> list[SearchHit]: ...
-    def find_by_tags(
-        self,
-        tags: list[str],
         limit: int,
         provider: str | None = None,
     ) -> list[SearchHit]: ...
@@ -138,6 +133,17 @@ class QdrantEmbeddingStore:
             )
         return Filter(must=conditions)
 
+    @staticmethod
+    def _search_filter(provider: str | None, tags: list[str] | None) -> Filter | None:
+        conditions = [
+            FieldCondition(key="tags", match=MatchAny(any=[tag])) for tag in tags or []
+        ]
+        if provider is not None:
+            conditions.append(
+                FieldCondition(key=PAYLOAD_PROVIDER, match=MatchValue(value=provider))
+            )
+        return Filter(must=conditions) if conditions else None
+
     def _scroll(self, filter_: Filter | None = None) -> list[SearchHit]:
         try:
             points = self._client.scroll(
@@ -157,9 +163,9 @@ class QdrantEmbeddingStore:
         filename_query: str,
         limit: int,
         provider: str | None = None,
+        tags: list[str] | None = None,
     ) -> list[SearchHit]:
-        filter_ = self._key_filter(provider) if provider is not None else None
-        hits = self._scroll(filter_)
+        hits = self._scroll(self._search_filter(provider, tags))
         q = filename_query.lower()
         matched = [
             hit
@@ -168,21 +174,6 @@ class QdrantEmbeddingStore:
             and q in hit.payload["filename"].lower()
         ]
         return matched[:limit]
-
-    def find_by_tags(
-        self,
-        tags: list[str],
-        limit: int,
-        provider: str | None = None,
-    ) -> list[SearchHit]:
-        conditions = [
-            FieldCondition(key="tags", match=MatchAny(any=[tag])) for tag in tags
-        ]
-        if provider is not None:
-            conditions.append(
-                FieldCondition(key=PAYLOAD_PROVIDER, match=MatchValue(value=provider))
-            )
-        return self._scroll(Filter(must=conditions))[:limit]
 
     def find_by_storage_key(
         self, provider: str, storage_file_id: str
@@ -223,6 +214,7 @@ class QdrantEmbeddingStore:
         limit: int,
         score_threshold: float,
         provider: str | None = None,
+        tags: list[str] | None = None,
     ) -> list[SearchHit]:
         query = {
             "collection_name": self._collection,
@@ -230,8 +222,9 @@ class QdrantEmbeddingStore:
             "limit": limit,
             "score_threshold": score_threshold,
         }
-        if provider is not None:
-            query["query_filter"] = self._key_filter(provider)
+        filter_ = self._search_filter(provider, tags)
+        if filter_ is not None:
+            query["query_filter"] = filter_
         try:
             points = self._client.query_points(**query).points
         except Exception as exc:  # noqa: BLE001

@@ -75,7 +75,7 @@ test("keeps a long source filename accessible while showing its score", async ()
   fireEvent.change(screen.getByLabelText("Query"), {
     target: { value: "campaign report" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  fireEvent.submit(screen.getByLabelText("Query").closest("form")!);
 
   // Assert
   const filename = await screen.findByRole("link", { name: new RegExp(LONG_FILENAME) });
@@ -102,9 +102,12 @@ test("sends selected provider with search request", async () => {
   fireEvent.change(screen.getByLabelText("Query"), {
     target: { value: "campaign report" },
   });
-  const providerBtn = await screen.findByRole("button", { name: /Google Drive/i });
+  fireEvent.click(screen.getByRole("button", { name: "Tag filters" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Provider" }));
+  const providerBtn = await screen.findByRole("option", { name: /Google Drive/i });
   fireEvent.click(providerBtn);
-  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  fireEvent.submit(screen.getByLabelText("Query").closest("form")!);
 
   // Assert
   await waitFor(() => {
@@ -141,35 +144,62 @@ test("triggers real-time search on typing in filename mode", async () => {
   });
 });
 
-test("searches selected approved tags newest first", async () => {
-  mockedSearchVectors.mockResolvedValue({
-    object: "list",
-    data: [
-      {
-        point_id: "old", score: 1, filename: "old.png", file_path: "/old.png",
-        file_type: "image/png", content: "old", modified_time: "2025-01-15T10:00:00Z",
-      },
-      {
-        point_id: "new", score: 1, filename: "new.png", file_path: "/new.png",
-        file_type: "image/png", content: "new", modified_time: "2026-08-20T10:00:00Z",
-      },
-    ],
-  });
+test("keeps tag filters collapsed until opened from search box", async () => {
   render(<SearchPanel />);
 
-  fireEvent.click(screen.getByRole("tab", { name: "Tag Search" }));
-  fireEvent.click(await screen.findByRole("button", { name: "laptop" }));
-  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  expect(screen.queryByRole("button", { name: "Tags" })).not.toBeInTheDocument();
+  const toggle = screen.getByRole("button", { name: "Tag filters" });
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+  fireEvent.click(toggle);
+
+  expect(await screen.findByRole("button", { name: "Tags" })).toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: "Filter by tags" })).toBeInTheDocument();
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+});
+
+test("sends selected tags as semantic search filters", async () => {
+  mockedSearchVectors.mockResolvedValue({ object: "list", data: [] });
+  render(<SearchPanel />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Tag filters" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Tags" }));
+  fireEvent.click(await screen.findByRole("option", { name: /laptop/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  fireEvent.change(screen.getByLabelText("Query"), {
+    target: { value: "laptop" },
+  });
+  fireEvent.submit(screen.getByLabelText("Query").closest("form")!);
 
   await waitFor(() => {
     expect(mockedSearchVectors).toHaveBeenCalledWith(
-      "", 100, undefined, "tag", ["subject:laptop"]
+      "laptop", 10, undefined, "semantic", ["subject:laptop"]
     );
   });
-  const resultList = screen.getByRole("list", { name: "Search results" });
-  expect(resultList.children[0]).toHaveTextContent("new.png");
-  expect(resultList.children[1]).toHaveTextContent("old.png");
 });
+
+
+test("keeps tag filters available for filename search", async () => {
+  mockedSearchVectors.mockResolvedValue({ object: "list", data: [] });
+  render(<SearchPanel />);
+
+  fireEvent.click(screen.getByRole("tab", { name: "Filename Search" }));
+  fireEvent.click(screen.getByRole("button", { name: "Tag filters" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Tags" }));
+  fireEvent.click(await screen.findByRole("option", { name: /laptop/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  fireEvent.change(screen.getByLabelText("Query"), {
+    target: { value: "laptop.png" },
+  });
+
+  await waitFor(() => {
+    expect(mockedSearchVectors).toHaveBeenCalledWith(
+      "laptop.png", 100, undefined, "filename", ["subject:laptop"]
+    );
+  });
+});
+
 
 test("sorts search results by date in filename search mode (newest and oldest first)", async () => {
   mockedSearchVectors.mockResolvedValue({
@@ -256,7 +286,7 @@ test("re-triggers search when changing provider during search", async () => {
   fireEvent.change(screen.getByLabelText("Query"), {
     target: { value: "quarterly report" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  fireEvent.submit(screen.getByLabelText("Query").closest("form")!);
 
   await waitFor(() => {
     expect(mockedSearchVectors).toHaveBeenCalledWith(
@@ -269,8 +299,11 @@ test("re-triggers search when changing provider during search", async () => {
   expect(await screen.findByText("asset-dropbox.png")).toBeInTheDocument();
 
   // Now change provider during search to Google Drive
-  const gdriveBtn = await screen.findByRole("button", { name: /Google Drive/i });
+  fireEvent.click(screen.getByRole("button", { name: "Tag filters" }));
+  fireEvent.click(screen.getByRole("button", { name: "Provider" }));
+  const gdriveBtn = await screen.findByRole("option", { name: /Google Drive/i });
   fireEvent.click(gdriveBtn);
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
   await waitFor(() => {
     expect(mockedSearchVectors).toHaveBeenCalledWith(
@@ -295,53 +328,83 @@ test("re-triggers search when changing provider during search", async () => {
   });
 });
 
-test("re-triggers search when changing provider during tag search", async () => {
-  mockedSearchVectors.mockResolvedValue({
-    object: "list",
-    data: [],
-  });
+test("re-triggers semantic search with tag filters when changing provider", async () => {
+  mockedSearchVectors.mockResolvedValue({ object: "list", data: [] });
   render(<SearchPanel />);
 
-  fireEvent.click(screen.getByRole("tab", { name: "Tag Search" }));
-  fireEvent.click(await screen.findByRole("button", { name: "laptop" }));
-  fireEvent.click(screen.getByRole("button", { name: "Search" }));
-
-  await waitFor(() => {
-    expect(mockedSearchVectors).toHaveBeenCalledWith(
-      "",
-      100,
-      undefined,
-      "tag",
-      ["subject:laptop"]
-    );
+  fireEvent.click(screen.getByRole("button", { name: "Tag filters" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Tags" }));
+  fireEvent.click(await screen.findByRole("option", { name: /laptop/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  fireEvent.change(screen.getByLabelText("Query"), {
+    target: { value: "laptop" },
   });
+  fireEvent.submit(screen.getByLabelText("Query").closest("form")!);
 
-  const dropboxBtn = await screen.findByRole("button", { name: /Dropbox/i });
+  fireEvent.click(screen.getByRole("button", { name: "Tag filters" }));
+  fireEvent.click(screen.getByRole("button", { name: "Provider" }));
+  const dropboxBtn = await screen.findByRole("option", { name: /Dropbox/i });
   fireEvent.click(dropboxBtn);
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
   await waitFor(() => {
     expect(mockedSearchVectors).toHaveBeenCalledWith(
-      "",
-      100,
-      "dropbox",
-      "tag",
-      ["subject:laptop"]
+      "laptop", 10, "dropbox", "semantic", ["subject:laptop"]
     );
   });
 });
 
-test("allows selecting and clearing tags in tag search mode", async () => {
+test("allows selecting and clearing tag filters", async () => {
   render(<SearchPanel />);
 
-  fireEvent.click(screen.getByRole("tab", { name: "Tag Search" }));
-  const laptopBtn = await screen.findByRole("button", { name: "laptop" });
+  fireEvent.click(screen.getByRole("button", { name: "Tag filters" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Tags" }));
+  const laptopBtn = await screen.findByRole("option", { name: /laptop/i });
   fireEvent.click(laptopBtn);
 
   expect(screen.getByLabelText("1 selected")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Clear selected tags" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: "Clear selected tags" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reset" }));
   expect(screen.queryByLabelText("1 selected")).not.toBeInTheDocument();
+});
+
+test("renders provider dropdown with Google Drive style select and options", async () => {
+  render(<SearchPanel />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Tag filters" }));
+  const trigger = await screen.findByRole("button", { name: "Provider" });
+  expect(trigger).toHaveTextContent("Any");
+
+  // Open dropdown
+  fireEvent.click(trigger);
+  expect(screen.getByRole("listbox", { name: "Provider" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Any" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: /Google Drive/i })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: /Dropbox/i })).toBeInTheDocument();
+
+  // Select Dropbox
+  fireEvent.click(screen.getByRole("option", { name: /Dropbox/i }));
+  expect(screen.queryByRole("listbox", { name: "Provider" })).not.toBeInTheDocument();
+  expect(trigger).toHaveTextContent("Dropbox");
+});
+
+test("renders tags dropdown with Google Drive style select and options", async () => {
+  render(<SearchPanel />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Tag filters" }));
+  const trigger = await screen.findByRole("button", { name: "Tags" });
+  expect(trigger).toHaveTextContent("Any");
+
+  // Open dropdown
+  fireEvent.click(trigger);
+  expect(screen.getByRole("listbox", { name: "Tags" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Any" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: /laptop/i })).toBeInTheDocument();
+
+  // Select laptop tag
+  fireEvent.click(screen.getByRole("option", { name: /laptop/i }));
+  expect(trigger).toHaveTextContent("laptop");
 });
 
 

@@ -497,6 +497,30 @@ def test_search_embeds_query_and_maps_hits() -> None:
 
 
 @pytest.mark.unit
+def test_semantic_search_passes_tags_to_store_before_scoring() -> None:
+    service, _, model_client, qdrant_store = make_service()
+    service_with_settings = FileIngestionService(
+        service._description_client,
+        model_client,
+        qdrant_store,
+        settings=make_settings(0.2),
+    )
+    model_client.embed_text.return_value = [0.7]
+    qdrant_store.search.return_value = []
+
+    service_with_settings.search(
+        "red car", limit=5, tags=["subject:car", "color:red"]
+    )
+
+    qdrant_store.search.assert_called_once_with(
+        [0.7],
+        limit=5,
+        score_threshold=0.2,
+        tags=["subject:car", "color:red"],
+    )
+
+
+@pytest.mark.unit
 def test_search_without_configured_threshold_raises_settings_error() -> None:
     service, _, model_client, qdrant_store = make_service()
 
@@ -506,31 +530,6 @@ def test_search_without_configured_threshold_raises_settings_error() -> None:
     assert exc_info.value.safe_message == "Search is not configured"
     model_client.embed_text.assert_not_called()
     qdrant_store.search.assert_not_called()
-
-
-@pytest.mark.unit
-def test_tag_search_does_not_embed_and_maps_hits() -> None:
-    service, _, model_client, qdrant_store = make_service()
-    qdrant_store.find_by_tags.return_value = [
-        SearchHit(
-            "point-1",
-            1.0,
-            {
-                "filename": "laptop.png",
-                "file_path": "assets/laptop.png",
-                "file_type": "image/png",
-                "content": "Subjects: laptop",
-            },
-        )
-    ]
-
-    response = service.search("", limit=10, mode="tag", tags=["subject:laptop"])
-
-    qdrant_store.find_by_tags.assert_called_once_with(
-        ["subject:laptop"], limit=10, provider=None
-    )
-    model_client.embed_text.assert_not_called()
-    assert response.data[0].filename == "laptop.png"
 
 
 @pytest.mark.unit

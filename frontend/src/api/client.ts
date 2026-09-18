@@ -78,7 +78,7 @@ export function searchVectors(
   query: string,
   limit: number = 10,
   provider?: StorageProvider,
-  mode: "semantic" | "filename" | "tag" = "semantic",
+  mode: "semantic" | "filename" = "semantic",
   tags?: readonly string[]
 ): Promise<VectorSearchResponse> {
 

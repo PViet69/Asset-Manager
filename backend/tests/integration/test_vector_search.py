@@ -110,7 +110,7 @@ def test_search_passes_provider_filter(app: FastAPI) -> None:
 
 
 @pytest.mark.integration
-def test_tag_search_passes_approved_tags_without_query(app: FastAPI) -> None:
+def test_search_passes_approved_tags_as_optional_filter(app: FastAPI) -> None:
     service = make_search_service()
     service.search.return_value = VectorSearchResponse(data=[])
     override_ingestion_service(app, service)
@@ -121,17 +121,17 @@ def test_tag_search_passes_approved_tags_without_query(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/v1/search",
-            json={"query": "", "mode": "tag", "tags": ["subject:laptop"]},
+            json={"query": "laptop", "tags": ["subject:laptop"]},
         )
 
     assert response.status_code == 200
     service.search.assert_called_once_with(
-        "", limit=10, provider=None, mode="tag", tags=["subject:laptop"]
+        "laptop", limit=10, provider=None, mode="semantic", tags=["subject:laptop"]
     )
 
 
 @pytest.mark.integration
-def test_tag_search_rejects_unapproved_tag(app: FastAPI) -> None:
+def test_search_rejects_unapproved_tag_filter(app: FastAPI) -> None:
     service = make_search_service()
     override_ingestion_service(app, service)
     tag_settings_store = Mock()
@@ -141,7 +141,7 @@ def test_tag_search_rejects_unapproved_tag(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/v1/search",
-            json={"mode": "tag", "tags": ["color:black"]},
+            json={"query": "laptop", "tags": ["color:black"]},
         )
 
     assert response.status_code == 422

@@ -113,13 +113,9 @@ class FileIngestionService:
                 "Search query exceeds maximum allowed length of "
                 f"{MAX_SEARCH_QUERY_LENGTH} characters"
             )
-        if mode == "tag":
-            hits = self._qdrant_store.find_by_tags(
-                tags or [], limit=limit, provider=provider
-            )
-        elif mode == "filename":
+        if mode == "filename":
             hits = self._qdrant_store.find_by_filename(
-                query, limit=limit, provider=provider
+                query, limit=limit, provider=provider, tags=tags
             )
         else:
             threshold = self._settings.SEARCH_THRESHOLD if self._settings else None
@@ -129,6 +125,8 @@ class FileIngestionService:
             search_kwargs = {"limit": limit, "score_threshold": threshold}
             if provider is not None:
                 search_kwargs["provider"] = provider
+            if tags:
+                search_kwargs["tags"] = tags
             hits = self._qdrant_store.search(vector, **search_kwargs)
         items = [
             self._to_search_item(hit) for hit in hits if self._has_full_payload(hit)

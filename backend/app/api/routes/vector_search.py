@@ -39,9 +39,9 @@ def search_vectors(
     request: Request,
     service: FileIngestionService = Depends(get_file_ingestion_service),
 ) -> VectorSearchResponse:
-    """Search stored vectors, filenames, or approved payload tags."""
+    """Search stored vectors or filenames with optional approved tag filters."""
     try:
-        if payload.mode == "tag":
+        if payload.tags:
             store: TagSettingsStore = request.app.state.tag_settings_store
             approved_tags = set(store.get_approved_tags())
             if not set(payload.tags).issubset(approved_tags):
@@ -49,19 +49,14 @@ def search_vectors(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="One or more tags are not approved for search",
                 )
-            return service.search(
-                payload.query,
-                limit=payload.limit,
-                provider=payload.provider,
-                mode=payload.mode,
-                tags=payload.tags,
-            )
-        return service.search(
-            payload.query,
-            limit=payload.limit,
-            provider=payload.provider,
-            mode=payload.mode,
-        )
+        search_kwargs = {
+            "limit": payload.limit,
+            "provider": payload.provider,
+            "mode": payload.mode,
+        }
+        if payload.tags:
+            search_kwargs["tags"] = payload.tags
+        return service.search(payload.query, **search_kwargs)
     except SettingsError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -90,7 +85,7 @@ def search_vectors(
     status_code=status.HTTP_200_OK,
 )
 async def list_approved_tags(request: Request) -> ApprovedTagGroupsResponse:
-    """List persisted tags users may select for tag search."""
+    """List persisted tags users may select for tag filter."""
     store: TagSettingsStore = request.app.state.tag_settings_store
     try:
         groups = group_tags(await asyncio.to_thread(store.get_approved_tags))
