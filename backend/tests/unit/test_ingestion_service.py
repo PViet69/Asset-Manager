@@ -10,6 +10,7 @@ from backend.app.config import Settings
 from backend.app.exceptions import (
     FileProcessingError,
     ModelEndpointError,
+    ModelNotFoundError,
     QdrantStorageError,
     SettingsError,
 )
@@ -473,6 +474,7 @@ def test_search_embeds_query_and_maps_hits() -> None:
 
     response = service_with_settings.search("red car", limit=5)
 
+    model_client.check_health.assert_called_once_with()
     model_client.embed_text.assert_called_once_with("red car")
     qdrant_store.search.assert_called_once_with([0.7], limit=5, score_threshold=0.2)
     assert isinstance(response, VectorSearchResponse)
@@ -494,6 +496,25 @@ def test_search_embeds_query_and_maps_hits() -> None:
             }
         ],
     }
+
+
+@pytest.mark.unit
+def test_semantic_search_skips_embedding_when_model_is_unavailable() -> None:
+    service, _, model_client, qdrant_store = make_service()
+    service_with_settings = FileIngestionService(
+        service._description_client,
+        model_client,
+        qdrant_store,
+        settings=make_settings(0.2),
+    )
+    model_client.check_health.return_value = "unavailable"
+
+    with pytest.raises(ModelNotFoundError, match="Model not found"):
+        service_with_settings.search("red car", limit=5)
+
+    model_client.check_health.assert_called_once_with()
+    model_client.embed_text.assert_not_called()
+    qdrant_store.search.assert_not_called()
 
 
 @pytest.mark.unit
