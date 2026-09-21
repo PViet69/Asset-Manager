@@ -6,12 +6,12 @@ from backend.app.model.prompt_model import ImageDescription
 
 def make_description(**changes: object) -> ImageDescription:
     values: dict[str, object] = {
-        "subjects": ("young woman",),
+        "subjects": ("human",),
         "attributes": ("green eyes", "long dark hair"),
-        "actions": ("looking at camera",),
-        "setting": ("outdoors", "blurred foliage background"),
+        "actions": ("looking",),
+        "setting": ("outdoor",),
         "colors": ("green", "black"),
-        "style": ("portrait photography", "soft natural light"),
+        "style": ("photo",),
         "visible_text": (),
     }
     return ImageDescription(**(values | changes))
@@ -23,11 +23,11 @@ def test_formats_description_in_stable_field_order() -> None:
 
     assert description.to_embedding_text() == "\n".join(
         (
-            "Subjects: young woman",
-            "Actions: looking at camera",
-            "Setting: outdoors, blurred foliage background",
+            "Subjects: human",
+            "Actions: looking",
+            "Setting: outdoor",
             "Colors: green, black",
-            "Style: portrait photography, soft natural light",
+            "Style: photo",
         )
     )
 
@@ -46,6 +46,48 @@ def test_omits_empty_collection_fields() -> None:
     assert "Colors:" not in formatted
     assert "Visible text:" not in formatted
     assert "Search keywords:" not in formatted
+
+
+@pytest.mark.unit
+def test_rejects_values_outside_predefined_category_lists() -> None:
+    with pytest.raises(ValidationError):
+        ImageDescription(
+            subjects=("human", "man"),
+            actions=("speaking",),
+            setting=("office",),
+            colors=("blue",),
+            style=("photo",),
+            angles=("frontal",),
+        )
+
+
+@pytest.mark.unit
+def test_json_schema_constrains_category_fields_to_catch_lists() -> None:
+    schema = ImageDescription.model_json_schema()
+
+    assert schema["$defs"]["Subject"]["enum"] == [
+        "human",
+        "dog",
+        "cat",
+        "animal",
+        "product",
+        "object",
+        "vehicle",
+        "building",
+        "nature",
+        "plant",
+        "food",
+        "furniture",
+        "electronics",
+        "clothing",
+        "artwork",
+    ]
+    assert schema["properties"]["subjects"]["items"] == {"$ref": "#/$defs/Subject"}
+    assert schema["properties"]["actions"]["items"] == {"$ref": "#/$defs/Action"}
+    assert schema["properties"]["setting"]["items"] == {"$ref": "#/$defs/Setting"}
+    assert schema["properties"]["colors"]["items"] == {"$ref": "#/$defs/Color"}
+    assert schema["properties"]["style"]["items"] == {"$ref": "#/$defs/Style"}
+    assert schema["properties"]["angles"]["items"] == {"$ref": "#/$defs/Angle"}
 
 
 @pytest.mark.unit
