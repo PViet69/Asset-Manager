@@ -121,6 +121,8 @@ class FileIngestionService:
             threshold = self._settings.SEARCH_THRESHOLD if self._settings else None
             if threshold is None:
                 raise SettingsError("Search is not configured")
+            if self._model_client.check_health() == "unavailable":
+                raise ModelNotFoundError()
             vector = self._model_client.embed_text(query)
             search_kwargs = {"limit": limit, "score_threshold": threshold}
             if provider is not None:
