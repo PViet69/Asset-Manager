@@ -1,5 +1,6 @@
 """Structured image-description output used for semantic retrieval."""
 
+from enum import StrEnum
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
@@ -9,97 +10,95 @@ NonBlankText = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1),
 ]
 
-# Immutable tuple lists defining what each category can catch for prompting/retrieval.
-SUBJECT_CATCH_LIST: tuple[str, ...] = (
-    "human",
-    "dog",
-    "cat",
-    "animal",
-    "product",
-    "object",
-    "vehicle",
-    "building",
-    "nature",
-    "plant",
-    "food",
-    "furniture",
-    "electronics",
-    "clothing",
-    "artwork",
-)
+
+class Subject(StrEnum):
+    HUMAN = "human"
+    DOG = "dog"
+    CAT = "cat"
+    ANIMAL = "animal"
+    PRODUCT = "product"
+    OBJECT = "object"
+    VEHICLE = "vehicle"
+    BUILDING = "building"
+    NATURE = "nature"
+    PLANT = "plant"
+    FOOD = "food"
+    FURNITURE = "furniture"
+    ELECTRONICS = "electronics"
+    CLOTHING = "clothing"
+    ARTWORK = "artwork"
 
 
-ACTION_CATCH_LIST: tuple[str, ...] = (
-    "walking",
-    "running",
-    "sitting",
-    "standing",
-    "reading",
-    "speaking",
-    "driving",
-    "eating",
-    "playing",
-    "looking",
-    "flying",
-    "swimming",
-    "working",
-    "sleeping",
-    "holding",
-)
+class Action(StrEnum):
+    WALKING = "walking"
+    RUNNING = "running"
+    SITTING = "sitting"
+    STANDING = "standing"
+    READING = "reading"
+    SPEAKING = "speaking"
+    DRIVING = "driving"
+    EATING = "eating"
+    PLAYING = "playing"
+    LOOKING = "looking"
+    FLYING = "flying"
+    SWIMMING = "swimming"
+    WORKING = "working"
+    SLEEPING = "sleeping"
+    HOLDING = "holding"
 
-SETTING_CATCH_LIST: tuple[str, ...] = (
-    "indoor",
-    "outdoor",
-    "park",
-    "office",
-    "street",
-    "beach",
-    "room",
-    "forest",
-    "city",
-    "nature",
-    "mountain",
-    "studio",
-    "sky",
-    "underwater",
-)
 
-COLOR_CATCH_LIST: tuple[str, ...] = (
-    "red",
-    "blue",
-    "green",
-    "yellow",
-    "black",
-    "white",
-    "brown",
-    "grey",
-    "orange",
-    "purple",
-    "pink",
-    "beige",
-    "gold",
-    "silver",
-    "metallic",
-)
+class Setting(StrEnum):
+    INDOOR = "indoor"
+    OUTDOOR = "outdoor"
+    PARK = "park"
+    OFFICE = "office"
+    STREET = "street"
+    BEACH = "beach"
+    ROOM = "room"
+    FOREST = "forest"
+    CITY = "city"
+    NATURE = "nature"
+    MOUNTAIN = "mountain"
+    STUDIO = "studio"
+    SKY = "sky"
+    UNDERWATER = "underwater"
 
-STYLE_CATCH_LIST: tuple[str, ...] = (
-    "real life",
-    "photo",
-    "anime",
-    "art",
-    "illustration",
-    "3d render",
-    "painting",
-    "drawing",
-)
 
-ANGLE_CATCH_LIST: tuple[str, ...] = (
-    "frontal",
-    "below",
-    "above",
-    "behind",
-    "side",
-)
+class Color(StrEnum):
+    RED = "red"
+    BLUE = "blue"
+    GREEN = "green"
+    YELLOW = "yellow"
+    BLACK = "black"
+    WHITE = "white"
+    BROWN = "brown"
+    GREY = "grey"
+    ORANGE = "orange"
+    PURPLE = "purple"
+    PINK = "pink"
+    BEIGE = "beige"
+    GOLD = "gold"
+    SILVER = "silver"
+    METALLIC = "metallic"
+
+
+class Style(StrEnum):
+    REAL_LIFE = "real life"
+    PHOTO = "photo"
+    ANIME = "anime"
+    ART = "art"
+    ILLUSTRATION = "illustration"
+    THREE_D_RENDER = "3d render"
+    PAINTING = "painting"
+    DRAWING = "drawing"
+
+
+class Angle(StrEnum):
+    FRONTAL = "frontal"
+    BELOW = "below"
+    ABOVE = "above"
+    BEHIND = "behind"
+    SIDE = "side"
 
 
 class ImageDescription(BaseModel):
@@ -107,30 +106,30 @@ class ImageDescription(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    subjects: tuple[NonBlankText, ...] = Field(
+    subjects: tuple[Subject, ...] = Field(
         description=(
             "Visible people, animals, products, objects, and other primary entities. "
-            f"Classify what the subject is (e.g. {', '.join(SUBJECT_CATCH_LIST)})."
+            f"Classify what the subject is (e.g. {', '.join(Subject)})."
         )
     )
 
-    actions: tuple[NonBlankText, ...] = Field(
+    actions: tuple[Action, ...] = Field(
         description=(
             "Visible activities, interactions, and movement "
-            f"(e.g. {', '.join(ACTION_CATCH_LIST)})."
+            f"(e.g. {', '.join(Action)})."
         )
     )
-    setting: tuple[NonBlankText, ...] = Field(
+    setting: tuple[Setting, ...] = Field(
         description=(
             "Environment, location type, weather, lighting, foreground, and background "
-            f"(e.g. {', '.join(SETTING_CATCH_LIST)})."
+            f"(e.g. {', '.join(Setting)})."
         )
     )
-    colors: tuple[NonBlankText, ...] = Field(
-        description=f"Colors tied to visible content (e.g. {', '.join(COLOR_CATCH_LIST)})."
+    colors: tuple[Color, ...] = Field(
+        description=(f"Colors tied to visible content (e.g. {', '.join(Color)}).")
     )
-    style: tuple[NonBlankText, ...] = Field(
-        description=f"Style of the image (e.g. {', '.join(STYLE_CATCH_LIST)})."
+    style: tuple[Style, ...] = Field(
+        description=f"Style of the image (e.g. {', '.join(Style)})."
     )
     visible_text: tuple[NonBlankText, ...] = Field(
         default=(),
@@ -140,11 +139,11 @@ class ImageDescription(BaseModel):
             "guessing. If none are present, output no text."
         ),
     )
-    angles: tuple[NonBlankText, ...] = Field(
+    angles: tuple[Angle, ...] = Field(
         default=(),
         description=(
             "Analyze the angles of the scene in which the picture is taken "
-            f"(e.g. {', '.join(ANGLE_CATCH_LIST)})."
+            f"(e.g. {', '.join(Angle)})."
         ),
     )
 

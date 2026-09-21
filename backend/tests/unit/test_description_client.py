@@ -14,12 +14,12 @@ from backend.app.model.prompt_model import ImageDescription
 
 def make_description() -> ImageDescription:
     return ImageDescription(
-        subjects=("woman",),
+        subjects=("human",),
         attributes=("green eyes",),
-        actions=("looking at camera",),
-        setting=("outdoors",),
+        actions=("looking",),
+        setting=("outdoor",),
         colors=("green",),
-        style=("portrait photography",),
+        style=("photo",),
         visible_text=(),
     )
 

@@ -26,12 +26,12 @@ from backend.app.storage import StorageProvider
 
 def make_description() -> ImageDescription:
     return ImageDescription(
-        subjects=("woman",),
+        subjects=("human",),
         attributes=("green eyes",),
-        actions=("looking at camera",),
-        setting=("outdoors",),
+        actions=("looking",),
+        setting=("outdoor",),
         colors=("green",),
-        style=("portrait photography",),
+        style=("photo",),
         visible_text=(),
     )
 
@@ -85,6 +85,59 @@ def make_storage_upload(
         provider=StorageProvider.GOOGLE_DRIVE,
         storage_file_id=storage_file_id,
         source_url=f"https://drive.google.com/file/d/{storage_file_id}/view",
+    )
+
+
+def make_video_description(
+    *,
+    subjects: tuple[str, ...],
+    actions: tuple[str, ...],
+    setting: tuple[str, ...],
+    colors: tuple[str, ...],
+    style: tuple[str, ...],
+    visible_text: tuple[str, ...] = (),
+    angles: tuple[str, ...] = (),
+) -> ImageDescription:
+    return ImageDescription(
+        subjects=subjects,
+        actions=actions,
+        setting=setting,
+        colors=colors,
+        style=style,
+        visible_text=visible_text,
+        angles=angles,
+    )
+
+
+@pytest.mark.unit
+def test_merges_image_descriptions_with_ordered_deduplication() -> None:
+    first = make_video_description(
+        subjects=("human", "electronics"),
+        actions=("speaking",),
+        setting=("studio",),
+        colors=("blue",),
+        style=("photo",),
+        visible_text=("Asset Tracker",),
+        angles=("frontal",),
+    )
+    second = make_video_description(
+        subjects=("electronics", "product", "human"),
+        actions=("working",),
+        setting=("studio", "office"),
+        colors=("blue", "white"),
+        style=("photo", "real life"),
+        visible_text=("asset tracker",),
+        angles=("side",),
+    )
+
+    assert merge_image_descriptions((first, second)) == make_video_description(
+        subjects=("human", "electronics", "product"),
+        actions=("speaking", "working"),
+        setting=("studio", "office"),
+        colors=("blue", "white"),
+        style=("photo", "real life"),
+        visible_text=("Asset Tracker",),
+        angles=("frontal", "side"),
     )
 
 
@@ -167,6 +220,85 @@ def test_image_description_text_is_embedded_and_only_vector_is_stored() -> None:
         "status": "success",
         "reason": None,
     }
+
+
+@pytest.mark.unit
+def test_video_descriptions_merge_into_one_embedding_and_current_payload() -> None:
+    service, description_client, model_client, qdrant_store = make_service()
+    first = make_video_description(
+        subjects=("human",),
+        actions=("speaking",),
+        setting=("studio",),
+        colors=("blue",),
+        style=("photo",),
+    )
+    second = make_video_description(
+        subjects=("electronics",),
+        actions=("working",),
+        setting=("studio",),
+        colors=("white",),
+        style=("photo",),
+    )
+    merged_text = (
+        "Subjects: human, electronics\nActions: speaking, working\n"
+        "Setting: studio\nColors: blue, white\nStyle: photo"
+    )
+    description_client.describe.side_effect = (first, second)
+    model_client.embed_text.return_value = [0.3]
+    upload = make_storage_upload(
+        "campaign.mp4", "video/mp4", b"video", "Marketing/campaign.mp4"
+    )
+    upload = FileUpload(
+        **{
+            field: getattr(upload, field)
+            for field in (
+                "filename",
+                "content_type",
+                "content",
+                "file_path",
+                "modified_time",
+                "provider",
+                "storage_file_id",
+                "source_url",
+            )
+        },
+        processed_input=ProcessedInput(
+            "video", (b"frame-one", b"frame-two"), "video/mp4"
+        ),
+    )
+
+    response = service.process_files((upload,))
+
+    assert description_client.describe.call_args_list == [
+        ((b"frame-one",), {}),
+        ((b"frame-two",), {}),
+    ]
+    model_client.embed_text.assert_called_once_with(merged_text)
+    qdrant_store.store_embedding.assert_called_once_with(
+        [0.3],
+        payload={
+            "filename": "campaign.mp4",
+            "file_path": "Marketing/campaign.mp4",
+            "file_type": "video/mp4",
+            "content": merged_text,
+            "modified_time": TEST_MODIFIED_TIME.isoformat(),
+            "provider": StorageProvider.GOOGLE_DRIVE,
+            "storage_file_id": "drive-id-1",
+            "source_url": "https://drive.google.com/file/d/drive-id-1/view",
+            "tags": [
+                "subject:human",
+                "subject:electronics",
+                "action:speaking",
+                "action:working",
+                "setting:studio",
+                "color:blue",
+                "color:white",
+                "style:photo",
+            ],
+        },
+        point_id=ANY,
+    )
+    assert response.data[0].status == "success"
 
 
 @pytest.mark.unit
