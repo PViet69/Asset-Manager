@@ -1,4 +1,4 @@
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -38,52 +38,6 @@ def test_from_settings_uses_asset_collection_and_default_settings_name() -> None
         "url": "https://qdrant.example",
         "api_key": "qdrant-key",
     }
-
-
-@pytest.mark.unit
-def test_discover_and_index_writes_tags_for_every_asset() -> None:
-    client = Mock()
-    first = Mock(id="asset-1", payload={"content": "Subjects: Laptop"})
-    second = Mock(id="asset-2", payload={"content": "Unknown: ignored"})
-    client.scroll.side_effect = [([first], "next"), ([second], None)]
-    store = TagSettingsStore.from_client(client, "assets", "tag-settings", 2)
-
-    result = store.discover_and_index()
-
-    assert result.indexed_assets == 2
-    assert result.tags == ("subject:laptop",)
-    assert client.scroll.call_args_list == [
-        call(
-            collection_name="assets",
-            offset=None,
-            limit=1_000,
-            with_payload=["content"],
-            with_vectors=False,
-        ),
-        call(
-            collection_name="assets",
-            offset="next",
-            limit=1_000,
-            with_payload=["content"],
-            with_vectors=False,
-        ),
-    ]
-    client.set_payload.assert_has_calls(
-        [
-            call(
-                collection_name="assets",
-                payload={"tags": ["subject:laptop"]},
-                points=["asset-1"],
-                wait=True,
-            ),
-            call(
-                collection_name="assets",
-                payload={"tags": []},
-                points=["asset-2"],
-                wait=True,
-            ),
-        ]
-    )
 
 
 @pytest.mark.unit

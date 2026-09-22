@@ -35,6 +35,7 @@ from backend.app.storage.thumbnail_service import (
     SUPPORTED_THUMBNAIL_MIME_TYPES,
     IndexedThumbnailSource,
 )
+from backend.app.tag_settings.parser import parse_content_tags
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,7 @@ class FileIngestionService:
                     "file_path": file.file_path,
                     "file_type": file.content_type,
                     "content": embedding_text,
+                    "tags": list(parse_content_tags(embedding_text)),
                     "modified_time": file.modified_time.isoformat(),
                     "provider": file.provider,
                     "storage_file_id": file.storage_file_id,
