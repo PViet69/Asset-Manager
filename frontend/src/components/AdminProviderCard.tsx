@@ -59,6 +59,8 @@ export function AdminProviderCard({
     ? Math.min(100, Math.round((embeddedCount / detectedCount) * 100))
     : null;
   const canAct = provider.enabled && !isRefreshing;
+  const isFullyIndexed = progress === 100;
+  const canSync = canAct && (isSyncing || !isFullyIndexed);
   const ringCoverage = mounted && !isRefreshing && progress !== null ? progress : 0;
 
   return (
@@ -127,8 +129,8 @@ export function AdminProviderCard({
           type="button"
           className={`admin-primary-button ${isSyncing ? "admin-primary-button--danger" : ""}`}
           onClick={() => onSync(provider.provider)}
-          disabled={!canAct}
-          aria-label={`${isSyncing ? "Stop syncing" : "Sync"} ${provider.display_name}`}
+          disabled={!canSync}
+          aria-label={`${isSyncing ? "Stop syncing" : isFullyIndexed ? "Sync unavailable; fully indexed" : "Sync"} ${provider.display_name}`}
         >
           {isSyncing ? "Stop" : "Sync"}
         </button>

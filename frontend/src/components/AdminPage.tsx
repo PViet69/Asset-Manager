@@ -362,6 +362,15 @@ export function AdminPage(): JSX.Element {
     );
   }
 
+  function incrementProviderCoverage(providerId: string): void {
+    setDashboard((current) => ({
+      ...current,
+      providers: current.providers.map((provider) => provider.provider !== providerId || provider.embedded_count === null
+        ? provider
+        : { ...provider, embedded_count: provider.embedded_count + 1 }),
+    }));
+  }
+
   async function syncProvider(providerId: string): Promise<void> {
     if (syncingProviders.has(providerId)) {
       controllers.current[providerId]?.abort();
@@ -369,6 +378,7 @@ export function AdminPage(): JSX.Element {
       return;
     }
     const controller = new AbortController();
+    const indexedFilenames = new Set<string>();
     controllers.current = { ...controllers.current, [providerId]: controller };
     setSyncingProviders((current) => new Set(current).add(providerId));
     setOpenActivityProviders((current) => new Set(current).add(providerId));
@@ -376,6 +386,10 @@ export function AdminPage(): JSX.Element {
     try {
       await streamAdminSync(providerId, (event) => {
         if (event.terminal) return;
+        if (event.status === "done" && event.filename && !indexedFilenames.has(event.filename)) {
+          indexedFilenames.add(event.filename);
+          incrementProviderCoverage(providerId);
+        }
         setActivityByProvider((current) => {
           const events = current[providerId] ?? [];
           const index = event.filename ? events.findIndex((item) => item.filename === event.filename) : -1;
