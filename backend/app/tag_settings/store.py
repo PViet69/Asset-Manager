@@ -9,7 +9,6 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from backend.app.config import Settings
 from backend.app.exceptions import QdrantStorageError
-from backend.app.tag_settings.parser import parse_content_tags
 
 logger = logging.getLogger(__name__)
 NAMESPACE = UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
@@ -25,7 +24,7 @@ class TagIndexResult:
 
 
 class TagSettingsStore:
-    """Index asset content tags and persist approved tag choices."""
+    """Discover stored asset tags and persist approved tag choices."""
 
     def __init__(
         self,
@@ -84,17 +83,11 @@ class TagSettingsStore:
                     collection_name=self._asset_collection,
                     offset=offset,
                     limit=SCROLL_BATCH_SIZE,
-                    with_payload=["content"],
+                    with_payload=["tags"],
                     with_vectors=False,
                 )
                 for point in points:
-                    tags = parse_content_tags((point.payload or {}).get("content"))
-                    self._client.set_payload(
-                        collection_name=self._asset_collection,
-                        payload={"tags": list(tags)},
-                        points=[point.id],
-                        wait=True,
-                    )
+                    tags = self._sanitize_tags((point.payload or {}).get("tags"))
                     discovered.update(tags)
                     indexed_assets += 1
                 if next_offset is None:
