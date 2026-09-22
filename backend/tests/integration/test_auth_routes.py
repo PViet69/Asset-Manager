@@ -41,7 +41,7 @@ def test_login_sets_secure_session_and_me_restores_account() -> None:
     assert "HttpOnly" in login.headers["set-cookie"]
     assert "Secure" in login.headers["set-cookie"]
     assert "SameSite=strict" in login.headers["set-cookie"]
-    assert "Max-Age=7200" in login.headers["set-cookie"]
+    assert "Max-Age" not in login.headers["set-cookie"]
     assert restored.status_code == 200
     assert restored.json() == {"username": "admin"}
 

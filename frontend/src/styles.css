@@ -3856,6 +3856,115 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   margin-top: auto;
 }
 
+.admin-provider-card__details {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(111, 137, 171, 0.14);
+}
+
+.admin-provider-card__details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--admin-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-sync-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  overflow: hidden;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: 9px;
+  background: linear-gradient(100deg, rgba(219, 234, 254, 0.82), rgba(239, 246, 255, 0.5));
+}
+
+.admin-sync-current__indicator {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--admin-blue);
+  box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.35);
+  animation: admin-sync-pulse 1.4s ease-out infinite;
+}
+
+.admin-sync-current div,
+.admin-activity-list__item div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.admin-sync-current strong,
+.admin-activity-list__item strong {
+  overflow: hidden;
+  color: var(--admin-text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-sync-current span:last-child,
+.admin-activity-list__item div span {
+  overflow: hidden;
+  color: var(--admin-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-activity-list {
+  display: grid;
+  max-height: 184px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid rgba(111, 137, 171, 0.14);
+  border-radius: 9px;
+}
+
+.admin-activity-list__item {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(111, 137, 171, 0.12);
+}
+
+.admin-activity-list__item:first-child { border-top: 0; }
+
+.admin-activity-list__status {
+  width: fit-content;
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--admin-blue);
+  background: var(--admin-blue-soft);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.admin-activity-list__item--done .admin-activity-list__status { color: var(--admin-green); background: rgba(220, 252, 231, 0.82); }
+.admin-activity-list__item--failed .admin-activity-list__status { color: var(--admin-red); background: rgba(254, 226, 226, 0.82); }
+
+@keyframes admin-sync-pulse {
+  70% { box-shadow: 0 0 0 7px rgba(37, 99, 235, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-sync-current__indicator { animation: none; }
+}
+
 .admin-items-modal-backdrop {
   position: fixed;
   z-index: 30;

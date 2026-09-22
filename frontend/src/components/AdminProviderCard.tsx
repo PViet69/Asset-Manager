@@ -31,6 +31,13 @@ function healthClassName(health: string): string {
   return "admin-status--unavailable";
 }
 
+function eventLabel(status: SyncActivityEvent["status"]): string {
+  if (status === "embedding") return "Embedding";
+  if (status === "done") return "Indexed";
+  if (status === "failed") return "Failed";
+  return "Preparing";
+}
+
 export function AdminProviderCard({
   provider,
   events,
@@ -62,6 +69,7 @@ export function AdminProviderCard({
   const isFullyIndexed = progress === 100;
   const canSync = canAct && (isSyncing || !isFullyIndexed);
   const ringCoverage = mounted && !isRefreshing && progress !== null ? progress : 0;
+  const currentEvent = events.find((event) => event.status === "loading" || event.status === "embedding") ?? events[0];
 
   return (
     <article aria-label={`${provider.display_name} provider`} className="admin-provider-card">
@@ -145,8 +153,25 @@ export function AdminProviderCard({
               Hide
             </button>
           </div>
+          {isSyncing && currentEvent ? (
+            <div className="admin-sync-current">
+              <span className="admin-sync-current__indicator" aria-hidden="true" />
+              <div>
+                <strong>Syncing {currentEvent.filename ?? "file"}</strong>
+                <span>{currentEvent.detail}</span>
+              </div>
+            </div>
+          ) : null}
           <ul className="admin-activity-list">
-            {events.map((event) => <li key={event.sequence}>{event.filename ?? event.detail}</li>)}
+            {events.map((event) => (
+              <li key={event.sequence} className={`admin-activity-list__item admin-activity-list__item--${event.status}`}>
+                <span className="admin-activity-list__status">{eventLabel(event.status)}</span>
+                <div>
+                  <strong>{event.filename ?? "Provider sync"}</strong>
+                  <span>{event.detail}</span>
+                </div>
+              </li>
+            ))}
           </ul>
         </section>
       ) : events.length > 0 ? (

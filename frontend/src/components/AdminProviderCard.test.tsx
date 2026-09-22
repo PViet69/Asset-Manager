@@ -68,3 +68,23 @@ test("hides percentage and embedded numbers and labels while refreshing", () => 
   expect(card.querySelector(".admin-provider-card__metric span")).toHaveTextContent("");
 });
 
+test("shows current file and detailed sync event feed while syncing", () => {
+  renderCard({
+    isSyncing: true,
+    isActivityOpen: true,
+    events: [
+      { sequence: 3, provider: "google_drive", filename: "brief.pdf", status: "embedding", detail: "Creating embedding", terminal: false },
+      { sequence: 2, provider: "google_drive", filename: "archive.pdf", status: "done", detail: "Indexed", terminal: false },
+      { sequence: 1, provider: "google_drive", filename: "broken.pdf", status: "failed", detail: "File unreadable", terminal: false },
+    ],
+  });
+
+  const activity = screen.getByRole("region", { name: "Google Drive sync activity" });
+  expect(activity).toHaveTextContent("Syncing brief.pdf");
+  expect(activity).toHaveTextContent("Creating embedding");
+  expect(activity).toHaveTextContent("archive.pdf");
+  expect(activity).toHaveTextContent("Indexed");
+  expect(activity).toHaveTextContent("broken.pdf");
+  expect(activity).toHaveTextContent("File unreadable");
+});
+

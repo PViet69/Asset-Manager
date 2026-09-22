@@ -294,6 +294,22 @@ test("returns to login when provider status returns 401", async () => {
   expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
 });
 
+test("shows model unavailable dialog when provider sync is rejected", async () => {
+  // Arrange
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedStreamAdminSync.mockRejectedValue(new ApiError(503, "Model not found"));
+  render(<AdminPage />);
+
+  // Act
+  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
+
+  // Assert
+  expect(await screen.findByRole("alert")).toHaveTextContent("Service Unavailable");
+  expect(screen.getByRole("alert")).toHaveTextContent("Model not found");
+});
+
 test("renders detected and embedded counts plus model health", async () => {
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
   mockedGetAdminSyncStatus.mockResolvedValue(dashboard);

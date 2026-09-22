@@ -26,6 +26,7 @@ import type {
 import { AdminModelHealth } from "./AdminModelHealth";
 import { AdminNavigation, type AdminTab } from "./AdminNavigation";
 import { AdminProviderCard } from "./AdminProviderCard";
+import { ModelUnavailableDialog } from "./ModelUnavailableDialog";
 
 const SAFE_SYNC_ERROR = "Provider sync failed. Try again.";
 const AdminLoginBackground = lazy(() =>
@@ -98,6 +99,7 @@ export function AdminPage(): JSX.Element {
   const [isLoadingTags, setIsLoadingTags] = useState(false);
   const hasLoadedApprovedTags = useRef(false);
   const [toasts, setToasts] = useState<readonly Toast[]>([]);
+  const [isModelUnavailableDialogOpen, setIsModelUnavailableDialogOpen] = useState(false);
   const controllers = useRef<Record<string, AbortController>>({});
 
   const addToast = useCallback((message: string, type: Toast["type"]): void => {
@@ -399,7 +401,14 @@ export function AdminPage(): JSX.Element {
       }, controller.signal);
       await loadDashboard();
     } catch (caught) {
-      if (!controller.signal.aborted) handleAdminError(caught, SAFE_SYNC_ERROR);
+      if (controller.signal.aborted) {
+        return;
+      }
+      if (caught instanceof ApiError && caught.message === "Model not found") {
+        setIsModelUnavailableDialogOpen(true);
+        return;
+      }
+      handleAdminError(caught, SAFE_SYNC_ERROR);
     } finally {
       setSyncingProviders((current) => new Set([...current].filter((item) => item !== providerId)));
       const { [providerId]: _, ...rest } = controllers.current;
@@ -1016,6 +1025,9 @@ export function AdminPage(): JSX.Element {
         ) : null}
         {renderItemsDialog()}
         {renderDeleteConfirmationDialog()}
+        {isModelUnavailableDialogOpen ? (
+          <ModelUnavailableDialog onDismiss={() => setIsModelUnavailableDialogOpen(false)} />
+        ) : null}
         <ToastList toasts={toasts} />
       </main>
     </div>

@@ -4,20 +4,18 @@ from __future__ import annotations
 
 import hmac
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import TypedDict
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from itsdangerous import BadSignature, URLSafeSerializer
 
-ADMIN_SESSION_MAX_AGE_SECONDS = 2 * 60 * 60
 SESSION_SALT = "admin-session-v1"
 
 
 class _SessionPayload(TypedDict):
     username: str
-    expires_at: int
 
 
 @dataclass(frozen=True)
@@ -43,19 +41,17 @@ def verify_admin_credentials(
 
 
 def create_admin_session(config: AdminAuthConfig, now: datetime) -> str:
-    """Create signed session token valid for configured session duration."""
-    expires_at = now.astimezone(UTC) + timedelta(seconds=ADMIN_SESSION_MAX_AGE_SECONDS)
-    payload: _SessionPayload = {
-        "username": config.username,
-        "expires_at": int(expires_at.timestamp()),
-    }
+    """Create persistent signed session token for configured administrator."""
+    del now
+    payload: _SessionPayload = {"username": config.username}
     return _serializer(config).dumps(payload)
 
 
 def get_session_username(
     config: AdminAuthConfig, token: str, now: datetime
 ) -> str | None:
-    """Return configured username from valid unexpired signed session."""
+    """Return configured username from valid signed session."""
+    del now
     try:
         payload = _serializer(config).loads(token)
     except BadSignature:
@@ -63,12 +59,9 @@ def get_session_username(
     if not isinstance(payload, dict):
         return None
     username = payload.get("username")
-    expires_at = payload.get("expires_at")
-    if not isinstance(username, str) or not isinstance(expires_at, int):
+    if not isinstance(username, str):
         return None
     if not hmac.compare_digest(username, config.username):
-        return None
-    if now.astimezone(UTC).timestamp() > expires_at:
         return None
     return username
 
