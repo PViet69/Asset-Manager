@@ -21,6 +21,7 @@ import {
   stopAdminSync,
   streamAdminSync,
 } from "../api/client";
+import type { SyncEvent } from "../types";
 import { AdminPage } from "./AdminPage";
 
 
@@ -132,6 +133,41 @@ test("scopes animated mesh styles to admin login background", () => {
   expect(stylesheet).toContain(loginMeshSelector);
   expect(stylesheet).toContain(`${loginMeshSelector} {`);
   expect(stylesheet).toContain("animation: drift 22s ease-in-out infinite alternate;");
+});
+
+test("stacks sync file cards at full activity width", () => {
+  const stylesheet = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+  const activityStart = stylesheet.indexOf(".admin-sync-activity__groups {");
+  const activityEnd = stylesheet.indexOf(".admin-sync-file-card--google-drive {");
+  const activityStyles = stylesheet.slice(activityStart, activityEnd);
+
+  expect(activityStyles).toContain("flex-direction: column;");
+  expect(activityStyles).toContain("width: 100%;");
+  expect(activityStyles).toContain("max-width: none;");
+});
+
+test("keeps sync activity inside viewport and scrolls its history", () => {
+  const stylesheet = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+  const activityStart = stylesheet.indexOf(".admin-sync-activity {");
+  const activityEnd = stylesheet.indexOf(".admin-sync-activity__header {");
+  const activityStyles = stylesheet.slice(activityStart, activityEnd);
+  const groupsStart = stylesheet.indexOf(".admin-sync-activity__groups {");
+  const groupsEnd = stylesheet.indexOf(".admin-sync-file-card {");
+  const groupsStyles = stylesheet.slice(groupsStart, groupsEnd);
+
+  expect(activityStyles).toContain("max-height: min(480px, calc(100dvh - 160px));");
+  expect(activityStyles).toContain("overflow: hidden;");
+  expect(groupsStyles).toContain("overflow-y: auto;");
+});
+
+test("keeps sync activity panel static", () => {
+  const stylesheet = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+  const activityStart = stylesheet.indexOf(".admin-sync-activity {");
+  const activityEnd = stylesheet.indexOf(".admin-sync-activity__header {");
+  const activityStyles = stylesheet.slice(activityStart, activityEnd);
+
+  expect(activityStyles).not.toContain("animation:");
+  expect(stylesheet).not.toContain("@keyframes admin-sync-activity-enter");
 });
 
 test("uses opaque surfaces instead of backdrop blur for dashboard cards", () => {
@@ -308,6 +344,45 @@ test("shows model unavailable dialog when provider sync is rejected", async () =
   // Assert
   expect(await screen.findByRole("alert")).toHaveTextContent("Service Unavailable");
   expect(screen.getByRole("alert")).toHaveTextContent("Model not found");
+});
+
+test("shows session sync activity only on the providers tab", async () => {
+  const user = userEvent.setup();
+  let emitEvent: ((event: SyncEvent) => void) | undefined;
+  let resolveStream: (() => void) | undefined;
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  vi.mocked(stopAdminSync).mockResolvedValue({ status: "stopped", provider: "google_drive" });
+  mockedStreamAdminSync.mockImplementation(async (_provider, onEvent) => {
+    emitEvent = onEvent;
+    await new Promise<void>((resolve) => {
+      resolveStream = resolve;
+    });
+  });
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Providers" }));
+  await user.click(screen.getByRole("button", { name: "Sync Google Drive" }));
+  emitEvent?.({ sequence: 1, provider: "google_drive", filename: "campaign.pdf", status: "loading", detail: "Preparing file", terminal: false });
+
+  expect(await screen.findByRole("region", { name: "Sync activity" })).toHaveTextContent("campaign.pdf");
+  const activityCard = screen.getByRole("article", { name: "Google Drive campaign.pdf" });
+  expect(activityCard).toHaveClass(
+    "admin-sync-file-card--google-drive",
+    "admin-sync-file-card--active",
+    "admin-sync-file-card--entering"
+  );
+  expect(activityCard).toHaveTextContent("Google Drive");
+  const stopButton = screen.getByRole("button", { name: "Stop syncing Google Drive" });
+  expect(stopButton).toBeEnabled();
+
+  await user.click(stopButton);
+  expect(screen.getByRole("region", { name: "Sync activity" })).toHaveTextContent("campaign.pdf");
+
+  await user.click(screen.getByRole("button", { name: "Overview" }));
+  expect(screen.queryByRole("region", { name: "Sync activity" })).not.toBeInTheDocument();
+
+  resolveStream?.();
 });
 
 test("renders detected and embedded counts plus model health", async () => {

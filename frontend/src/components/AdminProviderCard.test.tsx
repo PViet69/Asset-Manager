@@ -32,15 +32,12 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof AdminProvider
   render(
     <AdminProviderCard
       provider={provider}
-      events={[]}
       isRefreshing={false}
       isSyncing={false}
       isItemsLoading={false}
-      isActivityOpen={false}
       onRefresh={vi.fn()}
       onOpenItems={vi.fn()}
       onSync={vi.fn()}
-      onToggleActivity={vi.fn()}
       {...overrides}
     />
   );
@@ -68,23 +65,13 @@ test("hides percentage and embedded numbers and labels while refreshing", () => 
   expect(card.querySelector(".admin-provider-card__metric span")).toHaveTextContent("");
 });
 
-test("shows current file and detailed sync event feed while syncing", () => {
-  renderCard({
-    isSyncing: true,
-    isActivityOpen: true,
-    events: [
-      { sequence: 3, provider: "google_drive", filename: "brief.pdf", status: "embedding", detail: "Creating embedding", terminal: false },
-      { sequence: 2, provider: "google_drive", filename: "archive.pdf", status: "done", detail: "Indexed", terminal: false },
-      { sequence: 1, provider: "google_drive", filename: "broken.pdf", status: "failed", detail: "File unreadable", terminal: false },
-    ],
-  });
+test("keeps syncing card compact with status and stop action", () => {
+  renderCard({ isSyncing: true });
 
-  const activity = screen.getByRole("region", { name: "Google Drive sync activity" });
-  expect(activity).toHaveTextContent("Syncing brief.pdf");
-  expect(activity).toHaveTextContent("Creating embedding");
-  expect(activity).toHaveTextContent("archive.pdf");
-  expect(activity).toHaveTextContent("Indexed");
-  expect(activity).toHaveTextContent("broken.pdf");
-  expect(activity).toHaveTextContent("File unreadable");
+  const card = screen.getByRole("article", { name: "Google Drive provider" });
+  expect(card).toHaveTextContent("Syncing");
+  expect(screen.getByRole("button", { name: "Stop syncing Google Drive" })).toBeEnabled();
+  expect(card.querySelector(".admin-provider-card__details")).not.toBeInTheDocument();
+  expect(card.querySelector(".admin-activity-list")).not.toBeInTheDocument();
 });
 

@@ -20,12 +20,13 @@ import type {
   ModelHealthStatus,
   ProviderDashboardStatus,
   QdrantItem,
-  TagGroup,
   SyncActivityEvent,
+  TagGroup,
 } from "../types";
 import { AdminModelHealth } from "./AdminModelHealth";
 import { AdminNavigation, type AdminTab } from "./AdminNavigation";
 import { AdminProviderCard } from "./AdminProviderCard";
+import { AdminSyncActivityPanel } from "./AdminSyncActivityPanel";
 import { ModelUnavailableDialog } from "./ModelUnavailableDialog";
 
 const SAFE_SYNC_ERROR = "Provider sync failed. Try again.";
@@ -80,7 +81,6 @@ export function AdminPage(): JSX.Element {
   const [refreshingProviders, setRefreshingProviders] = useState<ReadonlySet<string>>(new Set());
   const [syncingProviders, setSyncingProviders] = useState<ReadonlySet<string>>(new Set());
   const [activityByProvider, setActivityByProvider] = useState<Readonly<Record<string, readonly SyncActivityEvent[]>>>({});
-  const [openActivityProviders, setOpenActivityProviders] = useState<ReadonlySet<string>>(new Set());
   const [deletingProviders, setDeletingProviders] = useState<ReadonlySet<string>>(new Set());
   const [pendingDeletion, setPendingDeletion] = useState<PendingDeletion | null>(null);
   const [itemsByProvider, setItemsByProvider] = useState<Readonly<Record<string, readonly QdrantItem[] | null>>>({});
@@ -237,12 +237,6 @@ export function AdminPage(): JSX.Element {
     }
   }
 
-  function toggleActivity(providerId: string): void {
-    setOpenActivityProviders((current) => current.has(providerId)
-      ? new Set([...current].filter((item) => item !== providerId))
-      : new Set(current).add(providerId));
-  }
-
   async function openProviderItems(providerId: string): Promise<void> {
     setOpenItemsProvider(providerId);
     setLoadingItemsProviders((current) => new Set(current).add(providerId));
@@ -383,7 +377,6 @@ export function AdminPage(): JSX.Element {
     const indexedFilenames = new Set<string>();
     controllers.current = { ...controllers.current, [providerId]: controller };
     setSyncingProviders((current) => new Set(current).add(providerId));
-    setOpenActivityProviders((current) => new Set(current).add(providerId));
     setActivityByProvider((current) => ({ ...current, [providerId]: [] }));
     try {
       await streamAdminSync(providerId, (event) => {
@@ -395,7 +388,9 @@ export function AdminPage(): JSX.Element {
         setActivityByProvider((current) => {
           const events = current[providerId] ?? [];
           const index = event.filename ? events.findIndex((item) => item.filename === event.filename) : -1;
-          const nextEvents = index >= 0 ? events.map((item, itemIndex) => itemIndex === index ? event : item) : [event, ...events];
+          const nextEvents = index >= 0
+            ? events.map((item, itemIndex) => itemIndex === index ? event : item)
+            : [event, ...events];
           return { ...current, [providerId]: nextEvents };
         });
       }, controller.signal);
@@ -510,15 +505,12 @@ export function AdminPage(): JSX.Element {
           <AdminProviderCard
             key={provider.provider}
             provider={provider}
-            events={activityByProvider[provider.provider] ?? []}
             isRefreshing={refreshingProviders.has(provider.provider)}
             isSyncing={syncingProviders.has(provider.provider)}
             isItemsLoading={loadingItemsProviders.has(provider.provider)}
-            isActivityOpen={openActivityProviders.has(provider.provider)}
             onRefresh={(providerId) => void refreshProvider(providerId)}
             onOpenItems={(providerId) => void openProviderItems(providerId)}
             onSync={(providerId) => void syncProvider(providerId)}
-            onToggleActivity={toggleActivity}
           />
         ))}
       </section>
@@ -936,14 +928,16 @@ export function AdminPage(): JSX.Element {
         })() : null}
 
         {activeTab === "dashboards" || activeTab === "providers" ? renderProviders() : null}
+        {activeTab === "providers" ? (
+          <AdminSyncActivityPanel
+            providers={dashboard.providers}
+            activityByProvider={activityByProvider}
+          />
+        ) : null}
         {activeTab === "dashboards" || activeTab === "models" ? <AdminModelHealth embeddingModel={dashboard.embeddingModel} descriptionModel={dashboard.descriptionModel} isLoading={isLoadingDashboard} /> : null}
         {activeTab === "logs" ? (
           <section className="admin-log-panel" aria-label="Sync activity logs">
-            {Object.values(activityByProvider).flat().length === 0 ? <p>No activity in this session.</p> : (
-              <ul className="admin-activity-list">
-                {Object.entries(activityByProvider).flatMap(([providerId, events]) => events.map((event) => <li key={`${providerId}-${event.sequence}`}>{event.filename ?? event.detail}</li>))}
-              </ul>
-            )}
+            <p>No activity in this session.</p>
           </section>
         ) : null}
         {activeTab === "settings" ? (

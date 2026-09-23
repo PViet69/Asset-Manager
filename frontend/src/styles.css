@@ -3920,12 +3920,13 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   --sync-provider-accent: var(--admin-blue);
   --sync-provider-surface: var(--admin-blue-soft);
   position: relative;
-  display: grid;
+  display: flex;
+  align-items: center;
   width: 100%;
   max-width: none;
   gap: 12px;
   overflow: hidden;
-  padding: 13px;
+  padding: 9px 13px;
   border: 1px solid color-mix(in srgb, var(--sync-provider-accent) 20%, rgba(111, 137, 171, 0.14));
   border-radius: 10px;
   background: linear-gradient(135deg, var(--sync-provider-surface), var(--admin-surface) 56%);
@@ -3956,12 +3957,25 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   animation: admin-sync-file-flow 2.4s ease-in-out infinite;
 }
 
-.admin-sync-file-card__header {
-  display: flex;
+.admin-sync-file-card__filename {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--admin-text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-sync-file-card__meta {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   min-width: 0;
+  margin-left: auto;
 }
 
 .admin-sync-file-card__provider,
@@ -3999,30 +4013,6 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
 .admin-sync-file-card--failed .admin-sync-file-card__status {
   color: var(--admin-red);
   background: rgba(254, 226, 226, 0.82);
-}
-
-.admin-sync-file-card__copy {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}
-
-.admin-sync-file-card__copy strong,
-.admin-sync-file-card__copy span {
-  overflow-wrap: anywhere;
-}
-
-.admin-sync-file-card__copy strong {
-  color: var(--admin-text);
-  font-size: 12px;
-}
-
-.admin-sync-file-card__copy span {
-  color: var(--admin-muted);
-  font-size: 11px;
-  line-height: 1.35;
 }
 
 @keyframes admin-sync-file-enter {
