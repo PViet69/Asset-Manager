@@ -1,22 +1,15 @@
 import { useEffect, useState } from "react";
-import type {
-  ProviderDashboardStatus,
-  QdrantItem,
-  SyncActivityEvent,
-} from "../types";
+import type { ProviderDashboardStatus } from "../types";
 import { ProviderLogo } from "./ProviderLogo";
 
 export interface AdminProviderCardProps {
   readonly provider: ProviderDashboardStatus;
-  readonly events: readonly SyncActivityEvent[];
   readonly isRefreshing: boolean;
   readonly isSyncing: boolean;
   readonly isItemsLoading: boolean;
-  readonly isActivityOpen: boolean;
   readonly onRefresh: (provider: string) => void;
   readonly onOpenItems: (provider: string) => void;
   readonly onSync: (provider: string) => void;
-  readonly onToggleActivity: (provider: string) => void;
 }
 
 function healthLabel(health: string): string {
@@ -31,24 +24,14 @@ function healthClassName(health: string): string {
   return "admin-status--unavailable";
 }
 
-function eventLabel(status: SyncActivityEvent["status"]): string {
-  if (status === "embedding") return "Embedding";
-  if (status === "done") return "Indexed";
-  if (status === "failed") return "Failed";
-  return "Preparing";
-}
-
 export function AdminProviderCard({
   provider,
-  events,
   isRefreshing,
   isSyncing,
   isItemsLoading,
-  isActivityOpen,
   onRefresh,
   onOpenItems,
   onSync,
-  onToggleActivity,
 }: AdminProviderCardProps): JSX.Element {
   const [mounted, setMounted] = useState(false);
 
@@ -69,7 +52,6 @@ export function AdminProviderCard({
   const isFullyIndexed = progress === 100;
   const canSync = canAct && (isSyncing || !isFullyIndexed);
   const ringCoverage = mounted && !isRefreshing && progress !== null ? progress : 0;
-  const currentEvent = events.find((event) => event.status === "loading" || event.status === "embedding") ?? events[0];
 
   return (
     <article aria-label={`${provider.display_name} provider`} className="admin-provider-card">
@@ -143,42 +125,6 @@ export function AdminProviderCard({
           {isSyncing ? "Stop" : "Sync"}
         </button>
       </footer>
-
-
-      {isActivityOpen ? (
-        <section className="admin-provider-card__details" aria-label={`${provider.display_name} sync activity`} aria-live="polite">
-          <div className="admin-provider-card__details-header">
-            <span>Activity ({events.length})</span>
-            <button type="button" className="admin-link-button" onClick={() => onToggleActivity(provider.provider)}>
-              Hide
-            </button>
-          </div>
-          {isSyncing && currentEvent ? (
-            <div className="admin-sync-current">
-              <span className="admin-sync-current__indicator" aria-hidden="true" />
-              <div>
-                <strong>Syncing {currentEvent.filename ?? "file"}</strong>
-                <span>{currentEvent.detail}</span>
-              </div>
-            </div>
-          ) : null}
-          <ul className="admin-activity-list">
-            {events.map((event) => (
-              <li key={event.sequence} className={`admin-activity-list__item admin-activity-list__item--${event.status}`}>
-                <span className="admin-activity-list__status">{eventLabel(event.status)}</span>
-                <div>
-                  <strong>{event.filename ?? "Provider sync"}</strong>
-                  <span>{event.detail}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : events.length > 0 ? (
-        <button type="button" className="admin-link-button" onClick={() => onToggleActivity(provider.provider)}>
-          Activity ({events.length})
-        </button>
-      ) : null}
     </article>
   );
 }
