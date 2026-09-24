@@ -8,7 +8,7 @@ from instructor.core.exceptions import InstructorRetryException
 from openai import APITimeoutError, BadRequestError
 
 from backend.app.exceptions import ModelEndpointError
-from backend.app.model.description_client import InstructorImageDescriptionClient
+from backend.app.model.description_client import InstructorAssetDescriptionClient
 from backend.app.model.prompt_model import ImageDescription
 
 
@@ -41,7 +41,7 @@ def test_describe_returns_validated_image_description() -> None:
             return_value="image/png",
         ),
     ):
-        client = InstructorImageDescriptionClient.from_client(
+        client = InstructorAssetDescriptionClient.from_client(
             sdk,
             description_model="vision-model",
         )
@@ -66,7 +66,7 @@ def test_describe_rejects_unsupported_detected_image_type() -> None:
             return_value="image/gif",
         ),
     ):
-        client = InstructorImageDescriptionClient.from_client(
+        client = InstructorAssetDescriptionClient.from_client(
             sdk,
             description_model="vision-model",
         )
@@ -95,7 +95,7 @@ def test_description_timeout_becomes_safe_domain_error() -> None:
             return_value="image/jpeg",
         ),
     ):
-        client = InstructorImageDescriptionClient.from_client(
+        client = InstructorAssetDescriptionClient.from_client(
             sdk,
             description_model="vision-model",
         )
@@ -122,7 +122,7 @@ def _describe_with_error(caplog: pytest.LogCaptureFixture, exc: Exception) -> No
             return_value="image/jpeg",
         ),
     ):
-        client = InstructorImageDescriptionClient.from_client(
+        client = InstructorAssetDescriptionClient.from_client(
             sdk,
             description_model="vision-model",
         )
@@ -177,7 +177,7 @@ def test_description_client_exposes_configured_model_name_only() -> None:
         "backend.app.model.description_client.instructor.patch",
         return_value=Mock(),
     ):
-        client = InstructorImageDescriptionClient.from_client(
+        client = InstructorAssetDescriptionClient.from_client(
             sdk,
             description_model="vision-model",
         )
@@ -196,7 +196,7 @@ def test_description_health_requires_configured_model() -> None:
         "backend.app.model.description_client.instructor.patch",
         return_value=Mock(),
     ):
-        client = InstructorImageDescriptionClient.from_client(
+        client = InstructorAssetDescriptionClient.from_client(
             sdk,
             description_model="vision-model",
         )
@@ -214,7 +214,7 @@ def test_description_health_is_ok_when_configured_model_exists() -> None:
         "backend.app.model.description_client.instructor.patch",
         return_value=Mock(),
     ):
-        client = InstructorImageDescriptionClient.from_client(
+        client = InstructorAssetDescriptionClient.from_client(
             sdk,
             description_model="vision-model",
         )

@@ -1,6 +1,6 @@
 """Unit tests for manual storage scheduler."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -20,11 +20,13 @@ from backend.app.storage.scheduler import StorageSyncScheduler
 @dataclass
 class _Client:
     files: list[StorageFile]
+    download_calls: list[str] = field(default_factory=list)
 
     def list_files(self, root: str) -> list[StorageFile]:  # noqa: ARG002
         return self.files
 
     def download(self, storage_file_id: str) -> DownloadedStorageFile:
+        self.download_calls.append(storage_file_id)
         return DownloadedStorageFile(
             next(
                 file for file in self.files if file.storage_file_id == storage_file_id
@@ -106,6 +108,32 @@ async def test_tick_once_manually_ingests_new_provider_file() -> None:
     assert ingestion.uploads[0].storage_file_id == "id"
     assert not hasattr(scheduler, "start")
     assert hasattr(scheduler, "stop_sync")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_sync_rejects_oversized_video_before_provider_download() -> None:
+    video = StorageFile(
+        StorageProvider.DROPBOX,
+        "video-id",
+        "clip.mp4",
+        "video/mp4",
+        datetime(2026, 8, 1, tzinfo=timezone.utc),
+        200 * 1024 * 1024 + 1,
+        "https://dropbox.example.test/video-id",
+    )
+    client = _Client([video])
+    ingestion = _Ingestion([])
+    scheduler = StorageSyncScheduler(
+        StorageProvider.DROPBOX, client, "/root", ingestion, _Qdrant([], [])
+    )  # type: ignore[arg-type]
+
+    result = await scheduler.tick_once()
+
+    assert result.upserted == 0
+    assert client.download_calls == []
+    assert ingestion.uploads == []
+    assert any(trace.detail == "Video exceeds 200 MiB limit" for trace in result.traces)
 
 
 @pytest.mark.unit

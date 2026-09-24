@@ -59,6 +59,8 @@ class Settings(AdminAuthSettings):
     DESCRIPTION_ENDPOINT_URL: str | None = None
     DESCRIPTION_ENDPOINT_API_KEY: str | None = None
     EMBEDDING_MODEL: NonBlankSetting
+    VIDEO_MODEL: NonBlankSetting | None = None
+    VIDEO_MODEL_API_KEY: str | None = None
 
     QDRANT_URL: str
     QDRANT_API_KEY: str | None = None
@@ -75,6 +77,11 @@ class Settings(AdminAuthSettings):
     DROPBOX_REFRESH_TOKEN: str | None = None
     DROPBOX_ROOT_PATH: str | None = None
 
+    @property
+    def has_video_model(self) -> bool:
+        """Return whether complete video-model configuration is available."""
+        return self.VIDEO_MODEL is not None and self.VIDEO_MODEL_API_KEY is not None
+
     @model_validator(mode="after")
     def _validate_description_endpoint(self) -> "Settings":
         missing = [
@@ -90,4 +97,7 @@ class Settings(AdminAuthSettings):
             raise ValueError(
                 f"{joined} must be set when DESCRIPTION_MODEL is configured"
             )
+        video_values = (self.VIDEO_MODEL, self.VIDEO_MODEL_API_KEY)
+        if any(value is not None for value in video_values) and not all(video_values):
+            raise ValueError("VIDEO_MODEL and VIDEO_MODEL_API_KEY must be set together")
         return self

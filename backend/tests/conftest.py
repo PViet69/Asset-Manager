@@ -10,7 +10,7 @@ from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.integrations.model_client import ModelClient
 from backend.app.integrations.qdrant_store import QdrantStore
 from backend.app.main import create_app
-from backend.app.model.description_client import ImageDescriptionClient
+from backend.app.model.description_client import AssetDescriptionClient
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +27,7 @@ def app() -> FastAPI:
     """Return a fresh FastAPI application instance."""
     service = Mock(spec=FileIngestionService)
     service.embedding_model = "embedding-model"
-    description_client = Mock(spec=ImageDescriptionClient)
+    description_client = Mock(spec=AssetDescriptionClient)
     model_client = Mock(spec=ModelClient)
     qdrant_store = Mock(spec=QdrantStore)
     description_client.check_health.return_value = "ok"

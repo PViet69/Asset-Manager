@@ -16,7 +16,12 @@ from backend.app.file_embeddings.ingestion_service import (
     FileUpload,
 )
 from backend.app.integrations.qdrant_store import QdrantStore
-from backend.app.storage.client import StorageClient, StorageFile
+from backend.app.storage.client import (
+    MAX_PROVIDER_VIDEO_SIZE_BYTES,
+    SUPPORTED_VIDEO_MIME_TYPES,
+    StorageClient,
+    StorageFile,
+)
 from backend.app.storage.sync_state import SyncState
 
 logger = logging.getLogger(__name__)
@@ -154,6 +159,12 @@ class StorageSyncScheduler:
         self._is_processing_file.set()
         trace("file_prepare", "ok", "Preparing file", file)
         try:
+            if (
+                file.mime_type in SUPPORTED_VIDEO_MIME_TYPES
+                and file.size > MAX_PROVIDER_VIDEO_SIZE_BYTES
+            ):
+                trace("file_ingestion", "failed", "Video exceeds 200 MiB limit", file)
+                return 0
             downloaded = self._client.download(file.storage_file_id)
             time.sleep(1)
             if cancel_event is not None and cancel_event.is_set():

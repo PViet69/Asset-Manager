@@ -27,7 +27,7 @@ from backend.app.file_processing.service import MAX_FILE_SIZE
 from backend.app.integrations.model_client import ModelClient
 from backend.app.integrations.qdrant_store import QdrantStore
 from backend.app.main import create_app
-from backend.app.model.description_client import ImageDescriptionClient
+from backend.app.model.description_client import AssetDescriptionClient
 from backend.app.model.prompt_model import ImageDescription
 from backend.app.security import MAX_REQUEST_SIZE
 from backend.app.tag_settings.store import TagSettingsStore
@@ -230,7 +230,7 @@ def test_route_closes_all_uploads_before_rejecting_more_than_ten(
 def test_route_bounds_oversized_upload_read_and_returns_file_error(
     app: FastAPI,
 ) -> None:
-    description_client = Mock(spec=ImageDescriptionClient)
+    description_client = Mock(spec=AssetDescriptionClient)
     model_client = Mock(spec=ModelClient)
     qdrant_store = Mock(spec=QdrantStore)
     service = FileIngestionService(description_client, model_client, qdrant_store)
@@ -261,7 +261,7 @@ def test_route_bounds_oversized_upload_read_and_returns_file_error(
 def test_real_service_reports_empty_file_without_embedding_or_storage(
     app: FastAPI,
 ) -> None:
-    description_client = Mock(spec=ImageDescriptionClient)
+    description_client = Mock(spec=AssetDescriptionClient)
     model_client = Mock(spec=ModelClient)
     qdrant_store = Mock(spec=QdrantStore)
     service = FileIngestionService(description_client, model_client, qdrant_store)
@@ -291,7 +291,7 @@ def test_real_service_reports_empty_file_without_embedding_or_storage(
 def test_real_service_preserves_order_for_oversized_and_unsupported_files(
     app: FastAPI,
 ) -> None:
-    description_client = Mock(spec=ImageDescriptionClient)
+    description_client = Mock(spec=AssetDescriptionClient)
     model_client = Mock(spec=ModelClient)
     qdrant_store = Mock(spec=QdrantStore)
     service = FileIngestionService(description_client, model_client, qdrant_store)
@@ -339,14 +339,14 @@ def test_real_service_returns_safe_model_error_per_file(
     app: FastAPI,
     error_message: str,
 ) -> None:
-    description_client = Mock(spec=ImageDescriptionClient)
+    description_client = Mock(spec=AssetDescriptionClient)
     description_client.describe.return_value = ImageDescription(
-        subjects=("square",),
+        subjects=("object",),
         attributes=("green",),
-        actions=("static",),
-        setting=("fixture",),
+        actions=(),
+        setting=("indoor",),
         colors=("green",),
-        style=("pixel art",),
+        style=("illustration",),
         visible_text=(),
     )
     model_client = Mock(spec=ModelClient)
@@ -371,7 +371,7 @@ def test_real_service_returns_safe_model_error_per_file(
 def test_real_service_returns_200_when_all_files_fail_processing(
     app: FastAPI,
 ) -> None:
-    description_client = Mock(spec=ImageDescriptionClient)
+    description_client = Mock(spec=AssetDescriptionClient)
     model_client = Mock(spec=ModelClient)
     qdrant_store = Mock(spec=QdrantStore)
     service = FileIngestionService(description_client, model_client, qdrant_store)
@@ -413,14 +413,14 @@ def test_real_service_returns_200_when_all_files_fail_processing(
 def test_real_service_returns_safe_qdrant_error_per_file(
     app: FastAPI,
 ) -> None:
-    description_client = Mock(spec=ImageDescriptionClient)
+    description_client = Mock(spec=AssetDescriptionClient)
     description_client.describe.return_value = ImageDescription(
-        subjects=("square",),
+        subjects=("object",),
         attributes=("green",),
-        actions=("static",),
-        setting=("fixture",),
+        actions=(),
+        setting=("indoor",),
         colors=("green",),
-        style=("pixel art",),
+        style=("illustration",),
         visible_text=(),
     )
     model_client = Mock(spec=ModelClient)
@@ -565,6 +565,7 @@ def test_default_tag_settings_store_uses_application_settings(
     settings.DESCRIPTION_ENDPOINT_API_KEY = "description-key"
     settings.DESCRIPTION_MODEL = "description-model"
     settings.MODEL_REQUEST_TIMEOUT = 30
+    settings.has_video_model = False
     settings.QDRANT_COLLECTION = "assets"
     settings.QDRANT_VECTOR_SIZE = 2
     with (
@@ -573,7 +574,7 @@ def test_default_tag_settings_store_uses_application_settings(
             "backend.app.main.TagSettingsStore.from_settings",
             return_value=tag_settings_store,
         ) as factory,
-        patch("backend.app.main.InstructorImageDescriptionClient"),
+        patch("backend.app.main.InstructorAssetDescriptionClient"),
         patch("backend.app.main.OpenAICompatibleModelClient"),
         patch("backend.app.main.QdrantEmbeddingStore"),
         patch("backend.app.main.build_provider_registry", return_value=Mock()),
@@ -587,7 +588,7 @@ def test_default_tag_settings_store_uses_application_settings(
 
 @pytest.mark.integration
 def test_qdrant_startup_error_surfaces_on_testclient_entry() -> None:
-    description_client = Mock(spec=ImageDescriptionClient)
+    description_client = Mock(spec=AssetDescriptionClient)
     model_client = Mock(spec=ModelClient)
     qdrant_store = Mock(spec=QdrantStore)
     qdrant_store.ensure_collection.side_effect = QdrantStorageError(

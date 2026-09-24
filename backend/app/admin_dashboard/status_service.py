@@ -14,7 +14,7 @@ from backend.app.api.schemas.admin import (
 )
 from backend.app.integrations.model_client import ModelClient
 from backend.app.integrations.qdrant_store import QdrantStore
-from backend.app.model.description_client import ImageDescriptionClient
+from backend.app.model.description_client import AssetDescriptionClient
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class AdminDashboardStatusService:
     registry: ProviderRegistry
     qdrant_store: QdrantStore
     embedding_client: ModelClient
-    description_client: ImageDescriptionClient
+    description_client: AssetDescriptionClient
     _cache: _StatusCache = field(default_factory=_StatusCache, init=False)
 
     async def get_status(self) -> AdminDashboardStatusResponse:
