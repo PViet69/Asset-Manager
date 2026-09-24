@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -48,14 +49,18 @@ class StorageSyncScheduler:
         self._lock = asyncio.Lock()
         self._last_result: SyncTickResult | None = None
         self._cancel_event = threading.Event()
+        self._is_processing_file = threading.Event()
 
     @property
     def last_result(self) -> SyncTickResult | None:
         return self._last_result
 
-    def stop_sync(self) -> None:
-        """Signal current or upcoming sync operation to stop."""
+    def stop_sync(self) -> bool:
+        """Stop sync after the current provider file finishes."""
+        if not self._is_processing_file.is_set():
+            return False
         self._cancel_event.set()
+        return True
 
     async def tick_once(
         self, observer: Callable[[SyncTraceItem], None] | None = None
@@ -69,6 +74,7 @@ class StorageSyncScheduler:
             return result
         finally:
             self._cancel_event.clear()
+            self._is_processing_file.clear()
 
     def _tick_blocking(
         self,
@@ -108,14 +114,13 @@ class StorageSyncScheduler:
         plan = SyncState.seed_from_qdrant(files, stored).diff()
         upserted = 0
         for file in plan.to_upsert:
+            if self._upsert(file, trace, cancel_event):
+                upserted += 1
             if cancel_event is not None and cancel_event.is_set():
-                trace("sync_cancel", "ok", "Sync operation stopped by user")
                 logger.info(
                     "Storage sync stopped by user for provider %s", self._provider
                 )
                 break
-            if self._upsert(file, trace):
-                upserted += 1
 
         failed = len(plan.to_upsert) - upserted
         deleted = 0
@@ -143,59 +148,70 @@ class StorageSyncScheduler:
         self,
         file: StorageFile,
         trace: Callable[[str, str, str, StorageFile | None], None],
+        cancel_event: Any | None = None,
         max_retries: int = 2,
     ) -> int:
-        for attempt in range(max_retries + 1):
-            try:
-                downloaded = self._client.download(file.storage_file_id)
-                trace("file_download", "ok", "Downloaded file", file)
-                upload = FileUpload(
-                    filename=downloaded.file.name,
-                    content_type=downloaded.export_mime_type
-                    or downloaded.file.mime_type,
-                    content=downloaded.content,
-                    file_path=downloaded.file.name,
-                    modified_time=downloaded.file.modified_time,
-                    provider=self._provider,
-                    storage_file_id=downloaded.file.storage_file_id,
-                    source_url=downloaded.file.source_url,
-                )
-                response = self._ingestion_service.process_files((upload,))
-                if response.data and response.data[0].status == "success":
-                    trace("file_ingestion", "ok", "Indexed file", file)
-                    return 1
-                if attempt < max_retries:
-                    logger.warning(
-                        "File ingestion attempt %d failed for %s, retrying...",
-                        attempt + 1,
-                        file.name,
-                    )
-                    trace(
-                        "file_ingestion",
-                        "retry",
-                        f"Ingestion attempt {attempt + 1} failed, retrying...",
-                        file,
-                    )
-                    continue
-                trace("file_ingestion", "failed", "File ingestion failed", file)
-            except Exception as exc:  # noqa: BLE001
-                if attempt < max_retries:
-                    logger.warning(
-                        "Storage file ingestion attempt %d failed for %s (%s), retrying...",
-                        attempt + 1,
-                        file.name,
-                        exc,
-                    )
-                    trace(
-                        "file_ingestion",
-                        "retry",
-                        f"Attempt {attempt + 1} failed: {exc}",
-                        file,
-                    )
-                    continue
-                logger.exception("Storage file ingestion failed for %s", file.name)
-                trace("file_ingestion", "failed", "File ingestion failed", file)
-        return 0
+        self._is_processing_file.set()
+        trace("file_prepare", "ok", "Preparing file", file)
+        try:
+            downloaded = self._client.download(file.storage_file_id)
+            time.sleep(1)
+            if cancel_event is not None and cancel_event.is_set():
+                trace("sync_cancel", "ok", "Sync operation stopped by user", file)
+                return 0
+
+            upload = FileUpload(
+                filename=downloaded.file.name,
+                content_type=downloaded.export_mime_type or downloaded.file.mime_type,
+                content=downloaded.content,
+                file_path=downloaded.file.name,
+                modified_time=downloaded.file.modified_time,
+                provider=self._provider,
+                storage_file_id=downloaded.file.storage_file_id,
+                source_url=downloaded.file.source_url,
+            )
+            for attempt in range(max_retries + 1):
+                try:
+                    trace("file_indexing", "ok", "Sending file to model", file)
+                    response = self._ingestion_service.process_files((upload,))
+                    if response.data and response.data[0].status == "success":
+                        trace("file_ingestion", "ok", "Indexed file", file)
+                        return 1
+                    if attempt < max_retries:
+                        logger.warning(
+                            "File ingestion attempt %d failed for %s, retrying...",
+                            attempt + 1,
+                            file.name,
+                        )
+                        trace(
+                            "file_indexing",
+                            "retry",
+                            f"Ingestion attempt {attempt + 1} failed, retrying...",
+                            file,
+                        )
+                        continue
+                    trace("file_ingestion", "failed", "File ingestion failed", file)
+                except Exception as exc:  # noqa: BLE001
+                    if attempt < max_retries:
+                        logger.warning(
+                            "Storage file ingestion attempt %d failed for %s (%s), "
+                            "retrying...",
+                            attempt + 1,
+                            file.name,
+                            exc,
+                        )
+                        trace(
+                            "file_indexing",
+                            "retry",
+                            f"Attempt {attempt + 1} failed: {exc}",
+                            file,
+                        )
+                        continue
+                    logger.exception("Storage file ingestion failed for %s", file.name)
+                    trace("file_ingestion", "failed", "File ingestion failed", file)
+            return 0
+        finally:
+            self._is_processing_file.clear()
 
     async def delete_for_reindex(self, storage_file_id: str) -> int:
         async with self._lock:

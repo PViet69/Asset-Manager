@@ -3117,8 +3117,11 @@ ul.list li:hover {
   width: 100%;
   max-width: 1380px;
   margin: 0 auto;
-  padding: 24px 32px 56px;
+  padding: 24px 32px 32px;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
 }
 
 .admin-topbar {
@@ -3856,6 +3859,205 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   margin-top: auto;
 }
 
+.admin-sync-activity {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  max-height: min(480px, calc(100dvh - 160px));
+  gap: 18px;
+  overflow: hidden;
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid rgba(59, 130, 246, 0.34);
+  border-radius: 12px;
+  background-color: #f8fbff;
+  background-image:
+    radial-gradient(circle at 8% -16%, rgba(37, 99, 235, 0.2), transparent 38%),
+    radial-gradient(circle at 92% 112%, rgba(124, 58, 237, 0.15), transparent 42%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(240, 246, 255, 0.82)),
+    radial-gradient(rgba(71, 104, 152, 0.14) 0.75px, transparent 0.9px);
+  background-size: auto, auto, auto, 15px 15px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.admin-sync-activity__header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-sync-activity__header p {
+  margin: 0 0 3px;
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.admin-sync-activity__header h2,
+.admin-sync-activity__provider h3 {
+  margin: 0;
+  color: var(--admin-text);
+}
+
+.admin-sync-activity__header h2 { font-size: 18px; }
+
+.admin-sync-activity__header > span {
+  color: var(--admin-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-sync-activity__groups {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.admin-sync-file-card {
+  --sync-provider-accent: var(--admin-blue);
+  --sync-provider-surface: var(--admin-blue-soft);
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: none;
+  gap: 12px;
+  overflow: hidden;
+  padding: 9px 13px;
+  border: 1px solid color-mix(in srgb, var(--sync-provider-accent) 20%, rgba(111, 137, 171, 0.14));
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--sync-provider-surface), var(--admin-surface) 56%);
+  box-shadow: inset 3px 0 0 var(--sync-provider-accent);
+}
+
+.admin-sync-file-card--google-drive {
+  --sync-provider-accent: #00832d;
+  --sync-provider-surface: rgba(0, 131, 45, 0.08);
+}
+
+.admin-sync-file-card--dropbox {
+  --sync-provider-accent: #0061ff;
+  --sync-provider-surface: rgba(0, 97, 255, 0.08);
+}
+
+.admin-sync-file-card--entering {
+  animation: admin-sync-file-enter 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.admin-sync-file-card--active::after {
+  position: absolute;
+  inset: 0 auto 0 -55%;
+  width: 45%;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--sync-provider-accent) 14%, transparent), transparent);
+  animation: admin-sync-file-flow 2.4s ease-in-out infinite;
+}
+
+.admin-sync-file-card__filename {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--admin-text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-sync-file-card__meta {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.admin-sync-file-card__provider,
+.admin-sync-file-card__status {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.admin-sync-file-card__provider {
+  color: var(--sync-provider-accent);
+}
+
+.admin-sync-file-card__provider svg {
+  flex: 0 0 auto;
+}
+
+.admin-sync-file-card__status {
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--admin-blue);
+  background: var(--admin-blue-soft);
+}
+
+.admin-sync-file-card--done .admin-sync-file-card__status {
+  color: var(--admin-green);
+  background: rgba(220, 252, 231, 0.82);
+}
+
+.admin-sync-file-card--failed .admin-sync-file-card__status,
+.admin-sync-file-card--stopped .admin-sync-file-card__status {
+  color: var(--admin-red);
+  background: rgba(254, 226, 226, 0.82);
+}
+
+.admin-sync-file-card--stopped {
+  --sync-provider-accent: var(--admin-red);
+  --sync-provider-surface: rgba(185, 28, 28, 0.08);
+}
+
+@keyframes admin-sync-file-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes admin-sync-file-flow {
+  from { transform: translateX(0); }
+  to { transform: translateX(360%); }
+}
+
+@media (max-width: 560px) {
+  .admin-sync-activity { padding: 16px; }
+  .admin-sync-activity__header { align-items: start; flex-direction: column; gap: 4px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-sync-activity,
+  .admin-sync-file-card,
+  .admin-sync-file-card::after {
+    transition: none;
+    animation: none;
+  }
+}
+
 .admin-items-modal-backdrop {
   position: fixed;
   z-index: 30;
@@ -3877,6 +4079,43 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   color: var(--admin-text);
   background: var(--admin-surface);
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.admin-confirmation-modal {
+  width: min(100%, 440px);
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 12px;
+  color: var(--admin-text);
+  background: var(--admin-surface);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.admin-confirmation-modal__eyebrow {
+  margin: 0 0 6px;
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.admin-confirmation-modal h2 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.admin-confirmation-modal > p:not(.admin-confirmation-modal__eyebrow) {
+  margin: 10px 0 0;
+  color: var(--admin-muted);
+}
+
+.admin-confirmation-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
 }
 
 .admin-items-modal__header {
@@ -4565,8 +4804,55 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
 .admin-login-submit:hover:not(:disabled) { background: linear-gradient(135deg, #475569, #334155); transform: translateY(-1px); }
 .admin-login-submit:focus-visible { outline: 3px solid rgba(37, 99, 235, 0.35); outline-offset: 3px; }
 .admin-login-footer { margin: 22px 0 0; color: var(--admin-muted); font-size: 11px; text-align: center; }
-.admin-login-card .admin-toast-list { margin-top: 18px; }
+.admin-toast-list {
+  position: fixed;
+  z-index: 40;
+  top: 20px;
+  right: 20px;
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 40px));
+  pointer-events: none;
+}
+
+.admin-toast {
+  padding: 13px 16px;
+  border: 1px solid rgba(220, 38, 38, 0.28);
+  border-left: 4px solid var(--admin-red);
+  border-radius: 10px;
+  color: #991b1b;
+  background: #fff1f2;
+  box-shadow: 0 14px 32px rgba(127, 29, 29, 0.16);
+  font-size: 13px;
+  font-weight: 650;
+  animation: admin-toast-enter 180ms ease-out both;
+}
+
+.admin-toast--error {
+  border-color: rgba(220, 38, 38, 0.32);
+}
+
+.admin-toast--dismissing {
+  animation: admin-toast-exit 300ms ease-in both;
+}
+
+@keyframes admin-toast-enter {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes admin-toast-exit {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(20px); }
+}
+
+.admin-login-card .admin-toast-list { position: static; width: auto; margin-top: 18px; }
 .admin-login-card .admin-toast-list:empty { display: none; margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-toast,
+  .admin-toast--dismissing { animation: none; }
+}
 .admin-login-orbit { display: none; }
 
 @media (max-width: 760px) {

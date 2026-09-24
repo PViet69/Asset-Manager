@@ -20,12 +20,14 @@ import type {
   ModelHealthStatus,
   ProviderDashboardStatus,
   QdrantItem,
-  TagGroup,
   SyncActivityEvent,
+  TagGroup,
 } from "../types";
 import { AdminModelHealth } from "./AdminModelHealth";
 import { AdminNavigation, type AdminTab } from "./AdminNavigation";
 import { AdminProviderCard } from "./AdminProviderCard";
+import { AdminSyncActivityPanel } from "./AdminSyncActivityPanel";
+import { ModelUnavailableDialog } from "./ModelUnavailableDialog";
 
 const SAFE_SYNC_ERROR = "Provider sync failed. Try again.";
 const AdminLoginBackground = lazy(() =>
@@ -79,7 +81,6 @@ export function AdminPage(): JSX.Element {
   const [refreshingProviders, setRefreshingProviders] = useState<ReadonlySet<string>>(new Set());
   const [syncingProviders, setSyncingProviders] = useState<ReadonlySet<string>>(new Set());
   const [activityByProvider, setActivityByProvider] = useState<Readonly<Record<string, readonly SyncActivityEvent[]>>>({});
-  const [openActivityProviders, setOpenActivityProviders] = useState<ReadonlySet<string>>(new Set());
   const [deletingProviders, setDeletingProviders] = useState<ReadonlySet<string>>(new Set());
   const [pendingDeletion, setPendingDeletion] = useState<PendingDeletion | null>(null);
   const [itemsByProvider, setItemsByProvider] = useState<Readonly<Record<string, readonly QdrantItem[] | null>>>({});
@@ -98,13 +99,14 @@ export function AdminPage(): JSX.Element {
   const [isLoadingTags, setIsLoadingTags] = useState(false);
   const hasLoadedApprovedTags = useRef(false);
   const [toasts, setToasts] = useState<readonly Toast[]>([]);
+  const [isModelUnavailableDialogOpen, setIsModelUnavailableDialogOpen] = useState(false);
   const controllers = useRef<Record<string, AbortController>>({});
 
   const addToast = useCallback((message: string, type: Toast["type"]): void => {
     const id = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
     setToasts((current) => [...current, { id, type, message }]);
-    window.setTimeout(() => setToasts((current) => current.map((toast) => toast.id === id ? { ...toast, isDismissing: true } : toast)), 4500);
-    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 4900);
+    window.setTimeout(() => setToasts((current) => current.map((toast) => toast.id === id ? { ...toast, isDismissing: true } : toast)), 1700);
+    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 2000);
   }, []);
 
   function clearSession(): void {
@@ -235,12 +237,6 @@ export function AdminPage(): JSX.Element {
     }
   }
 
-  function toggleActivity(providerId: string): void {
-    setOpenActivityProviders((current) => current.has(providerId)
-      ? new Set([...current].filter((item) => item !== providerId))
-      : new Set(current).add(providerId));
-  }
-
   async function openProviderItems(providerId: string): Promise<void> {
     setOpenItemsProvider(providerId);
     setLoadingItemsProviders((current) => new Set(current).add(providerId));
@@ -333,9 +329,9 @@ export function AdminPage(): JSX.Element {
     try {
       await deleteAdminQdrantPoint(item.point_id);
       setItemsByProvider((current) => ({ ...current, [providerId]: (current[providerId] ?? []).filter((entry) => entry.point_id !== item.point_id) }));
+      decrementProviderCoverage(providerId);
       setPendingDeletion(null);
       addToast(`Deleted embedded item "${itemName}".`, "status");
-      await loadDashboard();
     } catch (caught) {
       handleAdminError(caught, "Could not delete embedded item");
     } finally {
@@ -362,6 +358,15 @@ export function AdminPage(): JSX.Element {
     );
   }
 
+  function decrementProviderCoverage(providerId: string): void {
+    setDashboard((current) => ({
+      ...current,
+      providers: current.providers.map((provider) => provider.provider !== providerId || provider.embedded_count === null
+        ? provider
+        : { ...provider, embedded_count: Math.max(0, provider.embedded_count - 1) }),
+    }));
+  }
+
   function incrementProviderCoverage(providerId: string): void {
     setDashboard((current) => ({
       ...current,
@@ -373,33 +378,46 @@ export function AdminPage(): JSX.Element {
 
   async function syncProvider(providerId: string): Promise<void> {
     if (syncingProviders.has(providerId)) {
-      controllers.current[providerId]?.abort();
-      void stopAdminSync(providerId).catch(() => undefined);
+      try {
+        await stopAdminSync(providerId);
+        setSyncingProviders((current) => new Set(
+          [...current].filter((provider) => provider !== providerId)
+        ));
+      } catch (caught) {
+        handleAdminError(caught, "Could not stop provider sync");
+      }
       return;
     }
     const controller = new AbortController();
     const indexedFilenames = new Set<string>();
     controllers.current = { ...controllers.current, [providerId]: controller };
     setSyncingProviders((current) => new Set(current).add(providerId));
-    setOpenActivityProviders((current) => new Set(current).add(providerId));
     setActivityByProvider((current) => ({ ...current, [providerId]: [] }));
     try {
       await streamAdminSync(providerId, (event) => {
         if (event.terminal) return;
-        if (event.status === "done" && event.filename && !indexedFilenames.has(event.filename)) {
+        if (event.status === "indexed" && event.filename && !indexedFilenames.has(event.filename)) {
           indexedFilenames.add(event.filename);
           incrementProviderCoverage(providerId);
         }
         setActivityByProvider((current) => {
           const events = current[providerId] ?? [];
           const index = event.filename ? events.findIndex((item) => item.filename === event.filename) : -1;
-          const nextEvents = index >= 0 ? events.map((item, itemIndex) => itemIndex === index ? event : item) : [event, ...events];
+          const nextEvents = index >= 0
+            ? events.map((item, itemIndex) => itemIndex === index ? event : item)
+            : [event, ...events];
           return { ...current, [providerId]: nextEvents };
         });
       }, controller.signal);
-      await loadDashboard();
     } catch (caught) {
-      if (!controller.signal.aborted) handleAdminError(caught, SAFE_SYNC_ERROR);
+      if (controller.signal.aborted) {
+        return;
+      }
+      if (caught instanceof ApiError && caught.message === "Model not found") {
+        setIsModelUnavailableDialogOpen(true);
+        return;
+      }
+      handleAdminError(caught, SAFE_SYNC_ERROR);
     } finally {
       setSyncingProviders((current) => new Set([...current].filter((item) => item !== providerId)));
       const { [providerId]: _, ...rest } = controllers.current;
@@ -501,15 +519,12 @@ export function AdminPage(): JSX.Element {
           <AdminProviderCard
             key={provider.provider}
             provider={provider}
-            events={activityByProvider[provider.provider] ?? []}
             isRefreshing={refreshingProviders.has(provider.provider)}
             isSyncing={syncingProviders.has(provider.provider)}
             isItemsLoading={loadingItemsProviders.has(provider.provider)}
-            isActivityOpen={openActivityProviders.has(provider.provider)}
             onRefresh={(providerId) => void refreshProvider(providerId)}
             onOpenItems={(providerId) => void openProviderItems(providerId)}
             onSync={(providerId) => void syncProvider(providerId)}
-            onToggleActivity={toggleActivity}
           />
         ))}
       </section>
@@ -927,14 +942,16 @@ export function AdminPage(): JSX.Element {
         })() : null}
 
         {activeTab === "dashboards" || activeTab === "providers" ? renderProviders() : null}
+        {activeTab === "providers" ? (
+          <AdminSyncActivityPanel
+            providers={dashboard.providers}
+            activityByProvider={activityByProvider}
+          />
+        ) : null}
         {activeTab === "dashboards" || activeTab === "models" ? <AdminModelHealth embeddingModel={dashboard.embeddingModel} descriptionModel={dashboard.descriptionModel} isLoading={isLoadingDashboard} /> : null}
         {activeTab === "logs" ? (
           <section className="admin-log-panel" aria-label="Sync activity logs">
-            {Object.values(activityByProvider).flat().length === 0 ? <p>No activity in this session.</p> : (
-              <ul className="admin-activity-list">
-                {Object.entries(activityByProvider).flatMap(([providerId, events]) => events.map((event) => <li key={`${providerId}-${event.sequence}`}>{event.filename ?? event.detail}</li>))}
-              </ul>
-            )}
+            <p>No activity in this session.</p>
           </section>
         ) : null}
         {activeTab === "settings" ? (
@@ -1016,6 +1033,9 @@ export function AdminPage(): JSX.Element {
         ) : null}
         {renderItemsDialog()}
         {renderDeleteConfirmationDialog()}
+        {isModelUnavailableDialogOpen ? (
+          <ModelUnavailableDialog onDismiss={() => setIsModelUnavailableDialogOpen(false)} />
+        ) : null}
         <ToastList toasts={toasts} />
       </main>
     </div>

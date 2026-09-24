@@ -17,7 +17,6 @@ from backend.app.security import (
 )
 
 ADMIN_SESSION_COOKIE = "admin_session"
-ADMIN_SESSION_MAX_AGE_SECONDS = 2 * 60 * 60
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -44,7 +43,6 @@ def login(
     response.set_cookie(
         key=ADMIN_SESSION_COOKIE,
         value=create_admin_session(config, datetime.now(UTC)),
-        max_age=ADMIN_SESSION_MAX_AGE_SECONDS,
         httponly=True,
         secure=True,
         samesite="strict",

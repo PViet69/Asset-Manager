@@ -32,15 +32,12 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof AdminProvider
   render(
     <AdminProviderCard
       provider={provider}
-      events={[]}
       isRefreshing={false}
       isSyncing={false}
       isItemsLoading={false}
-      isActivityOpen={false}
       onRefresh={vi.fn()}
       onOpenItems={vi.fn()}
       onSync={vi.fn()}
-      onToggleActivity={vi.fn()}
       {...overrides}
     />
   );
@@ -66,5 +63,15 @@ test("hides percentage and embedded numbers and labels while refreshing", () => 
   expect(card.querySelector(".admin-provider-ring span")).toHaveTextContent("");
   expect(card.querySelector(".admin-provider-card__metric strong")).toHaveTextContent("");
   expect(card.querySelector(".admin-provider-card__metric span")).toHaveTextContent("");
+});
+
+test("enables stop while provider prepares or indexes a file", () => {
+  renderCard({ isSyncing: true });
+
+  const card = screen.getByRole("article", { name: "Google Drive provider" });
+  expect(card).toHaveTextContent("Syncing");
+  expect(screen.getByRole("button", { name: "Stop syncing Google Drive" })).toBeEnabled();
+  expect(card.querySelector(".admin-provider-card__details")).not.toBeInTheDocument();
+  expect(card.querySelector(".admin-activity-list")).not.toBeInTheDocument();
 });
 

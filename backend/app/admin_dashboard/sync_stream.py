@@ -66,48 +66,31 @@ class ProviderSyncStream:
 
 
 def _activity_event(trace: SyncTraceItem, sequence: int) -> SyncActivityEvent | None:
-    if trace.step == "file_download" and trace.status == "ok":
-        return SyncActivityEvent(
-            sequence=sequence,
-            provider=trace.provider,
-            filename=trace.filename,
-            status="loading",
-            detail="Loading file",
-        )
+    if trace.step == "file_prepare" and trace.status == "ok":
+        return _file_event(trace, sequence, "preparing", "Preparing file")
+    if trace.step == "file_indexing" and trace.status in {"ok", "retry"}:
+        return _file_event(trace, sequence, "indexing", "Indexing file")
     if trace.step == "file_ingestion" and trace.status == "ok":
-        return SyncActivityEvent(
-            sequence=sequence,
-            provider=trace.provider,
-            filename=trace.filename,
-            status="done",
-            detail="Indexed file",
-        )
-    if trace.step == "file_ingestion" and trace.status == "retry":
-        return SyncActivityEvent(
-            sequence=sequence,
-            provider=trace.provider,
-            filename=trace.filename,
-            status="loading",
-            detail=trace.detail,
-        )
+        return _file_event(trace, sequence, "indexed", "Indexed file")
     if trace.step == "file_ingestion" and trace.status == "failed":
-        return SyncActivityEvent(
-            sequence=sequence,
-            provider=trace.provider,
-            filename=trace.filename,
-            status="failed",
-            detail="File processing failed",
-        )
-
+        return _file_event(trace, sequence, "failed", "File processing failed")
+    if trace.step == "sync_cancel":
+        return _file_event(trace, sequence, "stopped", "Stopped by administrator")
     if trace.step in {"provider_traversal", "qdrant_read", "qdrant_delete"}:
-        return SyncActivityEvent(
-            sequence=sequence,
-            provider=trace.provider,
-            filename=None,
-            status="failed",
-            detail="Sync processing failed",
-        )
+        return _file_event(trace, sequence, "failed", "Sync processing failed")
     return None
+
+
+def _file_event(
+    trace: SyncTraceItem, sequence: int, status: str, detail: str
+) -> SyncActivityEvent:
+    return SyncActivityEvent(
+        sequence=sequence,
+        provider=trace.provider,
+        filename=trace.filename,
+        status=status,
+        detail=detail,
+    )
 
 
 def _terminal_event(

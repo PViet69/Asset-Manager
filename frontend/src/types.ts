@@ -109,7 +109,7 @@ export type SyncActivityEvent = {
   sequence: number;
   provider: string;
   filename: string | null;
-  status: "loading" | "embedding" | "done" | "failed";
+  status: "preparing" | "indexing" | "indexed" | "failed" | "stopped";
   detail: string;
   terminal: false;
 };

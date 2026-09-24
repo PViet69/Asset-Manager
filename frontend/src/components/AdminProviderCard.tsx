@@ -1,22 +1,15 @@
 import { useEffect, useState } from "react";
-import type {
-  ProviderDashboardStatus,
-  QdrantItem,
-  SyncActivityEvent,
-} from "../types";
+import type { ProviderDashboardStatus } from "../types";
 import { ProviderLogo } from "./ProviderLogo";
 
 export interface AdminProviderCardProps {
   readonly provider: ProviderDashboardStatus;
-  readonly events: readonly SyncActivityEvent[];
   readonly isRefreshing: boolean;
   readonly isSyncing: boolean;
   readonly isItemsLoading: boolean;
-  readonly isActivityOpen: boolean;
   readonly onRefresh: (provider: string) => void;
   readonly onOpenItems: (provider: string) => void;
   readonly onSync: (provider: string) => void;
-  readonly onToggleActivity: (provider: string) => void;
 }
 
 function healthLabel(health: string): string {
@@ -33,15 +26,12 @@ function healthClassName(health: string): string {
 
 export function AdminProviderCard({
   provider,
-  events,
   isRefreshing,
   isSyncing,
   isItemsLoading,
-  isActivityOpen,
   onRefresh,
   onOpenItems,
   onSync,
-  onToggleActivity,
 }: AdminProviderCardProps): JSX.Element {
   const [mounted, setMounted] = useState(false);
 
@@ -135,25 +125,6 @@ export function AdminProviderCard({
           {isSyncing ? "Stop" : "Sync"}
         </button>
       </footer>
-
-
-      {isActivityOpen ? (
-        <section className="admin-provider-card__details" aria-label={`${provider.display_name} sync activity`} aria-live="polite">
-          <div className="admin-provider-card__details-header">
-            <span>Activity ({events.length})</span>
-            <button type="button" className="admin-link-button" onClick={() => onToggleActivity(provider.provider)}>
-              Hide
-            </button>
-          </div>
-          <ul className="admin-activity-list">
-            {events.map((event) => <li key={event.sequence}>{event.filename ?? event.detail}</li>)}
-          </ul>
-        </section>
-      ) : events.length > 0 ? (
-        <button type="button" className="admin-link-button" onClick={() => onToggleActivity(provider.provider)}>
-          Activity ({events.length})
-        </button>
-      ) : null}
     </article>
   );
 }

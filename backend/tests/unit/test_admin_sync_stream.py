@@ -56,7 +56,8 @@ async def test_stream_emits_ordered_safe_events_then_terminal() -> None:
     scheduler = _Scheduler(
         StorageProvider.DROPBOX,
         (
-            _trace("file_download", "ok", "asset.png"),
+            _trace("file_prepare", "ok", "asset.png"),
+            _trace("file_indexing", "ok", "asset.png"),
             _trace("file_ingestion", "ok", "asset.png"),
         ),
     )
@@ -72,7 +73,11 @@ async def test_stream_emits_ordered_safe_events_then_terminal() -> None:
         for frame in frames
     ]
 
-    assert [event["status"] for event in events[:-1]] == ["loading", "done"]
+    assert [event["status"] for event in events[:-1]] == [
+        "preparing",
+        "indexing",
+        "indexed",
+    ]
     assert events[-1]["terminal"] is True
     assert all(frame.endswith(b"\n\n") for frame in frames)
     assert "internal failure" not in json.dumps(events)

@@ -14,13 +14,14 @@ from backend.app.api.schemas.admin import (
     AdminQdrantItemsResponse,
     AdminReindexResponse,
     AdminSyncResponse,
+    AdminSyncStopResponse,
     AdminTagDiscoveryResponse,
     AdminTagGroup,
     AdminTagGroupsResponse,
     QdrantItemSchema,
     SaveAdminTagsRequest,
 )
-from backend.app.exceptions import QdrantStorageError
+from backend.app.exceptions import ModelNotFoundError, QdrantStorageError
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.security import require_admin_access, require_admin_origin
 from backend.app.storage.registry import ProviderRegistry, ProviderSync
@@ -59,6 +60,15 @@ def _scheduler_or_503(entry: ProviderSync) -> StorageSyncScheduler:
             detail=f"{entry.display_name} sync is not configured",
         )
     return entry.scheduler
+
+
+def _require_available_embedding_model(request: Request) -> None:
+    model_client = request.app.state.health_dependencies.model_client
+    if model_client.check_health() == "unavailable":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=ModelNotFoundError().safe_message,
+        )
 
 
 @router.get(
@@ -196,6 +206,7 @@ async def refresh_provider(
     dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
 )
 async def stream_sync(provider: str, request: Request) -> StreamingResponse:
+    _require_available_embedding_model(request)
     scheduler = _scheduler_or_503(_provider_or_404(request, provider))
 
     async def snapshot(selected_provider: str):
@@ -213,13 +224,14 @@ async def stream_sync(provider: str, request: Request) -> StreamingResponse:
 
 @router.post(
     "/sync/{provider}/stop",
+    response_model=AdminSyncStopResponse,
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
 )
-async def stop_sync(provider: str, request: Request) -> dict[str, str]:
+async def stop_sync(provider: str, request: Request) -> AdminSyncStopResponse:
     scheduler = _scheduler_or_503(_provider_or_404(request, provider))
-    scheduler.stop_sync()
-    return {"status": "stopping", "provider": provider}
+    status_value = "stopping" if scheduler.stop_sync() else "unavailable"
+    return AdminSyncStopResponse(status=status_value, provider=provider)
 
 
 @router.post(

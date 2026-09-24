@@ -59,9 +59,10 @@ class _Qdrant:
 @dataclass(frozen=True)
 class _Model:
     model_name: str
+    health: str = "ok"
 
     def check_health(self) -> str:
-        return "ok"
+        return self.health
 
 
 @dataclass
@@ -125,14 +126,14 @@ def _registry(
 TEST_ORIGIN = "https://admin.example.test"
 
 
-def _app(registry: ProviderRegistry):
+def _app(registry: ProviderRegistry, embedding_model_health: str = "ok"):
     service = Mock(spec=FileIngestionService)
     service.startup.return_value = None
     return create_app(
         service=service,
         health_dependencies=Mock(
             description_client=_Model("describe-v1"),
-            model_client=_Model("embed-v1"),
+            model_client=_Model("embed-v1", embedding_model_health),
             qdrant_store=_Qdrant(),
         ),
         admin_auth_config=AdminAuthConfig(
@@ -385,6 +386,24 @@ def test_stream_requires_session_and_allowed_origin() -> None:
 
     assert anonymous.status_code == 401
     assert rejected.status_code == 403
+
+
+@pytest.mark.integration
+def test_stream_rejects_unavailable_embedding_model_before_sync() -> None:
+    registry, _, dropbox = _registry()
+
+    with TestClient(
+        _app(registry, embedding_model_health="unavailable"),
+        base_url="https://testserver",
+    ) as client:
+        _login(client)
+        response = client.post(
+            "/admin/sync/dropbox/stream", headers={"Origin": TEST_ORIGIN}
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Model not found"}
+    assert dropbox.trigger_count == 0
 
 
 @pytest.mark.integration
