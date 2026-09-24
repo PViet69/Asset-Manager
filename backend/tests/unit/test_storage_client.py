@@ -139,6 +139,32 @@ def test_dropbox_lists_paged_supported_files_and_downloads() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("name", "expected_mime"),
+    (
+        ("clip.mp4", "video/mp4"),
+        ("clip.mov", "video/quicktime"),
+        ("clip.webm", "video/webm"),
+    ),
+)
+def test_dropbox_maps_supported_video_extensions(name: str, expected_mime: str) -> None:
+    entry = SimpleNamespace(
+        id="video-id",
+        path_display=f"/team/{name}",
+        name=name,
+        size=9,
+        client_modified=datetime(2026, 8, 1, tzinfo=timezone.utc),
+    )
+
+    from backend.app.storage.client import _to_dropbox_file
+
+    mapped = _to_dropbox_file(entry)
+
+    assert mapped is not None
+    assert mapped.mime_type == expected_mime
+
+
+@pytest.mark.unit
 def test_storage_file_is_immutable() -> None:
     file = StorageFile(
         StorageProvider.GOOGLE_DRIVE,

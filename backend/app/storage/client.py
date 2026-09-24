@@ -15,16 +15,24 @@ from backend.app.storage import StorageProvider
 logger = logging.getLogger(__name__)
 
 
-_SUPPORTED_MIMES: frozenset[str] = frozenset({"image/png", "image/jpeg", "image/webp"})
-_THUMBNAIL_MIME_TYPES: frozenset[str] = frozenset(
+SUPPORTED_IMAGE_MIME_TYPES: frozenset[str] = frozenset(
     {"image/png", "image/jpeg", "image/webp"}
 )
+SUPPORTED_VIDEO_MIME_TYPES: frozenset[str] = frozenset(
+    {"video/mp4", "video/quicktime", "video/webm"}
+)
+SUPPORTED_STORAGE_MIME_TYPES = SUPPORTED_IMAGE_MIME_TYPES | SUPPORTED_VIDEO_MIME_TYPES
+_THUMBNAIL_MIME_TYPES = SUPPORTED_IMAGE_MIME_TYPES
+MAX_PROVIDER_VIDEO_SIZE_BYTES = 200 * 1024 * 1024
 
 _EXTENSION_MIMES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".webp": "image/webp",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".webm": "video/webm",
 }
 
 
@@ -184,7 +192,7 @@ class GoogleDriveClient:
                 file = _to_google_file(item)
                 if file.mime_type == "application/vnd.google-apps.folder":
                     self._walk(file.storage_file_id, output)
-                elif file.mime_type in _SUPPORTED_MIMES:
+                elif file.mime_type in SUPPORTED_STORAGE_MIME_TYPES:
                     output.append(file)
             page_token = response.get("nextPageToken")
             if not page_token:
@@ -349,7 +357,7 @@ def _to_dropbox_file(entry: Any, require_supported: bool = True) -> StorageFile 
     if not isinstance(path, str) or not isinstance(file_id, str):
         return None
     mime_type = _EXTENSION_MIMES.get(PurePosixPath(path).suffix.lower())
-    if require_supported and mime_type not in _SUPPORTED_MIMES:
+    if require_supported and mime_type not in SUPPORTED_STORAGE_MIME_TYPES:
         return None
     modified_time = getattr(
         entry, "client_modified", datetime.fromtimestamp(0, tz=timezone.utc)
