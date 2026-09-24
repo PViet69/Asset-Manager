@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pytest
 
@@ -97,7 +98,8 @@ async def test_tick_once_manually_ingests_new_provider_file() -> None:
     assert result.provider == StorageProvider.DROPBOX
     assert result.upserted == 1
     assert [trace.step for trace in result.traces] == [
-        "file_download",
+        "file_prepare",
+        "file_indexing",
         "file_ingestion",
     ]
     assert all(trace.status == "ok" for trace in result.traces)
@@ -117,21 +119,87 @@ async def test_reindex_deletes_selected_provider_identity_only() -> None:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_stop_sync_stops_file_processing_and_subsequent_sync_resets() -> None:
+async def test_stop_sync_before_preparing_is_ignored() -> None:
     client = _Client([_file("id1"), _file("id2")])
     ingestion = _Ingestion([])
     qdrant = _Qdrant([], [])
     scheduler = StorageSyncScheduler(
         StorageProvider.DROPBOX, client, "/root", ingestion, qdrant
     )  # type: ignore[arg-type]
-    scheduler.stop_sync()
-    result1 = await scheduler.tick_once()
-    assert result1.upserted == 0
-    assert any(trace.step == "sync_cancel" for trace in result1.traces)
 
-    result2 = await scheduler.tick_once()
-    assert result2.upserted == 2
-    assert not any(trace.step == "sync_cancel" for trace in result2.traces)
+    assert scheduler.stop_sync() is False
+
+    result = await scheduler.tick_once()
+
+    assert result.upserted == 2
+    assert not any(trace.step == "sync_cancel" for trace in result.traces)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_stop_sync_during_preparing_skips_file_indexing() -> None:
+    client = _Client([_file("id")])
+    ingestion = _Ingestion([])
+    scheduler = StorageSyncScheduler(
+        StorageProvider.DROPBOX, client, "/root", ingestion, _Qdrant([], [])
+    )  # type: ignore[arg-type]
+    original_download = client.download
+
+    def stop_during_preparing(storage_file_id: str) -> DownloadedStorageFile:
+        scheduler.stop_sync()
+        return original_download(storage_file_id)
+
+    client.download = stop_during_preparing
+
+    result = await scheduler.tick_once()
+
+    assert result.upserted == 0
+    assert ingestion.uploads == []
+    assert [trace.step for trace in result.traces] == [
+        "file_prepare",
+        "sync_cancel",
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_waits_one_second_between_preparing_and_indexing() -> None:
+    scheduler = StorageSyncScheduler(
+        StorageProvider.DROPBOX,
+        _Client([_file("id")]),
+        "/root",
+        _Ingestion([]),
+        _Qdrant([], []),
+    )  # type: ignore[arg-type]
+
+    with patch("backend.app.storage.scheduler.time.sleep") as sleep:
+        await scheduler.tick_once()
+
+    sleep.assert_called_once_with(1)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_stop_sync_during_indexing_finishes_current_file() -> None:
+    client = _Client([_file("id1"), _file("id2")])
+    ingestion = _Ingestion([])
+    scheduler = StorageSyncScheduler(
+        StorageProvider.DROPBOX, client, "/root", ingestion, _Qdrant([], [])
+    )  # type: ignore[arg-type]
+
+    def stop_during_indexing(trace: object) -> None:
+        if getattr(trace, "step", None) == "file_indexing":
+            assert scheduler.stop_sync() is True
+
+    result = await scheduler.tick_once(stop_during_indexing)
+
+    assert result.upserted == 1
+    assert [upload.storage_file_id for upload in ingestion.uploads] == ["id1"]
+    assert [trace.step for trace in result.traces] == [
+        "file_prepare",
+        "file_indexing",
+        "file_ingestion",
+    ]
 
 
 @pytest.mark.unit

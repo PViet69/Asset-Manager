@@ -14,6 +14,7 @@ from backend.app.api.schemas.admin import (
     AdminQdrantItemsResponse,
     AdminReindexResponse,
     AdminSyncResponse,
+    AdminSyncStopResponse,
     AdminTagDiscoveryResponse,
     AdminTagGroup,
     AdminTagGroupsResponse,
@@ -223,13 +224,14 @@ async def stream_sync(provider: str, request: Request) -> StreamingResponse:
 
 @router.post(
     "/sync/{provider}/stop",
+    response_model=AdminSyncStopResponse,
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
 )
-async def stop_sync(provider: str, request: Request) -> dict[str, str]:
+async def stop_sync(provider: str, request: Request) -> AdminSyncStopResponse:
     scheduler = _scheduler_or_503(_provider_or_404(request, provider))
-    scheduler.stop_sync()
-    return {"status": "stopping", "provider": provider}
+    status_value = "stopping" if scheduler.stop_sync() else "unavailable"
+    return AdminSyncStopResponse(status=status_value, provider=provider)
 
 
 @router.post(

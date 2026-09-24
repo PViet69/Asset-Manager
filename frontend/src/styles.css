@@ -3869,10 +3869,16 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   overflow: hidden;
   margin-top: 24px;
   padding: 20px;
-  border: 1px solid rgba(111, 137, 171, 0.16);
+  border: 1px solid rgba(59, 130, 246, 0.34);
   border-radius: 12px;
-  background: var(--admin-surface);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  background-color: #f8fbff;
+  background-image:
+    radial-gradient(circle at 8% -16%, rgba(37, 99, 235, 0.2), transparent 38%),
+    radial-gradient(circle at 92% 112%, rgba(124, 58, 237, 0.15), transparent 42%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(240, 246, 255, 0.82)),
+    radial-gradient(rgba(71, 104, 152, 0.14) 0.75px, transparent 0.9px);
+  background-size: auto, auto, auto, 15px 15px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .admin-sync-activity__header {
@@ -4010,9 +4016,15 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   background: rgba(220, 252, 231, 0.82);
 }
 
-.admin-sync-file-card--failed .admin-sync-file-card__status {
+.admin-sync-file-card--failed .admin-sync-file-card__status,
+.admin-sync-file-card--stopped .admin-sync-file-card__status {
   color: var(--admin-red);
   background: rgba(254, 226, 226, 0.82);
+}
+
+.admin-sync-file-card--stopped {
+  --sync-provider-accent: var(--admin-red);
+  --sync-provider-surface: rgba(185, 28, 28, 0.08);
 }
 
 @keyframes admin-sync-file-enter {

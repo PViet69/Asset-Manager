@@ -23,8 +23,8 @@ test("renders session sync history grouped in provider order", () => {
           { sequence: 3, provider: "dropbox", filename: null, status: "failed", detail: "File unreadable", terminal: false },
         ],
         google_drive: [
-          { sequence: 2, provider: "google_drive", filename: "campaign.pdf", status: "embedding", detail: "Creating embedding", terminal: false },
-          { sequence: 1, provider: "google_drive", filename: "archive.pdf", status: "done", detail: "Indexed", terminal: false },
+          { sequence: 2, provider: "google_drive", filename: "campaign.pdf", status: "indexing", detail: "Creating embedding", terminal: false },
+          { sequence: 1, provider: "google_drive", filename: "archive.pdf", status: "indexed", detail: "Indexed", terminal: false },
         ],
       }}
     />
@@ -32,8 +32,7 @@ test("renders session sync history grouped in provider order", () => {
 
   const panel = screen.getByRole("region", { name: "Sync activity" });
   expect(panel).toHaveAttribute("aria-live", "polite");
-  expect(panel).toHaveTextContent("Session history");
-  expect(panel).toHaveTextContent("Embedding");
+  expect(panel).toHaveTextContent("Indexing");
   expect(panel).toHaveTextContent("Indexed");
   expect(panel).toHaveTextContent("Failed");
   expect(panel).toHaveTextContent("Provider sync");
@@ -59,6 +58,24 @@ test("renders session sync history grouped in provider order", () => {
   expect(dropboxCard).toHaveTextContent("Dropbox");
   expect(dropboxCard).not.toHaveClass("admin-sync-file-card--active");
   expect(driveCard).toHaveClass("admin-sync-file-card--entering");
+});
+
+test("renders stopped activity as a red stopped card", () => {
+  render(
+    <AdminSyncActivityPanel
+      providers={providers}
+      activityByProvider={{
+        google_drive: [
+          { sequence: 1, provider: "google_drive", filename: "campaign.pdf", status: "stopped", detail: "Stopped by administrator", terminal: false },
+        ],
+      }}
+    />
+  );
+
+  const card = screen.getByRole("article", { name: "Google Drive campaign.pdf" });
+  expect(card).toHaveClass("admin-sync-file-card--stopped");
+  expect(card).not.toHaveClass("admin-sync-file-card--active");
+  expect(card).toHaveTextContent("Stopped");
 });
 
 test("renders blank activity panel before sync begins", () => {

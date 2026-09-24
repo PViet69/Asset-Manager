@@ -76,8 +76,8 @@ def test_dashboard_contract_dtos_serialize_expected_fields() -> None:
         sequence=1,
         provider=StorageProvider.GOOGLE_DRIVE,
         filename="asset.png",
-        status="loading",
-        detail="Downloading file",
+        status="preparing",
+        detail="Preparing file",
     )
     terminal = SyncTerminalEvent(
         sequence=2,

@@ -329,9 +329,9 @@ export function AdminPage(): JSX.Element {
     try {
       await deleteAdminQdrantPoint(item.point_id);
       setItemsByProvider((current) => ({ ...current, [providerId]: (current[providerId] ?? []).filter((entry) => entry.point_id !== item.point_id) }));
+      decrementProviderCoverage(providerId);
       setPendingDeletion(null);
       addToast(`Deleted embedded item "${itemName}".`, "status");
-      await loadDashboard();
     } catch (caught) {
       handleAdminError(caught, "Could not delete embedded item");
     } finally {
@@ -358,6 +358,15 @@ export function AdminPage(): JSX.Element {
     );
   }
 
+  function decrementProviderCoverage(providerId: string): void {
+    setDashboard((current) => ({
+      ...current,
+      providers: current.providers.map((provider) => provider.provider !== providerId || provider.embedded_count === null
+        ? provider
+        : { ...provider, embedded_count: Math.max(0, provider.embedded_count - 1) }),
+    }));
+  }
+
   function incrementProviderCoverage(providerId: string): void {
     setDashboard((current) => ({
       ...current,
@@ -369,8 +378,14 @@ export function AdminPage(): JSX.Element {
 
   async function syncProvider(providerId: string): Promise<void> {
     if (syncingProviders.has(providerId)) {
-      controllers.current[providerId]?.abort();
-      void stopAdminSync(providerId).catch(() => undefined);
+      try {
+        await stopAdminSync(providerId);
+        setSyncingProviders((current) => new Set(
+          [...current].filter((provider) => provider !== providerId)
+        ));
+      } catch (caught) {
+        handleAdminError(caught, "Could not stop provider sync");
+      }
       return;
     }
     const controller = new AbortController();
@@ -381,7 +396,7 @@ export function AdminPage(): JSX.Element {
     try {
       await streamAdminSync(providerId, (event) => {
         if (event.terminal) return;
-        if (event.status === "done" && event.filename && !indexedFilenames.has(event.filename)) {
+        if (event.status === "indexed" && event.filename && !indexedFilenames.has(event.filename)) {
           indexedFilenames.add(event.filename);
           incrementProviderCoverage(providerId);
         }
@@ -394,7 +409,6 @@ export function AdminPage(): JSX.Element {
           return { ...current, [providerId]: nextEvents };
         });
       }, controller.signal);
-      await loadDashboard();
     } catch (caught) {
       if (controller.signal.aborted) {
         return;

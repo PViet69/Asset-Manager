@@ -170,6 +170,16 @@ test("keeps sync activity panel static", () => {
   expect(stylesheet).not.toContain("@keyframes admin-sync-activity-enter");
 });
 
+test("uses a visible layered border for sync activity", () => {
+  const stylesheet = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+  const activityStart = stylesheet.indexOf(".admin-sync-activity {");
+  const activityEnd = stylesheet.indexOf(".admin-sync-activity__header {");
+  const activityStyles = stylesheet.slice(activityStart, activityEnd);
+
+  expect(activityStyles).toContain("border: 1px solid rgba(59, 130, 246, 0.34);");
+  expect(activityStyles).toContain("inset 0 0 0 1px rgba(255, 255, 255, 0.72)");
+});
+
 test("uses opaque surfaces instead of backdrop blur for dashboard cards", () => {
   // Arrange
   const stylesheet = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
@@ -346,13 +356,28 @@ test("shows model unavailable dialog when provider sync is rejected", async () =
   expect(screen.getByRole("alert")).toHaveTextContent("Model not found");
 });
 
+test("does not reload dashboard after sync completes", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedStreamAdminSync.mockResolvedValue(undefined);
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
+
+  await waitFor(() => {
+    expect(mockedStreamAdminSync).toHaveBeenCalledOnce();
+    expect(mockedGetAdminSyncStatus).toHaveBeenCalledOnce();
+  });
+});
+
 test("shows session sync activity only on the providers tab", async () => {
   const user = userEvent.setup();
   let emitEvent: ((event: SyncEvent) => void) | undefined;
   let resolveStream: (() => void) | undefined;
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
   mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
-  vi.mocked(stopAdminSync).mockResolvedValue({ status: "stopped", provider: "google_drive" });
+  vi.mocked(stopAdminSync).mockResolvedValue({ status: "stopping", provider: "google_drive" });
   mockedStreamAdminSync.mockImplementation(async (_provider, onEvent) => {
     emitEvent = onEvent;
     await new Promise<void>((resolve) => {
@@ -363,7 +388,7 @@ test("shows session sync activity only on the providers tab", async () => {
   render(<AdminPage />);
   await user.click(await screen.findByRole("button", { name: "Providers" }));
   await user.click(screen.getByRole("button", { name: "Sync Google Drive" }));
-  emitEvent?.({ sequence: 1, provider: "google_drive", filename: "campaign.pdf", status: "loading", detail: "Preparing file", terminal: false });
+  emitEvent?.({ sequence: 1, provider: "google_drive", filename: "campaign.pdf", status: "preparing", detail: "Preparing file", terminal: false });
 
   expect(await screen.findByRole("region", { name: "Sync activity" })).toHaveTextContent("campaign.pdf");
   const activityCard = screen.getByRole("article", { name: "Google Drive campaign.pdf" });
@@ -377,7 +402,12 @@ test("shows session sync activity only on the providers tab", async () => {
   expect(stopButton).toBeEnabled();
 
   await user.click(stopButton);
+  expect(vi.mocked(stopAdminSync)).toHaveBeenCalledWith("google_drive");
+  expect(await screen.findByRole("button", { name: "Sync Google Drive" })).toBeEnabled();
   expect(screen.getByRole("region", { name: "Sync activity" })).toHaveTextContent("campaign.pdf");
+
+  emitEvent?.({ sequence: 2, provider: "google_drive", filename: "campaign.pdf", status: "indexing", detail: "Indexing file", terminal: false });
+  expect(screen.getByRole("button", { name: "Sync Google Drive" })).toBeEnabled();
 
   await user.click(screen.getByRole("button", { name: "Overview" }));
   expect(screen.queryByRole("region", { name: "Sync activity" })).not.toBeInTheDocument();
@@ -437,6 +467,33 @@ test("does not show provider search filters in the admin dashboard", async () =>
   await screen.findByRole("region", { name: "Storage providers" });
 
   expect(screen.queryByLabelText("Sort by")).not.toBeInTheDocument();
+});
+
+test("updates provider count after each embedded item deletion without refreshing dashboard", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedGetAdminProviderItems.mockResolvedValue({
+    provider: "google_drive",
+    items: [
+      { point_id: "point-1", filename: "first.pdf" },
+      { point_id: "point-2", filename: "second.pdf" },
+    ],
+  });
+  mockedDeleteAdminQdrantPoint.mockImplementation(async (pointId) => ({ point_id: pointId, deleted: 1 }));
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "View embedded items for Google Drive" }));
+
+  await user.click(await screen.findByRole("button", { name: "Delete first.pdf" }));
+  await user.click(screen.getByRole("button", { name: "Remove source" }));
+  expect(await screen.findByText("17 / 20")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Delete second.pdf" }));
+  await user.click(screen.getByRole("button", { name: "Remove source" }));
+
+  expect(await screen.findByText("16 / 20")).toBeInTheDocument();
+  expect(mockedGetAdminSyncStatus).toHaveBeenCalledOnce();
 });
 
 test("closes embedded items dialog with Escape", async () => {

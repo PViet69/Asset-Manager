@@ -65,7 +65,7 @@ test("hides percentage and embedded numbers and labels while refreshing", () => 
   expect(card.querySelector(".admin-provider-card__metric span")).toHaveTextContent("");
 });
 
-test("keeps syncing card compact with status and stop action", () => {
+test("enables stop while provider prepares or indexes a file", () => {
   renderCard({ isSyncing: true });
 
   const card = screen.getByRole("article", { name: "Google Drive provider" });

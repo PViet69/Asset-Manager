@@ -26,6 +26,15 @@ class AdminSyncResponse(BaseModel):
     traces: list[SyncTraceItem] = Field(default_factory=list)
 
 
+class AdminSyncStopResponse(BaseModel):
+    """Provider sync stop request result."""
+
+    model_config = ConfigDict(frozen=True)
+
+    provider: str
+    status: str
+
+
 class ProviderSyncStatus(BaseModel):
     model_config = ConfigDict(frozen=True)
 

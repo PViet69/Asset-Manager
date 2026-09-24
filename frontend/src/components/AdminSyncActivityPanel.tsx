@@ -10,9 +10,10 @@ export interface AdminSyncActivityPanelProps {
 }
 
 function eventLabel(status: SyncActivityEvent["status"]): string {
-  if (status === "embedding") return "Embedding";
-  if (status === "done") return "Indexed";
+  if (status === "indexing") return "Indexing";
+  if (status === "indexed") return "Indexed";
   if (status === "failed") return "Failed";
+  if (status === "stopped") return "Stopped";
   return "Preparing";
 }
 
@@ -29,7 +30,7 @@ function providerClassName(provider: string): string {
 }
 
 function isActive(status: SyncActivityEvent["status"]): boolean {
-  return status === "loading" || status === "embedding";
+  return status === "preparing" || status === "indexing";
 }
 
 export function AdminSyncActivityPanel({
@@ -44,7 +45,6 @@ export function AdminSyncActivityPanel({
     <section className="admin-sync-activity" aria-label="Sync activity" aria-live="polite" aria-atomic="false">
       <header className="admin-sync-activity__header">
         <div>
-          <p>Session history</p>
           <h2>Sync activity</h2>
         </div>
       </header>
