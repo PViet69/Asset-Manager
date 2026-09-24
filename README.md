@@ -1,15 +1,19 @@
 # OpenAI-Compatible File Embeddings
 
-FastAPI service that accepts PNG, JPEG, and WEBP uploads, runs every image through a configurable vision-language model that returns a structured image description, embeds that description through a configured text-embedding model, and stores resulting vectors in Qdrant. Points store filename, MIME type, and description text for vector search. Raw vectors are never returned.
+FastAPI service that embeds manually uploaded images and provider-synced images or videos for semantic search. Images use a configurable vision-language model; provider videos use configurable Google Gen AI Files API model. Both produce shared structured `ImageDescription` text, embed through configured text-embedding model, and store vectors in Qdrant. Points store filename, MIME type, and description text. Raw vectors never return.
 
 ## Pipeline at a glance
 
 ```
-upload ─▶ byte-level image detection ─▶ structured description ─▶ formatted text ─▶ text embedding ─▶ Qdrant
+manual image upload ─▶ byte-level image detection ─▶ structured description ─▶ formatted text ─▶ text embedding ─▶ Qdrant
+provider image sync ─▶ download to RAM ─▶ structured description ─▶ formatted text ─▶ text embedding ─▶ Qdrant
+provider video sync ─▶ download to RAM ─▶ Google Gen AI Files API ─▶ structured description ─▶ formatted text ─▶ text embedding ─▶ Qdrant
 ```
 
-- Images (PNG/JPEG/WEBP) are sent to `DESCRIPTION_MODEL` via Instructor (JSON mode) and validated into a Pydantic `ImageDescription`. Description converts into deterministic multi-section text then embeds through `EMBEDDING_MODEL`.
-- All vectors represent images in one shared collection.
+- Images (PNG/JPEG/WEBP) use `DESCRIPTION_MODEL` via Instructor JSON mode and validate into Pydantic `ImageDescription`.
+- Provider videos (MP4/MOV/WebM) upload temporary in-memory bytes to configured `VIDEO_MODEL`, wait for processing, then validate output into same `ImageDescription`. Temporary Google Gen AI file deletes after each attempt.
+- Both descriptions convert into deterministic multi-section text, then embed through `EMBEDDING_MODEL` into one shared collection.
+- Manual `/v1/file-embeddings` uploads remain image-only; video support runs only during Google Drive or Dropbox sync.
 
 ## Local development
 
@@ -44,7 +48,9 @@ uv run uvicorn backend.app.main:create_app --factory --reload
 | `DESCRIPTION_MODEL` | Yes | None | Vision-language model used to generate structured image descriptions (PNG/JPEG/WEBP). |
 | `DESCRIPTION_ENDPOINT_URL` | Yes | None | OpenAI-compatible base URL for the description model. May differ from `MODEL_ENDPOINT_URL`. |
 | `DESCRIPTION_ENDPOINT_API_KEY` | No | Empty | Description endpoint API key. |
-| `EMBEDDING_MODEL` | Yes | None | Text-embedding model used for image description text. |
+| `VIDEO_MODEL` | No* | None | Google Gen AI model used only for provider-synced MP4, MOV, and WebM descriptions. Must be configured with `VIDEO_MODEL_API_KEY`. |
+| `VIDEO_MODEL_API_KEY` | No* | Empty | Google Gen AI API key for `VIDEO_MODEL`. Must be configured with `VIDEO_MODEL`. |
+| `EMBEDDING_MODEL` | Yes | None | Text-embedding model used for asset description text. |
 | `ADMIN_USERNAME` | Yes | None | Username for sole administrator account. |
 | `ADMIN_PASSWORD_HASH` | Yes | None | Argon2id hash for administrator password. |
 | `ADMIN_SESSION_SECRET` | Yes | None | Secret used to sign administrator session cookies. |
@@ -62,7 +68,9 @@ uv run uvicorn backend.app.main:create_app --factory --reload
 | `DROPBOX_REFRESH_TOKEN` | No | Empty | Dropbox offline refresh token. |
 | `DROPBOX_ROOT_PATH` | No | Empty | Dropbox source folder path, such as `/team-assets`. |
 
-Google Drive and Dropbox are registered in backend code. Configure each source independently; no `STORAGE_PROVIDER` selector exists, and no sync runs until an administrator selects that provider in `/admin`.
+`VIDEO_MODEL` and `VIDEO_MODEL_API_KEY` are optional together. Set neither to disable provider-video embedding; setting only one prevents startup. Video processing has no model default.
+
+Google Drive and Dropbox are registered in backend code. Configure each source independently; no `STORAGE_PROVIDER` selector exists, and no sync runs until administrator selects provider in `/admin`. Sync recognizes provider MIME metadata for Drive and `.mp4`, `.mov`, or `.webm` extensions for Dropbox. Provider videos over 200 MiB reject before download; no duration limit applies.
 
 At startup, the app checks the configured Qdrant collection and creates it when missing using the configured vector size and distance metric.
 
@@ -118,8 +126,11 @@ Public items contain filename, content type, status (`success` or `failed`), and
 
 Type detection uses file bytes through `python-magic`; filename extensions do not determine type.
 
-- Images: PNG, JPEG, WEBP — routed through description pipeline
+- Manual uploads: PNG, JPEG, WEBP — routed through image description pipeline.
+- Provider sync: PNG, JPEG, WEBP, MP4, MOV, WEBM — provider videos use configured `VIDEO_MODEL`.
 - Text and PDF files are unsupported.
+
+Provider-video processing downloads private provider bytes into process RAM only. App uploads them to temporary Google Gen AI Files API object, deletes object after processing, and does not write video files to local disk.
 
 ### Limits and errors
 
@@ -193,9 +204,10 @@ Set `ADMIN_ALLOWED_ORIGIN` to exact public frontend origin without path, query, 
 
 ## Privacy
 
-- Image bytes leave the app only as part of the description request to `MODEL_ENDPOINT_URL`.
-- Image descriptions are persisted as Qdrant point payloads (alongside the upload filename and MIME type) so search results can surface them.
-- Text/PDF vectors are stored without payloads.
+- Image bytes leave app only as description request to configured image model endpoint.
+- Provider-video bytes leave app only as temporary Google Gen AI Files API upload for configured `VIDEO_MODEL`; temporary remote file deletes after processing.
+- Provider asset descriptions persist in Qdrant payloads alongside provider identity, filename, MIME type, and source URL so search results can surface them.
+- Manually uploaded image vectors store no payload.
 - API responses never expose raw vectors, API keys, tracebacks, or local paths.
 
 ## Security
