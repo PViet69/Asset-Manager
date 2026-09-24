@@ -23,14 +23,17 @@ from backend.app.exceptions import (
     SettingsError,
 )
 from backend.app.file_processing.service import process_file
-from backend.app.file_processing.types import ProcessedInput
 from backend.app.integrations.model_client import ModelClient
 from backend.app.integrations.qdrant_store import (
     QdrantStore,
     SearchHit,
     stable_point_id,
 )
-from backend.app.model.description_client import ImageDescriptionClient
+from backend.app.model.description_client import AssetDescriptionClient
+from backend.app.model.video_description_client import (
+    SUPPORTED_VIDEO_MIME_TYPES,
+    VideoModelClient,
+)
 from backend.app.storage.thumbnail_service import (
     SUPPORTED_THUMBNAIL_MIME_TYPES,
     IndexedThumbnailSource,
@@ -70,15 +73,17 @@ class FileIngestionService:
 
     def __init__(
         self,
-        description_client: ImageDescriptionClient,
+        asset_description_client: AssetDescriptionClient,
         model_client: ModelClient,
         qdrant_store: QdrantStore,
         settings: Settings | None = None,
+        video_model_client: VideoModelClient | None = None,
     ) -> None:
-        self._description_client = description_client
+        self._asset_description_client = asset_description_client
         self._model_client = model_client
         self._qdrant_store = qdrant_store
         self._settings = settings
+        self._video_model_client = video_model_client
 
     @property
     def embedding_model(self) -> str:
@@ -212,12 +217,7 @@ class FileIngestionService:
 
     def _process_one(self, file: FileUpload) -> FileEmbeddingItem:
         try:
-            processed = process_file(
-                file.content,
-                file.filename,
-                file.content_type,
-            )
-            embedding_text = self._to_embedding_text(processed)
+            embedding_text = self._to_embedding_text(file)
             vector = self._model_client.embed_text(embedding_text)
             payload = None
             point_id = None
@@ -271,6 +271,17 @@ class FileIngestionService:
             reason=None,
         )
 
-    def _to_embedding_text(self, processed: ProcessedInput) -> str:
-        """Describe validated image bytes for embedding."""
-        return self._description_client.describe(processed.value).to_embedding_text()
+    def _to_embedding_text(self, file: FileUpload) -> str:
+        """Describe a provider asset for semantic retrieval."""
+        if file.content_type in SUPPORTED_VIDEO_MIME_TYPES:
+            if file.provider is None:
+                raise FileProcessingError("Unsupported file type")
+            if self._video_model_client is None:
+                raise ModelEndpointError("Video model is not configured")
+            return self._video_model_client.describe(
+                file.content, file.content_type
+            ).to_embedding_text()
+        processed = process_file(file.content, file.filename, file.content_type)
+        return self._asset_description_client.describe(
+            processed.value
+        ).to_embedding_text()

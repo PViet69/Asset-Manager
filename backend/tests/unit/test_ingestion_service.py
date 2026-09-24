@@ -19,8 +19,9 @@ from backend.app.file_embeddings.ingestion_service import (
     FileUpload,
 )
 from backend.app.file_processing.types import ProcessedInput
-from backend.app.integrations.qdrant_store import SearchHit
+from backend.app.integrations.qdrant_store import SearchHit, stable_point_id
 from backend.app.model.prompt_model import ImageDescription
+from backend.app.model.video_description_client import VideoModelClient
 from backend.app.storage import StorageProvider
 
 
@@ -110,8 +111,8 @@ def make_video_description(
 
 
 @pytest.mark.unit
-def test_merges_image_descriptions_with_ordered_deduplication() -> None:
-    first = make_video_description(
+def test_image_description_formats_retrieval_text() -> None:
+    description = make_video_description(
         subjects=("human", "electronics"),
         actions=("speaking",),
         setting=("studio",),
@@ -120,24 +121,15 @@ def test_merges_image_descriptions_with_ordered_deduplication() -> None:
         visible_text=("Asset Tracker",),
         angles=("frontal",),
     )
-    second = make_video_description(
-        subjects=("electronics", "product", "human"),
-        actions=("working",),
-        setting=("studio", "office"),
-        colors=("blue", "white"),
-        style=("photo", "real life"),
-        visible_text=("asset tracker",),
-        angles=("side",),
-    )
 
-    assert merge_image_descriptions((first, second)) == make_video_description(
-        subjects=("human", "electronics", "product"),
-        actions=("speaking", "working"),
-        setting=("studio", "office"),
-        colors=("blue", "white"),
-        style=("photo", "real life"),
-        visible_text=("Asset Tracker",),
-        angles=("frontal", "side"),
+    assert description.to_embedding_text() == (
+        "Subjects: human, electronics\n"
+        "Actions: speaking\n"
+        "Setting: studio\n"
+        "Colors: blue\n"
+        "Style: photo\n"
+        "Visible text: Asset Tracker\n"
+        "Angles: frontal"
     )
 
 
@@ -181,6 +173,55 @@ def test_file_upload_requires_complete_provider_source_identity(
 
 
 @pytest.mark.unit
+def test_manual_video_remains_unsupported_when_video_model_is_configured() -> None:
+    asset_description_client = Mock()
+    video_model_client = Mock(spec=VideoModelClient)
+    service = FileIngestionService(
+        asset_description_client,
+        Mock(),
+        Mock(),
+        video_model_client=video_model_client,
+    )
+
+    response = service.process_files(
+        (make_upload("manual.mp4", "video/mp4", b"video", "manual.mp4"),)
+    )
+
+    assert response.data[0].status == "failed"
+    assert response.data[0].reason == "Unsupported file type"
+    asset_description_client.describe.assert_not_called()
+    video_model_client.describe.assert_not_called()
+
+
+@pytest.mark.unit
+def test_provider_video_uses_video_model_client_and_stores_stable_point() -> None:
+    asset_description_client = Mock()
+    video_model_client = Mock(spec=VideoModelClient)
+    video_model_client.describe.return_value = make_description()
+    model_client = Mock()
+    model_client.embed_text.return_value = [0.4]
+    qdrant_store = Mock()
+    service = FileIngestionService(
+        asset_description_client,
+        model_client,
+        qdrant_store,
+        video_model_client=video_model_client,
+    )
+    upload = make_storage_upload("demo.mp4", "video/mp4", b"video", "demo.mp4")
+
+    response = service.process_files((upload,))
+
+    assert response.data[0].status == "success"
+    asset_description_client.describe.assert_not_called()
+    video_model_client.describe.assert_called_once_with(b"video", "video/mp4")
+    qdrant_store.store_embedding.assert_called_once_with(
+        [0.4],
+        payload=ANY,
+        point_id=stable_point_id(StorageProvider.GOOGLE_DRIVE, "drive-id-1"),
+    )
+
+
+@pytest.mark.unit
 def test_embed_text_uses_configured_embedding_client_without_storage() -> None:
     service, description_client, model_client, qdrant_store = make_service()
     model_client.embed_text.return_value = [0.7]
@@ -193,9 +234,7 @@ def test_embed_text_uses_configured_embedding_client_without_storage() -> None:
 
 
 @pytest.mark.unit
-def test_description_error_is_safe_for_each_image_and_later_images_continue_in_order() -> (
-    None
-):
+def test_description_error_keeps_later_images_in_order() -> None:
     service, description_client, model_client, qdrant_store = make_service()
     description_client.describe.side_effect = (
         ModelEndpointError("Model endpoint failed to describe image"),
@@ -431,7 +470,7 @@ def test_search_thumbnail_url_requires_image_type_and_complete_source_identity(
 def test_search_returns_stored_source_metadata() -> None:
     service, _, model_client, qdrant_store = make_service()
     service_with_settings = FileIngestionService(
-        service._description_client,
+        service._asset_description_client,
         model_client,
         qdrant_store,
         settings=make_settings(0.2),
@@ -464,7 +503,7 @@ def test_search_returns_stored_source_metadata() -> None:
 def test_search_embeds_query_and_maps_hits() -> None:
     service, _, model_client, qdrant_store = make_service()
     service_with_settings = FileIngestionService(
-        service._description_client,
+        service._asset_description_client,
         model_client,
         qdrant_store,
         settings=make_settings(0.2),
@@ -513,7 +552,7 @@ def test_search_embeds_query_and_maps_hits() -> None:
 def test_semantic_search_skips_embedding_when_model_is_unavailable() -> None:
     service, _, model_client, qdrant_store = make_service()
     service_with_settings = FileIngestionService(
-        service._description_client,
+        service._asset_description_client,
         model_client,
         qdrant_store,
         settings=make_settings(0.2),
@@ -532,7 +571,7 @@ def test_semantic_search_skips_embedding_when_model_is_unavailable() -> None:
 def test_semantic_search_passes_tags_to_store_before_scoring() -> None:
     service, _, model_client, qdrant_store = make_service()
     service_with_settings = FileIngestionService(
-        service._description_client,
+        service._asset_description_client,
         model_client,
         qdrant_store,
         settings=make_settings(0.2),
@@ -540,9 +579,7 @@ def test_semantic_search_passes_tags_to_store_before_scoring() -> None:
     model_client.embed_text.return_value = [0.7]
     qdrant_store.search.return_value = []
 
-    service_with_settings.search(
-        "red car", limit=5, tags=["subject:car", "color:red"]
-    )
+    service_with_settings.search("red car", limit=5, tags=["subject:car", "color:red"])
 
     qdrant_store.search.assert_called_once_with(
         [0.7],

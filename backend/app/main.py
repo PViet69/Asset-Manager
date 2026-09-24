@@ -28,7 +28,8 @@ from backend.app.config import AdminAuthSettings, Settings
 from backend.app.file_embeddings.ingestion_service import FileIngestionService
 from backend.app.integrations.model_client import OpenAICompatibleModelClient
 from backend.app.integrations.qdrant_store import QdrantEmbeddingStore
-from backend.app.model.description_client import InstructorImageDescriptionClient
+from backend.app.model.description_client import InstructorAssetDescriptionClient
+from backend.app.model.video_description_client import VideoModelDescriptionClient
 from backend.app.security import (
     AdminLoginRateLimiter,
     InMemoryRateLimiter,
@@ -78,21 +79,30 @@ def create_app(
 
         if effective_service is None:
             assert settings is not None
-            description_client = InstructorImageDescriptionClient(
+            description_client = InstructorAssetDescriptionClient(
                 endpoint_url=settings.DESCRIPTION_ENDPOINT_URL or "",
                 endpoint_api_key=settings.DESCRIPTION_ENDPOINT_API_KEY,
                 description_model=settings.DESCRIPTION_MODEL,
                 timeout=settings.MODEL_REQUEST_TIMEOUT,
+            )
+            video_model_client = (
+                VideoModelDescriptionClient(
+                    api_key=settings.VIDEO_MODEL_API_KEY or "",
+                    model_name=settings.VIDEO_MODEL or "",
+                )
+                if settings.has_video_model
+                else None
             )
             model_client = OpenAICompatibleModelClient(settings)
             qdrant_store = QdrantEmbeddingStore(settings)
             if effective_tag_settings_store is None:
                 effective_tag_settings_store = TagSettingsStore.from_settings(settings)
             effective_service = FileIngestionService(
-                description_client=description_client,
+                asset_description_client=description_client,
                 model_client=model_client,
                 qdrant_store=qdrant_store,
                 settings=settings,
+                video_model_client=video_model_client,
             )
             if effective_health_dependencies is None:
                 effective_health_dependencies = HealthDependencies(
