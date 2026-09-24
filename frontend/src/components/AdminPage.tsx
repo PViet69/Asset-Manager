@@ -105,8 +105,8 @@ export function AdminPage(): JSX.Element {
   const addToast = useCallback((message: string, type: Toast["type"]): void => {
     const id = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
     setToasts((current) => [...current, { id, type, message }]);
-    window.setTimeout(() => setToasts((current) => current.map((toast) => toast.id === id ? { ...toast, isDismissing: true } : toast)), 4500);
-    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 4900);
+    window.setTimeout(() => setToasts((current) => current.map((toast) => toast.id === id ? { ...toast, isDismissing: true } : toast)), 1700);
+    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 2000);
   }, []);
 
   function clearSession(): void {

@@ -4081,6 +4081,43 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
+.admin-confirmation-modal {
+  width: min(100%, 440px);
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 12px;
+  color: var(--admin-text);
+  background: var(--admin-surface);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.admin-confirmation-modal__eyebrow {
+  margin: 0 0 6px;
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.admin-confirmation-modal h2 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.admin-confirmation-modal > p:not(.admin-confirmation-modal__eyebrow) {
+  margin: 10px 0 0;
+  color: var(--admin-muted);
+}
+
+.admin-confirmation-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
 .admin-items-modal__header {
   display: flex;
   align-items: center;
@@ -4767,8 +4804,55 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
 .admin-login-submit:hover:not(:disabled) { background: linear-gradient(135deg, #475569, #334155); transform: translateY(-1px); }
 .admin-login-submit:focus-visible { outline: 3px solid rgba(37, 99, 235, 0.35); outline-offset: 3px; }
 .admin-login-footer { margin: 22px 0 0; color: var(--admin-muted); font-size: 11px; text-align: center; }
-.admin-login-card .admin-toast-list { margin-top: 18px; }
+.admin-toast-list {
+  position: fixed;
+  z-index: 40;
+  top: 20px;
+  right: 20px;
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 40px));
+  pointer-events: none;
+}
+
+.admin-toast {
+  padding: 13px 16px;
+  border: 1px solid rgba(220, 38, 38, 0.28);
+  border-left: 4px solid var(--admin-red);
+  border-radius: 10px;
+  color: #991b1b;
+  background: #fff1f2;
+  box-shadow: 0 14px 32px rgba(127, 29, 29, 0.16);
+  font-size: 13px;
+  font-weight: 650;
+  animation: admin-toast-enter 180ms ease-out both;
+}
+
+.admin-toast--error {
+  border-color: rgba(220, 38, 38, 0.32);
+}
+
+.admin-toast--dismissing {
+  animation: admin-toast-exit 300ms ease-in both;
+}
+
+@keyframes admin-toast-enter {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes admin-toast-exit {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(20px); }
+}
+
+.admin-login-card .admin-toast-list { position: static; width: auto; margin-top: 18px; }
 .admin-login-card .admin-toast-list:empty { display: none; margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-toast,
+  .admin-toast--dismissing { animation: none; }
+}
 .admin-login-orbit { display: none; }
 
 @media (max-width: 760px) {
