@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Request, status
 from backend.app.api.schemas.health import HealthResponse, ProviderHealth
 from backend.app.integrations.model_client import ModelClient
 from backend.app.integrations.qdrant_store import QdrantStore
-from backend.app.model.description_client import ImageDescriptionClient
+from backend.app.model.description_client import AssetDescriptionClient
 from backend.app.storage.registry import ProviderRegistry
 
 router = APIRouter()
@@ -17,7 +17,7 @@ router = APIRouter()
 class HealthDependencies:
     """Dependencies used by the health check."""
 
-    description_client: ImageDescriptionClient
+    description_client: AssetDescriptionClient
     model_client: ModelClient
     qdrant_store: QdrantStore
 

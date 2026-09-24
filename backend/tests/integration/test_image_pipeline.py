@@ -7,7 +7,7 @@ import pytest
 
 from backend.app.exceptions import ModelEndpointError
 from backend.app.model.description_client import (
-    InstructorImageDescriptionClient,
+    InstructorAssetDescriptionClient,
 )
 from backend.app.model.prompt_model import ImageDescription
 from openai import OpenAI
@@ -61,7 +61,7 @@ def test_real_image_description_produces_validated_structured_output(
     description_model_name: str,
     small_png_bytes: bytes,
 ) -> None:
-    client = InstructorImageDescriptionClient.from_client(
+    client = InstructorAssetDescriptionClient.from_client(
         OpenAI(
             base_url=model_endpoint_url,
             api_key=os.environ.get("MODEL_ENDPOINT_API_KEY") or "not-needed",
@@ -84,7 +84,7 @@ def test_real_image_description_health_reports_configured_model_availability(
     model_endpoint_url: str,
     description_model_name: str,
 ) -> None:
-    client = InstructorImageDescriptionClient.from_client(
+    client = InstructorAssetDescriptionClient.from_client(
         OpenAI(
             base_url=model_endpoint_url,
             api_key=os.environ.get("MODEL_ENDPOINT_API_KEY") or "not-needed",
@@ -103,7 +103,7 @@ def test_real_image_description_rejects_non_image_bytes(
     model_endpoint_url: str,
     description_model_name: str,
 ) -> None:
-    client = InstructorImageDescriptionClient.from_client(
+    client = InstructorAssetDescriptionClient.from_client(
         OpenAI(
             base_url=model_endpoint_url,
             api_key=os.environ.get("MODEL_ENDPOINT_API_KEY") or "not-needed",

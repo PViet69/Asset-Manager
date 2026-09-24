@@ -24,7 +24,7 @@ SUPPORTED_IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"}
 MAX_DESCRIPTION_RETRIES = 0
 
 
-class ImageDescriptionClient(Protocol):
+class AssetDescriptionClient(Protocol):
     """Boundary for converting validated image bytes into structured text."""
 
     @property
@@ -48,8 +48,8 @@ def _failure_detail(exc: Exception) -> str:
     return str(exc)
 
 
-class InstructorImageDescriptionClient:
-    """ImageDescriptionClient backed by Instructor and OpenAI SDK."""
+class InstructorAssetDescriptionClient:
+    """AssetDescriptionClient backed by Instructor and OpenAI SDK."""
 
     def __init__(
         self,
@@ -77,7 +77,7 @@ class InstructorImageDescriptionClient:
         cls,
         client: OpenAI,
         description_model: str,
-    ) -> "InstructorImageDescriptionClient":
+    ) -> "InstructorAssetDescriptionClient":
         """Construct around a pre-built SDK client for isolated tests."""
         instance = cls.__new__(cls)
         instance._sdk_client = client
