@@ -11,7 +11,7 @@ provider video sync ─▶ download to RAM ─▶ Google Gen AI Files API ─▶
 ```
 
 - Images (PNG/JPEG/WEBP) use `DESCRIPTION_MODEL` via Instructor JSON mode and validate into Pydantic `ImageDescription`.
-- Provider videos (MP4/MOV/WebM) upload temporary in-memory bytes to configured `VIDEO_MODEL`, wait for processing, then validate output into same `ImageDescription`. Temporary Google Gen AI file deletes after each attempt.
+- Provider videos (MP4/MOV/WebM) upload temporary in-memory bytes to configured `VIDEO_MODEL`, wait for processing, then validate output into same `ImageDescription`. Unlike images, whole-video analysis requires Google Gen AI Files API because video can be up to 200 MiB and needs Google-side media preparation; a base64 inline request would be roughly 33% larger and can exceed request or processing limits. Temporary Google Gen AI file deletes after each attempt.
 - Both descriptions convert into deterministic multi-section text, then embed through `EMBEDDING_MODEL` into one shared collection.
 - Manual `/v1/file-embeddings` uploads remain image-only; video support runs only during Google Drive or Dropbox sync.
 
