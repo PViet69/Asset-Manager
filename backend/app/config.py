@@ -77,6 +77,13 @@ class Settings(AdminAuthSettings):
     DROPBOX_REFRESH_TOKEN: str | None = None
     DROPBOX_ROOT_PATH: str | None = None
 
+    CELERY_BROKER_URL: str = "redis://redis:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://redis:6379/1"
+    CELERY_WORKER_CONCURRENCY: int = Field(default=4, gt=0, le=32)
+    CELERY_RESULT_EXPIRES_SECONDS: int = Field(default=24 * 60 * 60, gt=0)
+    CELERY_TASK_SOFT_TIME_LIMIT_SECONDS: int = Field(default=3_300, gt=0)
+    CELERY_TASK_TIME_LIMIT_SECONDS: int = Field(default=3_600, gt=0)
+
     @property
     def has_video_model(self) -> bool:
         """Return whether complete video-model configuration is available."""
@@ -96,6 +103,14 @@ class Settings(AdminAuthSettings):
             joined = " and ".join(missing)
             raise ValueError(
                 f"{joined} must be set when DESCRIPTION_MODEL is configured"
+            )
+        if (
+            self.CELERY_TASK_SOFT_TIME_LIMIT_SECONDS
+            >= self.CELERY_TASK_TIME_LIMIT_SECONDS
+        ):
+            raise ValueError(
+                "CELERY_TASK_SOFT_TIME_LIMIT_SECONDS must be less than "
+                "CELERY_TASK_TIME_LIMIT_SECONDS"
             )
         video_values = (self.VIDEO_MODEL, self.VIDEO_MODEL_API_KEY)
         if any(value is not None for value in video_values) and not all(video_values):
