@@ -571,13 +571,16 @@ def test_default_tag_settings_store_uses_application_settings(
     with (
         patch("backend.app.main.Settings", return_value=settings),
         patch(
-            "backend.app.main.TagSettingsStore.from_settings",
+            "backend.app.services.runtime.TagSettingsStore.from_settings",
             return_value=tag_settings_store,
         ) as factory,
-        patch("backend.app.main.InstructorAssetDescriptionClient"),
-        patch("backend.app.main.OpenAICompatibleModelClient"),
-        patch("backend.app.main.QdrantEmbeddingStore"),
-        patch("backend.app.main.build_provider_registry", return_value=Mock()),
+        patch("backend.app.services.runtime.InstructorAssetDescriptionClient"),
+        patch("backend.app.services.runtime.OpenAICompatibleModelClient"),
+        patch("backend.app.services.runtime.QdrantEmbeddingStore"),
+        patch(
+            "backend.app.services.runtime.build_provider_registry",
+            return_value=Mock(),
+        ),
     ):
         with TestClient(create_app()):
             pass

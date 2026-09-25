@@ -2,10 +2,10 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
+from openai import APIConnectionError, APIError, APITimeoutError, NotFoundError
 
 from backend.app.exceptions import ModelEndpointError, ModelNotFoundError
 from backend.app.integrations.model_client import OpenAICompatibleModelClient
-from openai import APIConnectionError, APIError, APITimeoutError, NotFoundError
 
 
 def make_client(sdk: Mock) -> OpenAICompatibleModelClient:
