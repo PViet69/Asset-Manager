@@ -76,10 +76,13 @@ def _build_scheduler(
     is_configured: bool,
     ingestion_service: FileIngestionService,
     qdrant_store: QdrantStore,
+    concurrency: int = 4,
 ) -> StorageSyncScheduler | None:
     if not is_configured or root is None:
         return None
-    return StorageSyncScheduler(provider, client, root, ingestion_service, qdrant_store)
+    return StorageSyncScheduler(
+        provider, client, root, ingestion_service, qdrant_store, concurrency=concurrency
+    )
 
 
 def build_provider_registry(
@@ -89,6 +92,7 @@ def build_provider_registry(
 ) -> ProviderRegistry:
     drive_client = build_google_drive_client(settings)
     dropbox_client = build_dropbox_client(settings)
+    file_concurrency = getattr(settings, "SYNC_FILE_CONCURRENCY", 4)
     entries = (
         ProviderSync(
             StorageProvider.GOOGLE_DRIVE,
@@ -101,6 +105,7 @@ def build_provider_registry(
                 is_google_drive_configured(settings),
                 ingestion_service,
                 qdrant_store,
+                concurrency=file_concurrency,
             ),
             settings.DRIVE_FOLDER_ID,
         ),
@@ -115,6 +120,7 @@ def build_provider_registry(
                 is_dropbox_configured(settings),
                 ingestion_service,
                 qdrant_store,
+                concurrency=file_concurrency,
             ),
             settings.DROPBOX_ROOT_PATH,
         ),

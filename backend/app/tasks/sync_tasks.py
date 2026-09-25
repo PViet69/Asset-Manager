@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import threading
 from collections.abc import Callable
 from typing import Protocol
 
@@ -164,19 +165,21 @@ def sync_provider(self: Task, provider: str) -> SyncJobProgress:
         ),
     )
     next_sequence = previous_activity[-1]["sequence"] + 1 if previous_activity else 1
+    observe_lock = threading.Lock()
 
     def observe(trace: SyncTraceItem) -> None:
         nonlocal next_sequence
-        activity = activity_from_trace(trace, next_sequence)
-        if activity is None:
-            return
-        next_sequence += 1
-        try:
-            store.append_activity(job_id, activity)
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "Could not persist sync activity", extra={"job_id": job_id}
-            )
+        with observe_lock:
+            activity = activity_from_trace(trace, next_sequence)
+            if activity is None:
+                return
+            next_sequence += 1
+            try:
+                store.append_activity(job_id, activity)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "Could not persist sync activity", extra={"job_id": job_id}
+                )
 
     try:
         dependencies = build_runtime_dependencies(settings)
