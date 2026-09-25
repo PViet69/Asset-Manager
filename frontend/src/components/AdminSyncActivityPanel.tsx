@@ -17,6 +17,19 @@ function statusLabel(status: AdminSyncJobActivity["status"]): string {
   return labels[status];
 }
 
+function providerClassName(provider: string): string {
+  const normalized = provider.toLowerCase().replace(/[\s_]+/g, "-");
+  if (["google-drive", "googledrive", "gdrive"].includes(normalized)) {
+    return "google-drive";
+  }
+  if (normalized === "dropbox") return "dropbox";
+  return normalized;
+}
+
+function isActive(status: AdminSyncJobActivity["status"]): boolean {
+  return status === "preparing" || status === "indexing";
+}
+
 export function AdminSyncActivityPanel({
   providers,
   activityByProvider,
@@ -32,22 +45,33 @@ export function AdminSyncActivityPanel({
         <div><h2>Sync activity</h2></div>
       </header>
       <div className="admin-sync-activity__groups">
-        {providerActivity.length === 0 ? <p>No ingestion activity yet.</p> : providerActivity.flatMap(({ provider, activity }) => activity.map((event) => (
-          <article
-            className={`admin-sync-file-card admin-sync-file-card--${provider.provider} admin-sync-file-card--${event.status}`}
-            key={`${provider.provider}-${event.storage_file_id}`}
-            aria-label={`${event.filename}: ${statusLabel(event.status)}`}
-          >
-            <strong className="admin-sync-file-card__filename">{event.filename}</strong>
-            <div className="admin-sync-file-card__meta">
-              <span className="admin-sync-file-card__provider">
-                <ProviderLogo provider={provider.provider} size={16} aria-hidden="true" />
-                {provider.display_name}
-              </span>
-              <span className="admin-sync-file-card__status">{statusLabel(event.status)}</span>
-            </div>
-          </article>
-        )))}
+        {providerActivity.length === 0 ? <p>No ingestion activity yet.</p> : providerActivity.flatMap(({ provider, activity }) => activity.map((event) => {
+          const providerClass = providerClassName(provider.provider);
+          const cardClassName = [
+            "admin-sync-file-card",
+            "admin-sync-file-card--entering",
+            `admin-sync-file-card--${providerClass}`,
+            `admin-sync-file-card--${event.status}`,
+            isActive(event.status) ? "admin-sync-file-card--active" : "",
+          ].filter(Boolean).join(" ");
+
+          return (
+            <article
+              className={cardClassName}
+              key={`${provider.provider}-${event.storage_file_id}`}
+              aria-label={`${event.filename}: ${statusLabel(event.status)}`}
+            >
+              <strong className="admin-sync-file-card__filename">{event.filename}</strong>
+              <div className="admin-sync-file-card__meta">
+                <span className="admin-sync-file-card__provider">
+                  <ProviderLogo provider={provider.provider} size={16} aria-hidden="true" />
+                  {provider.display_name}
+                </span>
+                <span className="admin-sync-file-card__status">{statusLabel(event.status)}</span>
+              </div>
+            </article>
+          );
+        }))}
       </div>
     </section>
   );
