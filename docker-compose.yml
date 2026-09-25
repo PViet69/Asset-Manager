@@ -32,9 +32,22 @@ services:
       DROPBOX_APP_SECRET: "${DROPBOX_APP_SECRET:-}"
       DROPBOX_REFRESH_TOKEN: "${DROPBOX_REFRESH_TOKEN:-}"
       DROPBOX_ROOT_PATH: "${DROPBOX_ROOT_PATH:-}"
+      CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
+      CELERY_RESULT_BACKEND: "${CELERY_RESULT_BACKEND:-redis://redis:6379/1}"
+      CELERY_WORKER_CONCURRENCY: "${CELERY_WORKER_CONCURRENCY:-4}"
+      CELERY_RESULT_EXPIRES_SECONDS: "${CELERY_RESULT_EXPIRES_SECONDS:-86400}"
+      CELERY_TASK_SOFT_TIME_LIMIT_SECONDS: "${CELERY_TASK_SOFT_TIME_LIMIT_SECONDS:-3300}"
+      CELERY_TASK_TIME_LIMIT_SECONDS: "${CELERY_TASK_TIME_LIMIT_SECONDS:-3600}"
     depends_on:
       qdrant:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test:
         - CMD
@@ -44,6 +57,64 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  celery-worker:
+    build: .
+    env_file:
+      - .env
+    command:
+      - .venv/bin/celery
+      - -A
+      - backend.app.tasks.celery_app:celery_app
+      - worker
+      - --loglevel=INFO
+      - --concurrency=${CELERY_WORKER_CONCURRENCY:-4}
+    environment:
+      MODEL_ENDPOINT_URL: "${MODEL_ENDPOINT_URL:?Set MODEL_ENDPOINT_URL in .env}"
+      MODEL_ENDPOINT_API_KEY: "${MODEL_ENDPOINT_API_KEY:-}"
+      MODEL_REQUEST_TIMEOUT: "${MODEL_REQUEST_TIMEOUT:-30}"
+      DESCRIPTION_MODEL: "${DESCRIPTION_MODEL:?Set DESCRIPTION_MODEL in .env}"
+      DESCRIPTION_ENDPOINT_URL: "${DESCRIPTION_ENDPOINT_URL:?Set DESCRIPTION_ENDPOINT_URL in .env}"
+      DESCRIPTION_ENDPOINT_API_KEY: "${DESCRIPTION_ENDPOINT_API_KEY:-}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:?Set EMBEDDING_MODEL in .env}"
+      QDRANT_URL: "http://qdrant:6333"
+      QDRANT_API_KEY: "${QDRANT_API_KEY:-}"
+      QDRANT_COLLECTION: "${QDRANT_COLLECTION:-file_embeddings}"
+      QDRANT_VECTOR_SIZE: "${QDRANT_VECTOR_SIZE:?Set QDRANT_VECTOR_SIZE in .env}"
+      QDRANT_DISTANCE: "${QDRANT_DISTANCE:-Cosine}"
+      SEARCH_THRESHOLD: "${SEARCH_THRESHOLD:-}"
+      DRIVE_SERVICE_ACCOUNT_JSON: "${DRIVE_SERVICE_ACCOUNT_JSON:-}"
+      DRIVE_FOLDER_ID: "${DRIVE_FOLDER_ID:-}"
+      DROPBOX_APP_KEY: "${DROPBOX_APP_KEY:-}"
+      DROPBOX_APP_SECRET: "${DROPBOX_APP_SECRET:-}"
+      DROPBOX_REFRESH_TOKEN: "${DROPBOX_REFRESH_TOKEN:-}"
+      DROPBOX_ROOT_PATH: "${DROPBOX_ROOT_PATH:-}"
+      CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
+      CELERY_RESULT_BACKEND: "${CELERY_RESULT_BACKEND:-redis://redis:6379/1}"
+      CELERY_WORKER_CONCURRENCY: "${CELERY_WORKER_CONCURRENCY:-4}"
+      CELERY_RESULT_EXPIRES_SECONDS: "${CELERY_RESULT_EXPIRES_SECONDS:-86400}"
+      CELERY_TASK_SOFT_TIME_LIMIT_SECONDS: "${CELERY_TASK_SOFT_TIME_LIMIT_SECONDS:-3300}"
+      CELERY_TASK_TIME_LIMIT_SECONDS: "${CELERY_TASK_TIME_LIMIT_SECONDS:-3600}"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7.4-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   qdrant:
     image: qdrant/qdrant:v1.19.0
@@ -64,3 +135,4 @@ services:
 
 volumes:
   qdrant_storage:
+  redis_data:

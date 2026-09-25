@@ -8,7 +8,13 @@ ROOT = Path(__file__).parents[3]
 def test_compose_defines_app_and_qdrant_services() -> None:
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
 
-    assert set(compose["services"]) == {"app", "frontend", "qdrant"}
+    assert set(compose["services"]) == {
+        "app",
+        "celery-worker",
+        "frontend",
+        "qdrant",
+        "redis",
+    }
     assert compose["services"]["app"]["build"] == "."
     assert compose["services"]["app"]["env_file"] == [".env"]
     assert compose["services"]["app"]["ports"] == ["127.0.0.1:${APP_PORT:-8000}:8000"]
@@ -18,6 +24,31 @@ def test_compose_defines_app_and_qdrant_services() -> None:
     assert compose["services"]["qdrant"]["volumes"] == [
         "qdrant_storage:/qdrant/storage"
     ]
+
+
+def test_compose_defines_private_redis_and_worker() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+
+    assert "redis" in compose["services"]
+    assert "celery-worker" in compose["services"]
+    assert "ports" not in compose["services"]["redis"]
+    assert compose["services"]["celery-worker"]["command"] == [
+        ".venv/bin/celery",
+        "-A",
+        "backend.app.tasks.celery_app:celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "--concurrency=${CELERY_WORKER_CONCURRENCY:-4}",
+    ]
+
+
+def test_compose_worker_and_api_share_queue_configuration() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    app_environment = compose["services"]["app"]["environment"]
+    worker_environment = compose["services"]["celery-worker"]["environment"]
+
+    for name in ("CELERY_BROKER_URL", "CELERY_RESULT_BACKEND", "QDRANT_URL"):
+        assert worker_environment[name] == app_environment[name]
 
 
 def test_compose_defines_frontend_service() -> None:
@@ -34,6 +65,7 @@ def test_compose_defines_frontend_service() -> None:
     assert "client_max_body_size 250m" in nginx_template
     assert "proxy_pass http://app:8000" in nginx_template
     assert "location /admin/sync/" in nginx_template
+    assert "location /admin/sync-jobs/" in nginx_template
     assert "location /admin/tags" in nginx_template
     assert "try_files $uri $uri/ /index.html" in nginx_template
     assert "location /auth/" in nginx_template
