@@ -80,6 +80,7 @@ class Settings(AdminAuthSettings):
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/1"
     CELERY_WORKER_CONCURRENCY: int = Field(default=4, gt=0, le=32)
+    SYNC_FILE_CONCURRENCY: int = Field(default=4, gt=0, le=32)
     CELERY_RESULT_EXPIRES_SECONDS: int = Field(default=24 * 60 * 60, gt=0)
     CELERY_TASK_SOFT_TIME_LIMIT_SECONDS: int = Field(default=3_300, gt=0)
     CELERY_TASK_TIME_LIMIT_SECONDS: int = Field(default=3_600, gt=0)
