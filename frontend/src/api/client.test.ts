@@ -7,8 +7,9 @@ import {
   getAdminProviderItems,
   getApprovedTags,
   getProviders,
+  getAdminSyncJob,
   refreshAdminProvider,
-  streamAdminSync,
+  triggerAdminSync,
 } from "./client";
 
 
@@ -104,18 +105,76 @@ test("fetches approved tag groups from backend", async () => {
   );
 });
 
-test("parses complete SSE frames", async () => {
-  const payload = [
-    `data: {"provider":"dropbox","sequence":1,"filename":"asset.png","status":"loading","detail":"Loading file","terminal":false}`,
-    `data: {"provider":"dropbox","sequence":2,"detected_count":1,"embedded_count":1,"upserted":1,"deleted":0,"unchanged":0,"failed":0,"terminal":true}`,
-  ].join("\n\n") + "\n\n";
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payload, { status: 200 })));
-  const events: unknown[] = [];
+test("queues provider sync with admin credentials", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({ job_id: "job-1", provider: "dropbox", state: "PENDING" }),
+      { status: 202, headers: { "Content-Type": "application/json" } }
+    )
+  );
+  vi.stubGlobal("fetch", fetchMock);
 
-  await streamAdminSync("dropbox", (event) => events.push(event), new AbortController().signal);
+  await expect(triggerAdminSync("dropbox")).resolves.toEqual({
+    job_id: "job-1",
+    provider: "dropbox",
+    state: "PENDING",
+  });
 
-  expect(events).toHaveLength(2);
-  expect(events[1]).toMatchObject({ terminal: true });
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/admin/sync/dropbox",
+    expect.objectContaining({ method: "POST", credentials: "include" })
+  );
+});
+
+test("fetches safe queued sync job status", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        job_id: "job-1",
+        provider: "dropbox",
+        state: "STARTED",
+        attempt: 1,
+        phase: "indexing",
+        upserted: 2,
+        deleted: 0,
+        unchanged: 1,
+        failed: 0,
+        cancellation_requested: false,
+        detail: null,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    )
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(getAdminSyncJob("job-1")).resolves.toMatchObject({
+    job_id: "job-1",
+    provider: "dropbox",
+    state: "STARTED",
+    phase: "indexing",
+  });
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/admin/sync-jobs/job-1",
+    expect.objectContaining({ method: "GET", credentials: "include" })
+  );
+});
+
+test("exposes conflicting sync job ID on ApiError", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ detail: { detail: "Dropbox sync already running", job_id: "job-active" } }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
+      )
+    )
+  );
+
+  await expect(triggerAdminSync("dropbox")).rejects.toMatchObject({
+    status: 409,
+    jobId: "job-active",
+  });
 });
 
 

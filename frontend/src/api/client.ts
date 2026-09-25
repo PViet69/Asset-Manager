@@ -7,11 +7,11 @@ import type {
   AdminProviderRefreshResponse,
   AdminQdrantItemsResponse,
   AdminReindexResponse,
-  AdminSyncResponse,
+  AdminSyncJobStatusResponse,
+  AdminSyncQueuedResponse,
   ApprovedTagGroupsResponse,
   ProviderMeta,
   StorageProvider,
-  SyncEvent,
   VectorSearchResponse,
 } from "../types";
 
@@ -28,11 +28,13 @@ export function getAdminProviderItems(
 
 export class ApiError extends Error {
   public readonly status: number;
+  public readonly jobId?: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, jobId?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.jobId = jobId;
   }
 }
 
@@ -46,17 +48,26 @@ function buildHeaders(extra?: HeadersInit): Headers {
 
 async function parseError(res: Response): Promise<never> {
   let message = `Request failed with status ${res.status}`;
+  let jobId: string | null = null;
   try {
-    const body = (await res.json()) as { detail?: unknown };
+    const body = (await res.json()) as {
+      detail?: unknown;
+      job_id?: unknown;
+    };
     if (typeof body.detail === "string" && body.detail.length > 0) {
       message = body.detail;
     } else if (body.detail && typeof body.detail === "object") {
-      message = JSON.stringify(body.detail);
+      const detail = body.detail as { detail?: unknown; job_id?: unknown };
+      if (typeof detail.detail === "string" && detail.detail.length > 0) {
+        message = detail.detail;
+      }
+      if (typeof detail.job_id === "string") jobId = detail.job_id;
     }
+    if (typeof body.job_id === "string") jobId = body.job_id;
   } catch {
     // Keep status-based message when response body is not JSON.
   }
-  throw new ApiError(res.status, message);
+  throw new ApiError(res.status, message, jobId ?? undefined);
 }
 
 async function postJson<T>(
@@ -192,40 +203,12 @@ export function reindexAdminStorageFile(
   );
 }
 
-export async function streamAdminSync(
-  provider: string,
-  onEvent: (event: SyncEvent) => void,
-  signal: AbortSignal
-): Promise<void> {
-  const response = await fetch(
-    `${config.apiBase}/admin/sync/${encodeURIComponent(provider)}/stream`,
-    { method: "POST", credentials: "include", signal }
-  );
-  if (!response.ok) await parseError(response);
-  if (response.body === null) throw new ApiError(response.status, "Sync stream is unavailable");
-
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-  let pending = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      pending += value ?? "";
-      let separator = pending.indexOf("\n\n");
-      while (separator >= 0) {
-        const frame = pending.slice(0, separator);
-        pending = pending.slice(separator + 2);
-        if (frame.startsWith("data: ")) onEvent(JSON.parse(frame.slice(6)) as SyncEvent);
-        separator = pending.indexOf("\n\n");
-      }
-      if (done) return;
-    }
-  } finally {
-    reader.releaseLock();
-  }
+export function triggerAdminSync(provider: string): Promise<AdminSyncQueuedResponse> {
+  return adminRequest(`/admin/sync/${encodeURIComponent(provider)}`, "POST");
 }
 
-export function triggerAdminSync(provider: string): Promise<AdminSyncResponse> {
-  return adminRequest(`/admin/sync/${encodeURIComponent(provider)}`, "POST");
+export function getAdminSyncJob(jobId: string): Promise<AdminSyncJobStatusResponse> {
+  return adminRequest(`/admin/sync-jobs/${encodeURIComponent(jobId)}`);
 }
 
 export function stopAdminSync(provider: string): Promise<{ status: string; provider: string }> {

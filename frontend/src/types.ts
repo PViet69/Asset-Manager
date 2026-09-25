@@ -134,13 +134,40 @@ export type AdminAccount = { username: string; auth_required?: boolean };
 
 export type AdminSyncStatusResponse = { providers: ProviderSyncStatus[] };
 
-export type AdminSyncResponse = {
+export type AdminSyncQueuedResponse = {
+  job_id: string;
   provider: string;
+  state: "PENDING";
+};
+
+export type AdminSyncJobActivityStatus =
+  | "preparing"
+  | "indexing"
+  | "indexed"
+  | "failed"
+  | "stopped";
+
+export type AdminSyncJobActivity = {
+  readonly sequence: number;
+  readonly storage_file_id: string;
+  readonly filename: string;
+  readonly status: AdminSyncJobActivityStatus;
+};
+
+export type AdminSyncJobStatusResponse = {
+  job_id: string;
+  provider: string;
+  state: "PENDING" | "STARTED" | "RETRY" | "SUCCESS" | "FAILURE" | "REVOKED";
+  attempt: number;
+  phase: string | null;
   upserted: number;
   deleted: number;
   unchanged: number;
   failed: number;
-  traces: SyncTraceItem[];
+  cancellation_requested: boolean;
+  detail: string | null;
+  embedded_delta?: number;
+  activity: readonly AdminSyncJobActivity[];
 };
 
 export type AdminReindexResponse = {
