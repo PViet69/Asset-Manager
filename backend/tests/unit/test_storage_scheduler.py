@@ -105,6 +105,7 @@ async def test_tick_once_manually_ingests_new_provider_file() -> None:
         "file_ingestion",
     ]
     assert all(trace.status == "ok" for trace in result.traces)
+    assert result.traces[-1].embedded_delta == 1
     assert ingestion.uploads[0].storage_file_id == "id"
     assert not hasattr(scheduler, "start")
     assert hasattr(scheduler, "stop_sync")
@@ -161,6 +162,26 @@ async def test_stop_sync_before_preparing_is_ignored() -> None:
 
     assert result.upserted == 2
     assert not any(trace.step == "sync_cancel" for trace in result.traces)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_scheduler_stops_before_next_file_when_external_cancellation_is_requested(
+) -> None:
+    ingestion = _Ingestion([])
+    scheduler = StorageSyncScheduler(
+        StorageProvider.DROPBOX,
+        _Client([_file("first"), _file("second")]),
+        "/root",
+        ingestion,
+        _Qdrant([], []),
+    )  # type: ignore[arg-type]
+    checks = iter([False, True])
+
+    result = await scheduler.tick_once(should_cancel=lambda: next(checks))
+
+    assert result.upserted == 1
+    assert [item.storage_file_id for item in ingestion.uploads] == ["first"]
 
 
 @pytest.mark.unit

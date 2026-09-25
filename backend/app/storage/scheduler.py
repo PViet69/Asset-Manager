@@ -68,12 +68,17 @@ class StorageSyncScheduler:
         return True
 
     async def tick_once(
-        self, observer: Callable[[SyncTraceItem], None] | None = None
+        self,
+        observer: Callable[[SyncTraceItem], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> SyncTickResult:
         try:
             async with self._lock:
                 result = await asyncio.to_thread(
-                    self._tick_blocking, observer, self._cancel_event
+                    self._tick_blocking,
+                    observer,
+                    self._cancel_event,
+                    should_cancel,
                 )
             self._last_result = result
             return result
@@ -85,11 +90,16 @@ class StorageSyncScheduler:
         self,
         observer: Callable[[SyncTraceItem], None] | None = None,
         cancel_event: Any | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> SyncTickResult:
         traces: list[SyncTraceItem] = []
 
         def trace(
-            step: str, status: str, detail: str, file: StorageFile | None = None
+            step: str,
+            status: str,
+            detail: str,
+            file: StorageFile | None = None,
+            embedded_delta: int = 0,
         ) -> None:
             item = SyncTraceItem(
                 timestamp=datetime.now(timezone.utc).isoformat(),
@@ -99,6 +109,7 @@ class StorageSyncScheduler:
                 detail=detail,
                 filename=file.name if file else None,
                 storage_file_id=file.storage_file_id if file else None,
+                embedded_delta=embedded_delta,
             )
             traces.append(item)
             if observer is not None:
@@ -117,11 +128,35 @@ class StorageSyncScheduler:
             return SyncTickResult(self._provider, 0, 0, 0, 1, tuple(traces))
 
         plan = SyncState.seed_from_qdrant(files, stored).diff()
+        existing_storage_file_ids = {
+            storage_file_id
+            for hit in stored
+            if isinstance((storage_file_id := hit.payload.get("storage_file_id")), str)
+            and storage_file_id
+        }
+
+        def is_cancelled() -> bool:
+            return (cancel_event is not None and cancel_event.is_set()) or (
+                should_cancel is not None and should_cancel()
+            )
+
         upserted = 0
+        cancelled = False
         for file in plan.to_upsert:
-            if self._upsert(file, trace, cancel_event):
+            if is_cancelled():
+                cancelled = True
+                trace("sync_cancel", "ok", "Sync operation stopped by user")
+                break
+            is_new = file.storage_file_id not in existing_storage_file_ids
+            if self._upsert(
+                file,
+                trace,
+                cancel_event,
+                embedded_delta=int(is_new),
+            ):
                 upserted += 1
-            if cancel_event is not None and cancel_event.is_set():
+            if is_cancelled():
+                cancelled = True
                 logger.info(
                     "Storage sync stopped by user for provider %s", self._provider
                 )
@@ -129,9 +164,7 @@ class StorageSyncScheduler:
 
         failed = len(plan.to_upsert) - upserted
         deleted = 0
-        if plan.to_delete_point_ids and (
-            cancel_event is None or not cancel_event.is_set()
-        ):
+        if plan.to_delete_point_ids and not cancelled and not is_cancelled():
             try:
                 deleted = self._qdrant_store.delete_by_point_ids(
                     plan.to_delete_point_ids
@@ -152,9 +185,10 @@ class StorageSyncScheduler:
     def _upsert(
         self,
         file: StorageFile,
-        trace: Callable[[str, str, str, StorageFile | None], None],
+        trace: Callable[[str, str, str, StorageFile | None, int], None],
         cancel_event: Any | None = None,
         max_retries: int = 2,
+        embedded_delta: int = 0,
     ) -> int:
         self._is_processing_file.set()
         trace("file_prepare", "ok", "Preparing file", file)
@@ -186,7 +220,13 @@ class StorageSyncScheduler:
                     trace("file_indexing", "ok", "Sending file to model", file)
                     response = self._ingestion_service.process_files((upload,))
                     if response.data and response.data[0].status == "success":
-                        trace("file_ingestion", "ok", "Indexed file", file)
+                        trace(
+                            "file_ingestion",
+                            "ok",
+                            "Indexed file",
+                            file,
+                            embedded_delta,
+                        )
                         return 1
                     if attempt < max_retries:
                         logger.warning(
