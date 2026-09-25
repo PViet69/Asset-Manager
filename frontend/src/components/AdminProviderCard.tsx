@@ -6,6 +6,7 @@ export interface AdminProviderCardProps {
   readonly provider: ProviderDashboardStatus;
   readonly isRefreshing: boolean;
   readonly isSyncing: boolean;
+  readonly isStopping?: boolean;
   readonly isItemsLoading: boolean;
   readonly onRefresh: (provider: string) => void;
   readonly onOpenItems: (provider: string) => void;
@@ -28,6 +29,7 @@ export function AdminProviderCard({
   provider,
   isRefreshing,
   isSyncing,
+  isStopping,
   isItemsLoading,
   onRefresh,
   onOpenItems,
@@ -119,10 +121,10 @@ export function AdminProviderCard({
           type="button"
           className={`admin-primary-button ${isSyncing ? "admin-primary-button--danger" : ""}`}
           onClick={() => onSync(provider.provider)}
-          disabled={!canSync}
+          disabled={!canSync || isStopping}
           aria-label={`${isSyncing ? "Stop syncing" : isFullyIndexed ? "Sync unavailable; fully indexed" : "Sync"} ${provider.display_name}`}
         >
-          {isSyncing ? "Stop" : "Sync"}
+          {isStopping ? "Stopping" : isSyncing ? "Stop" : "Sync"}
         </button>
       </footer>
     </article>

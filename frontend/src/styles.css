@@ -4011,7 +4011,7 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   background: var(--admin-blue-soft);
 }
 
-.admin-sync-file-card--done .admin-sync-file-card__status {
+.admin-sync-file-card--indexed .admin-sync-file-card__status {
   color: var(--admin-green);
   background: rgba(220, 252, 231, 0.82);
 }

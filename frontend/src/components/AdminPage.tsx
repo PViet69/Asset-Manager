@@ -7,6 +7,7 @@ import {
   discoverAdminTags,
   getAdminProviderItems,
   getAdminSession,
+  getAdminSyncJob,
   getAdminSyncStatus,
   getAdminTags,
   loginAdmin,
@@ -14,13 +15,13 @@ import {
   refreshAdminProvider,
   saveAdminTags,
   stopAdminSync,
-  streamAdminSync,
+  triggerAdminSync,
 } from "../api/client";
 import type {
+  AdminSyncJobActivity,
   ModelHealthStatus,
   ProviderDashboardStatus,
   QdrantItem,
-  SyncActivityEvent,
   TagGroup,
 } from "../types";
 import { AdminModelHealth } from "./AdminModelHealth";
@@ -30,6 +31,7 @@ import { AdminSyncActivityPanel } from "./AdminSyncActivityPanel";
 import { ModelUnavailableDialog } from "./ModelUnavailableDialog";
 
 const SAFE_SYNC_ERROR = "Provider sync failed. Try again.";
+const SYNC_POLL_INTERVAL_MS = 3_000;
 const AdminLoginBackground = lazy(() =>
   import("./AdminLoginBackground").then(({ AdminLoginBackground: Background }) => ({
     default: Background,
@@ -80,7 +82,9 @@ export function AdminPage(): JSX.Element {
   const [dashboard, setDashboard] = useState<DashboardState>(EMPTY_DASHBOARD);
   const [refreshingProviders, setRefreshingProviders] = useState<ReadonlySet<string>>(new Set());
   const [syncingProviders, setSyncingProviders] = useState<ReadonlySet<string>>(new Set());
-  const [activityByProvider, setActivityByProvider] = useState<Readonly<Record<string, readonly SyncActivityEvent[]>>>({});
+  const [syncJobIdsByProvider, setSyncJobIdsByProvider] = useState<Readonly<Record<string, string>>>({});
+  const [syncActivityByProvider, setSyncActivityByProvider] = useState<Readonly<Record<string, readonly AdminSyncJobActivity[]>>>({});
+  const [stoppingProviders, setStoppingProviders] = useState<ReadonlySet<string>>(new Set());
   const [deletingProviders, setDeletingProviders] = useState<ReadonlySet<string>>(new Set());
   const [pendingDeletion, setPendingDeletion] = useState<PendingDeletion | null>(null);
   const [itemsByProvider, setItemsByProvider] = useState<Readonly<Record<string, readonly QdrantItem[] | null>>>({});
@@ -100,7 +104,8 @@ export function AdminPage(): JSX.Element {
   const hasLoadedApprovedTags = useRef(false);
   const [toasts, setToasts] = useState<readonly Toast[]>([]);
   const [isModelUnavailableDialogOpen, setIsModelUnavailableDialogOpen] = useState(false);
-  const controllers = useRef<Record<string, AbortController>>({});
+  const unavailableStatusJobs = useRef<ReadonlySet<string>>(new Set());
+  const lastJobEmbeddedDelta = useRef<Record<string, number>>({});
 
   const addToast = useCallback((message: string, type: Toast["type"]): void => {
     const id = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
@@ -114,6 +119,10 @@ export function AdminPage(): JSX.Element {
     setIsMobileNavigationOpen(false);
     setDashboard(EMPTY_DASHBOARD);
     setSyncingProviders(new Set());
+    setSyncJobIdsByProvider({});
+    setSyncActivityByProvider({});
+    setStoppingProviders(new Set());
+    lastJobEmbeddedDelta.current = {};
     setDiscoveredTagGroups([]);
     setSelectedApprovedTags([]);
     setExpandedTagCategories(new Set());
@@ -175,7 +184,7 @@ export function AdminPage(): JSX.Element {
         handleAdminError(caught, "Could not restore session");
       }
     })();
-    return () => Object.values(controllers.current).forEach((controller) => controller.abort());
+    return undefined;
   }, []);
 
   useEffect(() => {
@@ -378,39 +387,26 @@ export function AdminPage(): JSX.Element {
 
   async function syncProvider(providerId: string): Promise<void> {
     if (syncingProviders.has(providerId)) {
+      setStoppingProviders((current) => new Set(current).add(providerId));
       try {
         await stopAdminSync(providerId);
-        setSyncingProviders((current) => new Set(
-          [...current].filter((provider) => provider !== providerId)
-        ));
       } catch (caught) {
+        setStoppingProviders((current) => new Set([...current].filter((item) => item !== providerId)));
         handleAdminError(caught, "Could not stop provider sync");
       }
       return;
     }
-    const controller = new AbortController();
-    const indexedFilenames = new Set<string>();
-    controllers.current = { ...controllers.current, [providerId]: controller };
-    setSyncingProviders((current) => new Set(current).add(providerId));
-    setActivityByProvider((current) => ({ ...current, [providerId]: [] }));
     try {
-      await streamAdminSync(providerId, (event) => {
-        if (event.terminal) return;
-        if (event.status === "indexed" && event.filename && !indexedFilenames.has(event.filename)) {
-          indexedFilenames.add(event.filename);
-          incrementProviderCoverage(providerId);
-        }
-        setActivityByProvider((current) => {
-          const events = current[providerId] ?? [];
-          const index = event.filename ? events.findIndex((item) => item.filename === event.filename) : -1;
-          const nextEvents = index >= 0
-            ? events.map((item, itemIndex) => itemIndex === index ? event : item)
-            : [event, ...events];
-          return { ...current, [providerId]: nextEvents };
-        });
-      }, controller.signal);
+      const queued = await triggerAdminSync(providerId);
+      lastJobEmbeddedDelta.current[queued.job_id] = 0;
+      setSyncJobIdsByProvider((current) => ({ ...current, [providerId]: queued.job_id }));
+      setSyncingProviders((current) => new Set(current).add(providerId));
     } catch (caught) {
-      if (controller.signal.aborted) {
+      if (caught instanceof ApiError && caught.status === 409 && caught.jobId) {
+        const conflictJobId = caught.jobId as string;
+        lastJobEmbeddedDelta.current[conflictJobId] = -1;
+        setSyncJobIdsByProvider((current) => ({ ...current, [providerId]: conflictJobId }));
+        setSyncingProviders((current) => new Set(current).add(providerId));
         return;
       }
       if (caught instanceof ApiError && caught.message === "Model not found") {
@@ -418,12 +414,88 @@ export function AdminPage(): JSX.Element {
         return;
       }
       handleAdminError(caught, SAFE_SYNC_ERROR);
-    } finally {
-      setSyncingProviders((current) => new Set([...current].filter((item) => item !== providerId)));
-      const { [providerId]: _, ...rest } = controllers.current;
-      controllers.current = rest;
     }
   }
+
+  useEffect(() => {
+    const activeJobs = Object.entries(syncJobIdsByProvider);
+    if (!isAuthenticated || activeJobs.length === 0) return undefined;
+
+    let isDisposed = false;
+    const removeJob = (providerId: string): void => {
+      setSyncJobIdsByProvider((current) => {
+        const { [providerId]: _, ...remaining } = current;
+        return remaining;
+      });
+      setSyncingProviders((current) => new Set([...current].filter((item) => item !== providerId)));
+      setStoppingProviders((current) => new Set([...current].filter((item) => item !== providerId)));
+    };
+    let timeoutId: number | undefined;
+    const poll = async (): Promise<void> => {
+      await Promise.all(activeJobs.map(async ([providerId, jobId]) => {
+        try {
+          const job = await getAdminSyncJob(jobId);
+          if (isDisposed) return;
+          setSyncActivityByProvider((current) => ({ ...current, [providerId]: job.activity }));
+
+          const currentCumulativeDelta = job.embedded_delta ?? 0;
+          const previousDelta = lastJobEmbeddedDelta.current[jobId];
+          let deltaToApply = 0;
+          if (previousDelta === undefined || previousDelta === -1) {
+            lastJobEmbeddedDelta.current[jobId] = currentCumulativeDelta;
+          } else {
+            deltaToApply = Math.max(0, currentCumulativeDelta - previousDelta);
+            lastJobEmbeddedDelta.current[jobId] = currentCumulativeDelta;
+          }
+
+          if (deltaToApply > 0) {
+            setDashboard((current) => ({
+              ...current,
+              providers: current.providers.map((provider) =>
+                provider.provider !== providerId || provider.embedded_count === null
+                  ? provider
+                  : { ...provider, embedded_count: provider.embedded_count + deltaToApply }
+              ),
+            }));
+            setDashboardEpoch((current) => current + 1);
+          }
+
+          if (!["SUCCESS", "FAILURE", "REVOKED"].includes(job.state)) return;
+          delete lastJobEmbeddedDelta.current[jobId];
+          removeJob(providerId);
+          if (job.state === "FAILURE") {
+            addToast(SAFE_SYNC_ERROR, "error");
+          } else if (job.state === "REVOKED") {
+            addToast("Provider sync stopped.", "status");
+          }
+        } catch (caught) {
+          if (isDisposed) return;
+          if (caught instanceof ApiError && caught.status === 404) {
+            delete lastJobEmbeddedDelta.current[jobId];
+            removeJob(providerId);
+            addToast("Sync status expired. Refresh status to confirm results.", "status");
+            return;
+          }
+          if (caught instanceof ApiError && caught.status === 401) {
+            clearSession();
+            return;
+          }
+          if (!unavailableStatusJobs.current.has(jobId)) {
+            unavailableStatusJobs.current = new Set([...unavailableStatusJobs.current, jobId]);
+            addToast("Sync status is temporarily unavailable; continuing to check.", "status");
+          }
+        }
+      }));
+      if (!isDisposed) timeoutId = window.setTimeout(() => void poll(), SYNC_POLL_INTERVAL_MS);
+    };
+
+    void poll();
+    return () => {
+      isDisposed = true;
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [isAuthenticated, syncJobIdsByProvider]);
+
 
   async function discoverTags(): Promise<void> {
     setIsDiscoveringTags(true);
@@ -521,6 +593,7 @@ export function AdminPage(): JSX.Element {
             provider={provider}
             isRefreshing={refreshingProviders.has(provider.provider)}
             isSyncing={syncingProviders.has(provider.provider)}
+            isStopping={stoppingProviders.has(provider.provider)}
             isItemsLoading={loadingItemsProviders.has(provider.provider)}
             onRefresh={(providerId) => void refreshProvider(providerId)}
             onOpenItems={(providerId) => void openProviderItems(providerId)}
@@ -945,14 +1018,15 @@ export function AdminPage(): JSX.Element {
         {activeTab === "providers" ? (
           <AdminSyncActivityPanel
             providers={dashboard.providers}
-            activityByProvider={activityByProvider}
+            activityByProvider={syncActivityByProvider}
           />
         ) : null}
         {activeTab === "dashboards" || activeTab === "models" ? <AdminModelHealth embeddingModel={dashboard.embeddingModel} descriptionModel={dashboard.descriptionModel} isLoading={isLoadingDashboard} /> : null}
         {activeTab === "logs" ? (
-          <section className="admin-log-panel" aria-label="Sync activity logs">
-            <p>No activity in this session.</p>
-          </section>
+          <AdminSyncActivityPanel
+            providers={dashboard.providers}
+            activityByProvider={syncActivityByProvider}
+          />
         ) : null}
         {activeTab === "settings" ? (
           <section className="admin-settings-grid" aria-label="Admin settings">
