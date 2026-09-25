@@ -18,6 +18,44 @@ BASE_SETTINGS = {
 }
 
 
+def required_settings() -> dict[str, object]:
+    return {
+        "MODEL_ENDPOINT_URL": "https://model.example",
+        "DESCRIPTION_MODEL": "vision-model",
+        "DESCRIPTION_ENDPOINT_URL": "https://vision.example",
+        "DESCRIPTION_ENDPOINT_API_KEY": "vision-key",
+        "EMBEDDING_MODEL": "embedding-model",
+        "QDRANT_URL": "https://qdrant.example",
+        "QDRANT_VECTOR_SIZE": 2,
+        "ADMIN_USERNAME": "admin",
+        "ADMIN_PASSWORD_HASH": "password-hash",
+        "ADMIN_SESSION_SECRET": "session-secret",
+        "ADMIN_ALLOWED_ORIGIN": "https://admin.example.test",
+    }
+
+
+@pytest.mark.unit
+def test_settings_default_worker_queue_values_are_bounded() -> None:
+    settings = Settings(_env_file=None, **required_settings())
+
+    assert settings.CELERY_WORKER_CONCURRENCY == 4
+    assert settings.CELERY_RESULT_EXPIRES_SECONDS == 24 * 60 * 60
+    assert (
+        settings.CELERY_TASK_SOFT_TIME_LIMIT_SECONDS
+        < settings.CELERY_TASK_TIME_LIMIT_SECONDS
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("CELERY_WORKER_CONCURRENCY", 0), ("CELERY_RESULT_EXPIRES_SECONDS", 0)],
+)
+def test_settings_reject_non_positive_queue_values(field: str, value: int) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **(required_settings() | {field: value}))
+
+
 @pytest.mark.unit
 def test_settings_require_admin_session_configuration(
     monkeypatch: pytest.MonkeyPatch,

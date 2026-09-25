@@ -18,6 +18,8 @@ dependencies = [
     "dropbox>=12.0.2",
     "argon2-cffi>=23.1.0",
     "itsdangerous>=2.2.0",
+    "celery[redis]>=5.4,<6",
+    "redis>=5.2,<6",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +30,7 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "PyYAML>=6.0",
+    "fakeredis>=2.26,<3",
 ]
 
 [tool.pytest.ini_options]
