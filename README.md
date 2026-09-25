@@ -68,18 +68,23 @@ At startup, the app checks the configured Qdrant collection and creates it when 
 
 ## Docker Compose
 
-Docker Desktop with Compose can run the app, the frontend UI, and Qdrant:
+Docker Desktop with Compose can run the app, frontend UI, Qdrant, private Redis, and Celery worker:
 
 ```bash
 cp .env.example .env
+# Fill model, Qdrant, administrator, and provider configuration.
 docker compose up --build
+# In another terminal, follow worker processing logs:
+docker compose logs -f celery-worker
 ```
 
-The UI is served at `http://localhost:${FRONTEND_PORT:-5173}/`; nginx serves the Vite bundle, routes `/admin` to that SPA, and reverse-proxies `/v1`, `/health`, and `/admin/sync/` to the app container. The browser stays same-origin, so no CORS configuration is needed.
+The UI is served at `http://localhost:${FRONTEND_PORT:-5173}/`; nginx serves the Vite bundle, routes `/admin` to that SPA, and reverse-proxies `/v1`, `/health`, and `/admin/sync/` to app container. Browser stays same-origin, so no CORS configuration is needed.
 
-When the model API runs on the Docker Desktop host, set `MODEL_ENDPOINT_URL=http://host.docker.internal:8001/v1`. In other environments, use a URL reachable from the app container. Compose connects the app to Qdrant using service DNS.
+Manual provider sync is queued: `POST /admin/sync/{provider}` returns `202 Accepted` plus job ID. Admin UI polls job status every three seconds. Completed job status expires after 24 hours. Worker logs stay in `celery-worker` container under configured log rotation; worker heartbeat reports worker availability only. Redis is internal to Compose network and must not be exposed publicly.
 
-`docker compose down` preserves the named `qdrant_storage` volume. `docker compose down -v` deletes local Qdrant data.
+When model API runs on Docker Desktop host, set `MODEL_ENDPOINT_URL=http://host.docker.internal:8001/v1`. In other environments, use URL reachable from app container. Compose connects app and worker to Qdrant using service DNS.
+
+`docker compose down` preserves named `qdrant_storage` and `redis_data` volumes. `docker compose down -v` deletes local Qdrant and Redis data.
 
 ## Create file embeddings
 
