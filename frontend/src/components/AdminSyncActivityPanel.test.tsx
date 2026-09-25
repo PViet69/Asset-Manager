@@ -38,6 +38,16 @@ test("renders safe ingestion activity grouped by provider and newest first", () 
   expect(panel).toHaveTextContent("Google Drive");
   expect(panel).toHaveTextContent("Dropbox");
   expect(panel).not.toHaveTextContent("internal detail");
+
+  const indexingCard = screen.getByRole("article", { name: "retry.pdf: Indexing" });
+  expect(indexingCard).toHaveClass("admin-sync-file-card--entering");
+  expect(indexingCard).toHaveClass("admin-sync-file-card--active");
+  expect(indexingCard).toHaveClass("admin-sync-file-card--dropbox");
+
+  const indexedCard = screen.getByRole("article", { name: "second.pdf: Indexed" });
+  expect(indexedCard).toHaveClass("admin-sync-file-card--entering");
+  expect(indexedCard).not.toHaveClass("admin-sync-file-card--active");
+  expect(indexedCard).toHaveClass("admin-sync-file-card--google-drive");
 });
 
 test("renders duplicate filenames as distinct file cards", () => {
