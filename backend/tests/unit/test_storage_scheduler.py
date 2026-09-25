@@ -1,5 +1,6 @@
 """Unit tests for manual storage scheduler."""
 
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -256,3 +257,49 @@ async def test_ingestion_failure_retries_and_allows_subsequent_sync_retry() -> N
     assert result.provider == StorageProvider.DROPBOX
     assert call_count == 2
     assert any(trace.status == "retry" for trace in result.traces)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_scheduler_processes_files_concurrently() -> None:
+    files = [_file(f"id_{i}") for i in range(4)]
+    client = _Client(files)
+    active_count = 0
+    max_active_seen = 0
+    lock = threading.Lock()
+    barrier = threading.Barrier(3)
+
+    original_download = client.download
+
+    def concurrent_download(storage_file_id: str) -> DownloadedStorageFile:
+        nonlocal active_count, max_active_seen
+        with lock:
+            active_count += 1
+            if active_count > max_active_seen:
+                max_active_seen = active_count
+        if storage_file_id != "id_3":
+            try:
+                barrier.wait(timeout=2.0)
+            except threading.BrokenBarrierError:
+                pass
+        try:
+            return original_download(storage_file_id)
+        finally:
+            with lock:
+                active_count -= 1
+
+    client.download = concurrent_download
+    scheduler = StorageSyncScheduler(
+        StorageProvider.DROPBOX,
+        client,
+        "/root",
+        _Ingestion([]),
+        _Qdrant([], []),
+        concurrency=3,
+    )  # type: ignore[arg-type]
+
+    with patch("backend.app.storage.scheduler.time.sleep"):
+        result = await scheduler.tick_once()
+
+    assert result.upserted == 4
+    assert max_active_seen >= 3
