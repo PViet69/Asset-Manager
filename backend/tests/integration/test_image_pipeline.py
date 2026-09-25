@@ -4,13 +4,13 @@ import os
 from pathlib import Path
 
 import pytest
+from openai import OpenAI
 
 from backend.app.exceptions import ModelEndpointError
 from backend.app.model.description_client import (
     InstructorAssetDescriptionClient,
 )
 from backend.app.model.prompt_model import ImageDescription
-from openai import OpenAI
 
 REPO_ROOT = Path(__file__).parents[3]
 SMALL_PNG_PATH = REPO_ROOT / "backend" / "tests" / "fixtures" / "small.png"

@@ -35,9 +35,12 @@ from backend.app.security import (
     InMemoryRateLimiter,
     reject_oversized_request,
 )
-from backend.app.storage.registry import ProviderRegistry, build_provider_registry
+from backend.app.services.runtime import build_runtime_dependencies
+from backend.app.storage.registry import ProviderRegistry
 from backend.app.storage.thumbnail_cache import ThumbnailCache
 from backend.app.tag_settings.store import TagSettingsStore
+from backend.app.tasks.job_store import RedisSyncJobStore, SyncJobStore
+from backend.app.tasks.sync_tasks import CelerySyncTaskDispatcher, SyncTaskDispatcher
 
 
 @dataclass(frozen=True)
@@ -56,6 +59,8 @@ def create_app(
     admin_auth_config: AdminAuthConfig | None = None,
     provider_registry: ProviderRegistry | None = None,
     tag_settings_store: TagSettingsStore | None = None,
+    sync_job_store: SyncJobStore | None = None,
+    sync_task_dispatcher: SyncTaskDispatcher | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
 
@@ -66,8 +71,13 @@ def create_app(
         effective_admin_auth_config = admin_auth_config
         effective_provider_registry = provider_registry
         effective_tag_settings_store = tag_settings_store
+        effective_sync_job_store = sync_job_store
+        effective_sync_task_dispatcher = sync_task_dispatcher
 
         settings = Settings() if effective_service is None else None
+        runtime_dependencies = (
+            build_runtime_dependencies(settings) if settings is not None else None
+        )
         if effective_admin_auth_config is None:
             auth_settings = AdminAuthSettings()
             effective_admin_auth_config = AdminAuthConfig(
@@ -116,6 +126,22 @@ def create_app(
                     effective_service,
                     qdrant_store,
                 )
+        if runtime_dependencies is not None:
+            effective_service = runtime_dependencies.ingestion_service
+            if effective_sync_job_store is None:
+                effective_sync_job_store = RedisSyncJobStore.from_settings(settings)
+            if effective_sync_task_dispatcher is None:
+                effective_sync_task_dispatcher = CelerySyncTaskDispatcher()
+            effective_health_dependencies = (
+                effective_health_dependencies
+                or runtime_dependencies.health_dependencies
+            )
+            effective_provider_registry = (
+                effective_provider_registry or runtime_dependencies.provider_registry
+            )
+            effective_tag_settings_store = (
+                effective_tag_settings_store or runtime_dependencies.tag_settings_store
+            )
         elif effective_health_dependencies is None:
             unavailable = _UnavailableHealthDependency()
             effective_health_dependencies = HealthDependencies(
@@ -147,6 +173,8 @@ def create_app(
             embedding_client=effective_health_dependencies.model_client,
             description_client=effective_health_dependencies.description_client,
         )
+        application.state.sync_job_store = effective_sync_job_store
+        application.state.sync_task_dispatcher = effective_sync_task_dispatcher
         try:
             yield
         finally:

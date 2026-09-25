@@ -1,6 +1,5 @@
 """Integration tests for provider-scoped admin sync routes."""
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from unittest.mock import Mock
@@ -129,6 +128,9 @@ TEST_ORIGIN = "https://admin.example.test"
 def _app(registry: ProviderRegistry, embedding_model_health: str = "ok"):
     service = Mock(spec=FileIngestionService)
     service.startup.return_value = None
+    sync_job_store = Mock()
+    sync_job_store.acquire_provider_job.return_value = None
+    sync_task_dispatcher = Mock()
     return create_app(
         service=service,
         health_dependencies=Mock(
@@ -143,6 +145,8 @@ def _app(registry: ProviderRegistry, embedding_model_health: str = "ok"):
             allowed_origin=TEST_ORIGIN,
         ),
         provider_registry=registry,
+        sync_job_store=sync_job_store,
+        sync_task_dispatcher=sync_task_dispatcher,
     )
 
 
@@ -300,14 +304,31 @@ def test_disabled_selected_provider_returns_503() -> None:
 
 
 @pytest.mark.integration
-def test_selected_provider_runs_without_triggering_other_provider() -> None:
+def test_selected_provider_is_queued_without_running_api_scheduler() -> None:
     registry, drive, dropbox = _registry()
     with TestClient(_app(registry), base_url="https://testserver") as client:
         _login(client)
         response = client.post("/admin/sync/dropbox", headers={"Origin": TEST_ORIGIN})
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert response.json()["provider"] == StorageProvider.DROPBOX
-    assert dropbox.trigger_count == 1
+    assert response.json()["state"] == "PENDING"
+    client.app.state.sync_job_store.write_progress.assert_called_once_with(
+        response.json()["job_id"],
+        {
+            "provider": "dropbox",
+            "state": "PENDING",
+            "attempt": 0,
+            "phase": None,
+            "upserted": 0,
+            "deleted": 0,
+            "unchanged": 0,
+            "failed": 0,
+            "cancellation_requested": False,
+            "detail": None,
+            "activity": (),
+        },
+    )
+    assert dropbox.trigger_count == 0
     assert drive.trigger_count == 0
 
 
@@ -371,64 +392,6 @@ def test_refresh_requires_session() -> None:
 
 
 @pytest.mark.integration
-def test_stream_requires_session_and_allowed_origin() -> None:
-    registry, _, _ = _registry()
-
-    with TestClient(_app(registry), base_url="https://testserver") as client:
-        anonymous = client.post(
-            "/admin/sync/dropbox/stream", headers={"Origin": TEST_ORIGIN}
-        )
-        _login(client)
-        rejected = client.post(
-            "/admin/sync/dropbox/stream",
-            headers={"Origin": "https://attacker.example.test"},
-        )
-
-    assert anonymous.status_code == 401
-    assert rejected.status_code == 403
-
-
-@pytest.mark.integration
-def test_stream_rejects_unavailable_embedding_model_before_sync() -> None:
-    registry, _, dropbox = _registry()
-
-    with TestClient(
-        _app(registry, embedding_model_health="unavailable"),
-        base_url="https://testserver",
-    ) as client:
-        _login(client)
-        response = client.post(
-            "/admin/sync/dropbox/stream", headers={"Origin": TEST_ORIGIN}
-        )
-
-    assert response.status_code == 503
-    assert response.json() == {"detail": "Model not found"}
-    assert dropbox.trigger_count == 0
-
-
-@pytest.mark.integration
-def test_stream_emits_identity_encoded_terminal_event() -> None:
-    registry, _, _ = _registry()
-
-    with TestClient(_app(registry), base_url="https://testserver") as client:
-        _login(client)
-        with client.stream(
-            "POST", "/admin/sync/dropbox/stream", headers={"Origin": TEST_ORIGIN}
-        ) as response:
-            body = b"".join(response.iter_bytes())
-
-    events = [
-        json.loads(frame.removeprefix("data: "))
-        for frame in body.decode().split("\n\n")
-        if frame
-    ]
-    assert response.status_code == 200
-    assert response.headers["content-encoding"] == "identity"
-    assert events[-1]["terminal"] is True
-    assert all(event["provider"] == StorageProvider.DROPBOX for event in events)
-
-
-@pytest.mark.integration
 def test_status_caches_provider_health_checks() -> None:
     registry, _, _ = _registry()
     clients = tuple(entry.client for entry in registry.providers)
@@ -442,16 +405,162 @@ def test_status_caches_provider_health_checks() -> None:
 
 
 @pytest.mark.integration
-def test_sync_refreshes_cached_provider_health() -> None:
+def test_sync_enqueue_does_not_refresh_provider_health_in_api_process() -> None:
     registry, _, _ = _registry()
     clients = tuple(entry.client for entry in registry.providers)
     with TestClient(_app(registry), base_url="https://testserver") as client:
         _login(client)
         client.get("/admin/sync/status")
         response = client.post("/admin/sync/dropbox", headers={"Origin": TEST_ORIGIN})
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert clients[0].health_check_count == 1
-    assert clients[1].health_check_count == 2
+    assert clients[1].health_check_count == 1
+
+
+@pytest.mark.integration
+def test_start_duplicate_provider_sync_returns_conflict_with_active_job() -> None:
+    registry, _, _ = _registry()
+    app = _app(registry)
+
+    with TestClient(app, base_url="https://testserver") as client:
+        client.app.state.sync_job_store.acquire_provider_job.return_value = "job-active"
+        _login(client)
+        response = client.post("/admin/sync/dropbox", headers={"Origin": TEST_ORIGIN})
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Dropbox sync already running",
+        "job_id": "job-active",
+    }
+
+
+@pytest.mark.integration
+def test_job_status_returns_only_safe_progress() -> None:
+    registry, _, _ = _registry()
+    app = _app(registry)
+
+    with TestClient(app, base_url="https://testserver") as client:
+        client.app.state.sync_job_store.read_progress.return_value = {
+            "provider": "dropbox",
+            "state": "STARTED",
+            "attempt": 1,
+            "phase": "indexing",
+            "upserted": 1,
+            "deleted": 0,
+            "unchanged": 0,
+            "failed": 0,
+            "cancellation_requested": False,
+            "detail": None,
+            "embedded_delta": 2,
+            "activity": (
+                {
+                    "sequence": 1,
+                    "storage_file_id": "file-1",
+                    "filename": "asset.png",
+                    "status": "indexing",
+                },
+            ),
+        }
+        _login(client)
+        response = client.get("/admin/sync-jobs/job-1")
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "STARTED"
+    assert response.json()["embedded_delta"] == 2
+    assert response.json()["activity"] == [
+        {
+            "sequence": 1,
+            "storage_file_id": "file-1",
+            "filename": "asset.png",
+            "status": "indexing",
+        }
+    ]
+    assert "traceback" not in response.text
+    assert "internal detail" not in response.text
+    assert "source_url" not in response.text
+
+
+@pytest.mark.integration
+def test_stop_revokes_pending_provider_job_and_releases_lock() -> None:
+    registry, _, _ = _registry()
+    app = _app(registry)
+
+    with TestClient(app, base_url="https://testserver") as client:
+        client.app.state.sync_job_store.get_provider_job_id.return_value = "job-1"
+        client.app.state.sync_job_store.read_progress.return_value = {
+            "provider": "dropbox",
+            "state": "PENDING",
+            "attempt": 0,
+            "phase": None,
+            "upserted": 0,
+            "deleted": 0,
+            "unchanged": 0,
+            "failed": 0,
+            "cancellation_requested": False,
+            "detail": None,
+            "activity": (),
+        }
+        _login(client)
+        response = client.post(
+            "/admin/sync/dropbox/stop", headers={"Origin": TEST_ORIGIN}
+        )
+
+    assert response.status_code == 200
+    client.app.state.sync_task_dispatcher.revoke.assert_called_once_with("job-1")
+    client.app.state.sync_job_store.request_cancellation.assert_called_once_with(
+        "dropbox", "job-1"
+    )
+    client.app.state.sync_job_store.write_progress.assert_called_once_with(
+        "job-1",
+        {
+            "provider": "dropbox",
+            "state": "REVOKED",
+            "attempt": 0,
+            "phase": None,
+            "upserted": 0,
+            "deleted": 0,
+            "unchanged": 0,
+            "failed": 0,
+            "cancellation_requested": True,
+            "detail": None,
+            "activity": (),
+        },
+    )
+    client.app.state.sync_job_store.release_provider_job.assert_called_once_with(
+        "dropbox", "job-1"
+    )
+
+
+@pytest.mark.integration
+def test_stop_requests_cancellation_for_running_provider_job() -> None:
+    registry, _, _ = _registry()
+    app = _app(registry)
+
+    with TestClient(app, base_url="https://testserver") as client:
+        client.app.state.sync_job_store.get_provider_job_id.return_value = "job-1"
+        client.app.state.sync_job_store.read_progress.return_value = {
+            "provider": "dropbox",
+            "state": "STARTED",
+            "attempt": 1,
+            "phase": "indexing",
+            "upserted": 0,
+            "deleted": 0,
+            "unchanged": 0,
+            "failed": 0,
+            "cancellation_requested": False,
+            "detail": None,
+            "activity": (),
+        }
+        _login(client)
+        response = client.post(
+            "/admin/sync/dropbox/stop", headers={"Origin": TEST_ORIGIN}
+        )
+        client.app.state.sync_job_store.request_cancellation.assert_called_once_with(
+            "dropbox", "job-1"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"provider": "dropbox", "status": "stopping"}
 
 
 @pytest.mark.integration

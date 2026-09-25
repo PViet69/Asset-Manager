@@ -6,8 +6,6 @@ from backend.app.api.schemas.admin import (
     AdminProviderRefreshResponse,
     ModelHealthStatus,
     ProviderDashboardStatus,
-    SyncActivityEvent,
-    SyncTerminalEvent,
 )
 from backend.app.api.schemas.file_embeddings import ErrorDetail
 from backend.app.api.schemas.health import HealthResponse, ProviderHealth
@@ -72,28 +70,8 @@ def test_dashboard_contract_dtos_serialize_expected_fields() -> None:
         embedding_model=embedding_model,
         description_model=description_model,
     )
-    activity = SyncActivityEvent(
-        sequence=1,
-        provider=StorageProvider.GOOGLE_DRIVE,
-        filename="asset.png",
-        status="preparing",
-        detail="Preparing file",
-    )
-    terminal = SyncTerminalEvent(
-        sequence=2,
-        provider=StorageProvider.GOOGLE_DRIVE,
-        detected_count=3,
-        embedded_count=2,
-        upserted=2,
-        deleted=0,
-        unchanged=1,
-        failed=0,
-    )
-
     assert response.model_dump()["providers"][0]["embedded_count"] == 2
     assert refresh.model_dump()["description_model"]["health"] == "unavailable"
-    assert activity.model_dump()["terminal"] is False
-    assert terminal.model_dump()["terminal"] is True
 
 
 @pytest.mark.unit
@@ -112,31 +90,6 @@ def test_dashboard_contract_dtos_serialize_expected_fields() -> None:
             ),
             "detected_count",
             4,
-        ),
-        (
-            SyncActivityEvent(
-                sequence=1,
-                provider=StorageProvider.GOOGLE_DRIVE,
-                filename=None,
-                status="failed",
-                detail="Sync failed",
-            ),
-            "sequence",
-            2,
-        ),
-        (
-            SyncTerminalEvent(
-                sequence=2,
-                provider=StorageProvider.GOOGLE_DRIVE,
-                detected_count=None,
-                embedded_count=None,
-                upserted=0,
-                deleted=0,
-                unchanged=0,
-                failed=1,
-            ),
-            "failed",
-            2,
         ),
     ],
 )
