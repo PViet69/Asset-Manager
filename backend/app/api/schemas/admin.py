@@ -13,17 +13,59 @@ class SyncTraceItem(BaseModel):
     detail: str
     filename: str | None = None
     storage_file_id: str | None = None
+    embedded_delta: int = Field(default=0, ge=0, le=1)
 
 
-class AdminSyncResponse(BaseModel):
+class AdminSyncQueuedResponse(BaseModel):
+    """Accepted provider sync task."""
+
     model_config = ConfigDict(frozen=True)
 
+    job_id: str
     provider: str
+    state: str
+
+
+class AdminSyncConflictResponse(BaseModel):
+    """Existing active provider sync task."""
+
+    model_config = ConfigDict(frozen=True)
+
+    detail: str
+    job_id: str
+
+
+class AdminSyncJobActivityResponse(BaseModel):
+    """One safe, ordered ingestion lifecycle event."""
+
+    model_config = ConfigDict(frozen=True)
+
+    sequence: int = Field(ge=1)
+    storage_file_id: str = Field(min_length=1, max_length=255)
+    filename: str = Field(min_length=1, max_length=255)
+    status: str = Field(pattern="^(preparing|indexing|indexed|failed|stopped)$")
+
+
+class AdminSyncJobStatusResponse(BaseModel):
+    """Safe queue job progress visible to administrators."""
+
+    model_config = ConfigDict(frozen=True)
+
+    job_id: str
+    provider: str
+    state: str
+    attempt: int
+    phase: str | None
     upserted: int
     deleted: int
     unchanged: int
     failed: int
-    traces: list[SyncTraceItem] = Field(default_factory=list)
+    cancellation_requested: bool
+    detail: str | None
+    embedded_delta: int = Field(default=0, ge=0)
+    activity: list[AdminSyncJobActivityResponse] = Field(
+        default_factory=list, max_length=50
+    )
 
 
 class AdminSyncStopResponse(BaseModel):
@@ -95,35 +137,6 @@ class AdminProviderRefreshResponse(BaseModel):
     provider: ProviderDashboardStatus
     embedding_model: ModelHealthStatus
     description_model: ModelHealthStatus
-
-
-class SyncActivityEvent(BaseModel):
-    """Safe non-terminal provider sync activity event."""
-
-    model_config = ConfigDict(frozen=True)
-
-    sequence: int
-    provider: str
-    filename: str | None
-    status: str
-    detail: str
-    terminal: bool = False
-
-
-class SyncTerminalEvent(BaseModel):
-    """Safe terminal provider sync event."""
-
-    model_config = ConfigDict(frozen=True)
-
-    sequence: int
-    provider: str
-    detected_count: int | None
-    embedded_count: int | None
-    upserted: int
-    deleted: int
-    unchanged: int
-    failed: int
-    terminal: bool = True
 
 
 class AdminTagGroup(BaseModel):

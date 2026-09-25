@@ -1,19 +1,21 @@
 """Provider-scoped manual storage sync API."""
 
 import asyncio
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse
 
 from backend.app.admin_dashboard.status_service import AdminDashboardStatusService
-from backend.app.admin_dashboard.sync_stream import ProviderSyncStream
 from backend.app.api.schemas.admin import (
     AdminDashboardStatusResponse,
     AdminDeletePointResponse,
     AdminProviderRefreshResponse,
     AdminQdrantItemsResponse,
     AdminReindexResponse,
-    AdminSyncResponse,
+    AdminSyncConflictResponse,
+    AdminSyncJobStatusResponse,
+    AdminSyncQueuedResponse,
     AdminSyncStopResponse,
     AdminTagDiscoveryResponse,
     AdminTagGroup,
@@ -28,6 +30,7 @@ from backend.app.storage.registry import ProviderRegistry, ProviderSync
 from backend.app.storage.scheduler import StorageSyncScheduler
 from backend.app.tag_settings.parser import group_tags
 from backend.app.tag_settings.store import TagSettingsStore
+from backend.app.tasks.job_store import SyncJobProgress
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -154,22 +157,67 @@ async def discover_tags(request: Request) -> AdminTagDiscoveryResponse:
 
 @router.post(
     "/sync/{provider}",
-    response_model=AdminSyncResponse,
-    status_code=status.HTTP_200_OK,
+    response_model=AdminSyncQueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
 )
-async def trigger_sync(provider: str, request: Request) -> AdminSyncResponse:
-    scheduler = _scheduler_or_503(_provider_or_404(request, provider))
-    result = await scheduler.tick_once()
-    await asyncio.to_thread(_provider_or_404(request, provider).health_cache.refresh)
-    return AdminSyncResponse(
-        provider=result.provider,
-        upserted=result.upserted,
-        deleted=result.deleted,
-        unchanged=result.unchanged,
-        failed=result.failed,
-        traces=list(result.traces),
+async def trigger_sync(provider: str, request: Request) -> AdminSyncQueuedResponse:
+    entry = _provider_or_404(request, provider)
+    _scheduler_or_503(entry)
+    _require_available_embedding_model(request)
+    task_id = uuid4().hex
+    store = request.app.state.sync_job_store
+    active_job_id = await asyncio.to_thread(
+        store.acquire_provider_job, provider, task_id
     )
+    if active_job_id is not None:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content=AdminSyncConflictResponse(
+                detail=f"{entry.display_name} sync already running",
+                job_id=active_job_id,
+            ).model_dump(),
+        )
+    queued_progress: SyncJobProgress = {
+        "provider": provider,
+        "state": "PENDING",
+        "attempt": 0,
+        "phase": None,
+        "upserted": 0,
+        "deleted": 0,
+        "unchanged": 0,
+        "failed": 0,
+        "cancellation_requested": False,
+        "detail": None,
+        "activity": (),
+    }
+    try:
+        await asyncio.to_thread(store.write_progress, task_id, queued_progress)
+        request.app.state.sync_task_dispatcher.dispatch(provider, task_id)
+    except Exception:  # noqa: BLE001
+        store.release_provider_job(provider, task_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Sync queue is unavailable",
+        ) from None
+    return AdminSyncQueuedResponse(job_id=task_id, provider=provider, state="PENDING")
+
+
+@router.get(
+    "/sync-jobs/{job_id}",
+    response_model=AdminSyncJobStatusResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin_access)],
+)
+async def get_sync_job(job_id: str, request: Request) -> AdminSyncJobStatusResponse:
+    progress = await asyncio.to_thread(
+        request.app.state.sync_job_store.read_progress, job_id
+    )
+    if progress is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Sync job not found"
+        )
+    return AdminSyncJobStatusResponse(job_id=job_id, **progress)
 
 
 @router.get(
@@ -201,37 +249,30 @@ async def refresh_provider(
 
 
 @router.post(
-    "/sync/{provider}/stream",
-    status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
-)
-async def stream_sync(provider: str, request: Request) -> StreamingResponse:
-    _require_available_embedding_model(request)
-    scheduler = _scheduler_or_503(_provider_or_404(request, provider))
-
-    async def snapshot(selected_provider: str):
-        return (
-            await _dashboard_service(request).refresh_provider(selected_provider)
-        ).provider
-
-    stream = ProviderSyncStream(provider, scheduler, snapshot)
-    return StreamingResponse(
-        stream.run(),
-        media_type="text/event-stream",
-        headers={"Content-Encoding": "identity", "X-Accel-Buffering": "no"},
-    )
-
-
-@router.post(
     "/sync/{provider}/stop",
     response_model=AdminSyncStopResponse,
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(require_admin_access), Depends(require_admin_origin)],
 )
 async def stop_sync(provider: str, request: Request) -> AdminSyncStopResponse:
-    scheduler = _scheduler_or_503(_provider_or_404(request, provider))
-    status_value = "stopping" if scheduler.stop_sync() else "unavailable"
-    return AdminSyncStopResponse(status=status_value, provider=provider)
+    _scheduler_or_503(_provider_or_404(request, provider))
+    store = request.app.state.sync_job_store
+    job_id = await asyncio.to_thread(store.get_provider_job_id, provider)
+    if job_id is None:
+        return AdminSyncStopResponse(status="unavailable", provider=provider)
+    progress = await asyncio.to_thread(store.read_progress, job_id)
+    await asyncio.to_thread(store.request_cancellation, provider, job_id)
+    if progress is not None and progress["state"] == "PENDING":
+        request.app.state.sync_task_dispatcher.revoke(job_id)
+        revoked_progress: SyncJobProgress = {
+            **progress,
+            "state": "REVOKED",
+            "cancellation_requested": True,
+            "activity": progress["activity"],
+        }
+        await asyncio.to_thread(store.write_progress, job_id, revoked_progress)
+        await asyncio.to_thread(store.release_provider_job, provider, job_id)
+    return AdminSyncStopResponse(status="stopping", provider=provider)
 
 
 @router.post(
