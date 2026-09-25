@@ -12,6 +12,7 @@ import {
   discoverAdminTags,
   getAdminProviderItems,
   getAdminSession,
+  getAdminSyncJob,
   getAdminSyncStatus,
   getAdminTags,
   loginAdmin,
@@ -19,9 +20,8 @@ import {
   reindexAdminStorageFile,
   saveAdminTags,
   stopAdminSync,
-  streamAdminSync,
+  triggerAdminSync,
 } from "../api/client";
-import type { SyncEvent } from "../types";
 import { AdminPage } from "./AdminPage";
 
 
@@ -30,7 +30,7 @@ import { AdminPage } from "./AdminPage";
 
 vi.mock("../api/client", () => ({
   ApiError: class ApiError extends Error {
-    constructor(public readonly status: number, message: string) {
+    constructor(public readonly status: number, message: string, public readonly jobId: string | null = null) {
       super(message);
     }
   },
@@ -38,6 +38,7 @@ vi.mock("../api/client", () => ({
   discoverAdminTags: vi.fn(),
   getAdminProviderItems: vi.fn(),
   getAdminSession: vi.fn(),
+  getAdminSyncJob: vi.fn(),
   getAdminSyncStatus: vi.fn(),
   getAdminTags: vi.fn().mockResolvedValue({ groups: [] }),
   loginAdmin: vi.fn(),
@@ -45,20 +46,21 @@ vi.mock("../api/client", () => ({
   reindexAdminStorageFile: vi.fn(),
   saveAdminTags: vi.fn().mockResolvedValue({ groups: [] }),
   stopAdminSync: vi.fn(),
-  streamAdminSync: vi.fn(),
+  triggerAdminSync: vi.fn(),
 }));
 
 const mockedDeleteAdminQdrantPoint = vi.mocked(deleteAdminQdrantPoint);
 const mockedDiscoverAdminTags = vi.mocked(discoverAdminTags);
 const mockedGetAdminProviderItems = vi.mocked(getAdminProviderItems);
 const mockedGetAdminSession = vi.mocked(getAdminSession);
+const mockedGetAdminSyncJob = vi.mocked(getAdminSyncJob);
 const mockedGetAdminSyncStatus = vi.mocked(getAdminSyncStatus);
 const mockedGetAdminTags = vi.mocked(getAdminTags);
 const mockedLoginAdmin = vi.mocked(loginAdmin);
 const mockedRefreshAdminProvider = vi.mocked(refreshAdminProvider);
 const mockedReindexAdminStorageFile = vi.mocked(reindexAdminStorageFile);
 const mockedSaveAdminTags = vi.mocked(saveAdminTags);
-const mockedStreamAdminSync = vi.mocked(streamAdminSync);
+const mockedTriggerAdminSync = vi.mocked(triggerAdminSync);
 
 
 
@@ -340,79 +342,255 @@ test("returns to login when provider status returns 401", async () => {
   expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
 });
 
-test("shows model unavailable dialog when provider sync is rejected", async () => {
-  // Arrange
+test("shows model unavailable dialog when sync queue rejects provider", async () => {
   const user = userEvent.setup();
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
   mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
-  mockedStreamAdminSync.mockRejectedValue(new ApiError(503, "Model not found"));
+  mockedTriggerAdminSync.mockRejectedValue(new ApiError(503, "Model not found"));
   render(<AdminPage />);
 
-  // Act
   await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
 
-  // Assert
   expect(await screen.findByRole("alert")).toHaveTextContent("Service Unavailable");
   expect(screen.getByRole("alert")).toHaveTextContent("Model not found");
 });
 
-test("does not reload dashboard after sync completes", async () => {
+test("polls queued sync job immediately then completes without refreshing dashboard", async () => {
   const user = userEvent.setup();
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
   mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
-  mockedStreamAdminSync.mockResolvedValue(undefined);
+  mockedTriggerAdminSync.mockResolvedValue({ job_id: "job-1", provider: "google_drive", state: "PENDING" });
+  mockedGetAdminSyncJob.mockResolvedValue({
+    job_id: "job-1",
+    provider: "google_drive",
+    state: "SUCCESS",
+    attempt: 1,
+    phase: null,
+    upserted: 1,
+    deleted: 0,
+    unchanged: 0,
+    failed: 0,
+    cancellation_requested: false,
+    detail: null,
+    activity: [],
+  });
 
   render(<AdminPage />);
   await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
 
-  await waitFor(() => {
-    expect(mockedStreamAdminSync).toHaveBeenCalledOnce();
-    expect(mockedGetAdminSyncStatus).toHaveBeenCalledOnce();
-  });
+  await waitFor(() => expect(mockedGetAdminSyncJob).toHaveBeenCalledWith("job-1"));
+  expect(mockedGetAdminSyncStatus).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("button", { name: "Sync Google Drive" })).toBeEnabled();
 });
 
-test("shows session sync activity only on the providers tab", async () => {
+test("adopts active job after duplicate sync conflict", async () => {
   const user = userEvent.setup();
-  let emitEvent: ((event: SyncEvent) => void) | undefined;
-  let resolveStream: (() => void) | undefined;
   mockedGetAdminSession.mockResolvedValue({ username: "admin" });
   mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
-  vi.mocked(stopAdminSync).mockResolvedValue({ status: "stopping", provider: "google_drive" });
-  mockedStreamAdminSync.mockImplementation(async (_provider, onEvent) => {
-    emitEvent = onEvent;
-    await new Promise<void>((resolve) => {
-      resolveStream = resolve;
-    });
+  mockedTriggerAdminSync.mockRejectedValue(new ApiError(409, "Google Drive sync already running", "job-active"));
+  mockedGetAdminSyncJob.mockResolvedValue({
+    job_id: "job-active",
+    provider: "google_drive",
+    state: "STARTED",
+    attempt: 1,
+    phase: "indexing",
+    upserted: 0,
+    deleted: 0,
+    unchanged: 0,
+    failed: 0,
+    cancellation_requested: false,
+    detail: null,
+    activity: [],
   });
 
   render(<AdminPage />);
-  await user.click(await screen.findByRole("button", { name: "Providers" }));
-  await user.click(screen.getByRole("button", { name: "Sync Google Drive" }));
-  emitEvent?.({ sequence: 1, provider: "google_drive", filename: "campaign.pdf", status: "preparing", detail: "Preparing file", terminal: false });
+  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
 
-  expect(await screen.findByRole("region", { name: "Sync activity" })).toHaveTextContent("campaign.pdf");
-  const activityCard = screen.getByRole("article", { name: "Google Drive campaign.pdf" });
-  expect(activityCard).toHaveClass(
-    "admin-sync-file-card--google-drive",
-    "admin-sync-file-card--active",
-    "admin-sync-file-card--entering"
-  );
-  expect(activityCard).toHaveTextContent("Google Drive");
-  const stopButton = screen.getByRole("button", { name: "Stop syncing Google Drive" });
-  expect(stopButton).toBeEnabled();
+  await waitFor(() => expect(mockedGetAdminSyncJob).toHaveBeenCalledWith("job-active"));
+  expect(screen.getByRole("button", { name: "Stop syncing Google Drive" })).toBeEnabled();
+});
 
-  await user.click(stopButton);
-  expect(vi.mocked(stopAdminSync)).toHaveBeenCalledWith("google_drive");
-  expect(await screen.findByRole("button", { name: "Sync Google Drive" })).toBeEnabled();
-  expect(screen.getByRole("region", { name: "Sync activity" })).toHaveTextContent("campaign.pdf");
+test("advances provider coverage live via embedded_delta during polling without refreshing dashboard on success", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedTriggerAdminSync.mockResolvedValue({ job_id: "job-1", provider: "google_drive", state: "PENDING" });
 
-  emitEvent?.({ sequence: 2, provider: "google_drive", filename: "campaign.pdf", status: "indexing", detail: "Indexing file", terminal: false });
+  let pollCount = 0;
+  mockedGetAdminSyncJob.mockImplementation(async () => {
+    pollCount += 1;
+    if (pollCount === 1) {
+      return {
+        job_id: "job-1",
+        provider: "google_drive",
+        state: "STARTED",
+        attempt: 1,
+        phase: "indexing",
+        upserted: 1,
+        deleted: 0,
+        unchanged: 0,
+        failed: 0,
+        cancellation_requested: false,
+        detail: null,
+        embedded_delta: 1,
+        activity: [{ sequence: 1, storage_file_id: "f1", filename: "f1.pdf", status: "indexed" }],
+      };
+    }
+    return {
+      job_id: "job-1",
+      provider: "google_drive",
+      state: "SUCCESS",
+      attempt: 1,
+      phase: null,
+      upserted: 1,
+      deleted: 0,
+      unchanged: 0,
+      failed: 0,
+      cancellation_requested: false,
+      detail: null,
+      embedded_delta: 1,
+      activity: [],
+    };
+  });
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
+
+  // Immediate poll advances provider embedded_count from 18 to 19 before terminal completion
+  expect(await screen.findByText("19 / 20")).toBeInTheDocument();
+  expect(mockedGetAdminSyncStatus).toHaveBeenCalledTimes(1);
+
+  // Subsequent poll on SUCCESS completes cleanly without triggering full dashboard refresh
+  await waitFor(() => expect(screen.getByRole("button", { name: "Sync Google Drive" })).toBeEnabled(), { timeout: 4000 });
+  expect(mockedGetAdminSyncStatus).toHaveBeenCalledTimes(1);
+}, 8000);
+
+test("409 conflict adoption baselines on first poll to prevent double counting past delta", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedTriggerAdminSync.mockRejectedValue(new ApiError(409, "Google Drive sync already running", "job-active"));
+
+  let pollCount = 0;
+  mockedGetAdminSyncJob.mockImplementation(async () => {
+    pollCount += 1;
+    if (pollCount === 1) {
+      // First poll after adopting already-running job has delta=1 from past files
+      return {
+        job_id: "job-active",
+        provider: "google_drive",
+        state: "STARTED",
+        attempt: 1,
+        phase: "indexing",
+        upserted: 1,
+        deleted: 0,
+        unchanged: 0,
+        failed: 0,
+        cancellation_requested: false,
+        detail: null,
+        embedded_delta: 1,
+        activity: [],
+      };
+    }
+    // Second poll: new file indexed, delta=2
+    return {
+      job_id: "job-active",
+      provider: "google_drive",
+      state: "STARTED",
+      attempt: 1,
+      phase: "indexing",
+      upserted: 2,
+      deleted: 0,
+      unchanged: 0,
+      failed: 0,
+      cancellation_requested: false,
+      detail: null,
+      embedded_delta: 2,
+      activity: [],
+    };
+  });
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
+
+  // First poll baselines to 1; count remains 18 / 20 without double counting the past delta
+  await waitFor(() => expect(mockedGetAdminSyncJob).toHaveBeenCalledWith("job-active"));
+  expect(screen.getByText("18 / 20")).toBeInTheDocument();
+
+  // Second poll detects new delta (2 - 1 = 1) and advances count to 19 / 20
+  expect(await screen.findByText("19 / 20", undefined, { timeout: 4000 })).toBeInTheDocument();
+}, 8000);
+
+test("removes expired job after polling returns 404", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedTriggerAdminSync.mockResolvedValue({ job_id: "job-1", provider: "google_drive", state: "PENDING" });
+  mockedGetAdminSyncJob.mockRejectedValue(new ApiError(404, "Sync job not found"));
+
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent("Sync status expired. Refresh status to confirm results.");
   expect(screen.getByRole("button", { name: "Sync Google Drive" })).toBeEnabled();
+});
 
-  await user.click(screen.getByRole("button", { name: "Overview" }));
-  expect(screen.queryByRole("region", { name: "Sync activity" })).not.toBeInTheDocument();
+test("requests cooperative sync cancellation without stopping polling", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedTriggerAdminSync.mockResolvedValue({ job_id: "job-1", provider: "google_drive", state: "PENDING" });
+  mockedGetAdminSyncJob.mockResolvedValue({
+    job_id: "job-1",
+    provider: "google_drive",
+    state: "STARTED",
+    attempt: 1,
+    phase: "indexing",
+    upserted: 0,
+    deleted: 0,
+    unchanged: 0,
+    failed: 0,
+    cancellation_requested: false,
+    detail: null,
+    activity: [],
+  });
+  vi.mocked(stopAdminSync).mockResolvedValue({ status: "stopping", provider: "google_drive" });
 
-  resolveStream?.();
+  render(<AdminPage />);
+  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
+  await user.click(await screen.findByRole("button", { name: "Stop syncing Google Drive" }));
+
+  expect(vi.mocked(stopAdminSync)).toHaveBeenCalledWith("google_drive");
+  expect(screen.getByRole("button", { name: "Stop syncing Google Drive" })).toBeDisabled();
+});
+
+test("renders sync activity in Activity tab", async () => {
+  const user = userEvent.setup();
+  mockedGetAdminSession.mockResolvedValue({ username: "admin" });
+  mockedGetAdminSyncStatus.mockResolvedValue(dashboard);
+  mockedTriggerAdminSync.mockResolvedValue({ job_id: "job-1", provider: "google_drive", state: "PENDING" });
+  mockedGetAdminSyncJob.mockResolvedValue({
+    job_id: "job-1",
+    provider: "google_drive",
+    state: "STARTED",
+    attempt: 1,
+    phase: "indexing",
+    upserted: 0,
+    deleted: 0,
+    unchanged: 0,
+    failed: 0,
+    cancellation_requested: false,
+    detail: null,
+    activity: [{ sequence: 1, storage_file_id: "drive-1", filename: "report.pdf", status: "indexing" }],
+  });
+  render(<AdminPage />);
+
+  await user.click(await screen.findByRole("button", { name: "Sync Google Drive" }));
+  await waitFor(() => expect(mockedGetAdminSyncJob).toHaveBeenCalledWith("job-1"));
+  await user.click(screen.getByRole("button", { name: "Activity" }));
+
+  expect(await screen.findByRole("article", { name: "report.pdf: Indexing" })).toBeInTheDocument();
+  expect(screen.queryByText("No activity in this session.")).not.toBeInTheDocument();
 });
 
 test("renders detected and embedded counts plus model health", async () => {
