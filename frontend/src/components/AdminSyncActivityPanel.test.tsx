@@ -86,3 +86,34 @@ test("renders blank activity panel before sync begins", () => {
   expect(screen.getByText("No ingestion activity yet.")).toBeInTheDocument();
   expect(screen.queryByRole("article")).not.toBeInTheDocument();
 });
+
+test("triggers circle wave animation when file transitions to indexed", () => {
+  const { rerender } = render(
+    <AdminSyncActivityPanel
+      providers={providers}
+      activityByProvider={{
+        google_drive: [
+          { sequence: 1, storage_file_id: "drive-1", filename: "sample.pdf", status: "indexing" },
+        ],
+      }}
+    />
+  );
+
+  const card = screen.getByRole("article", { name: "sample.pdf: Indexing" });
+  expect(card).not.toHaveClass("admin-sync-file-card--wave-circle");
+
+  rerender(
+    <AdminSyncActivityPanel
+      providers={providers}
+      activityByProvider={{
+        google_drive: [
+          { sequence: 1, storage_file_id: "drive-1", filename: "sample.pdf", status: "indexed" },
+        ],
+      }}
+    />
+  );
+
+  const updatedCard = screen.getByRole("article", { name: "sample.pdf: Indexed" });
+  expect(updatedCard).toHaveClass("admin-sync-file-card--wave-circle");
+});
+
