@@ -3911,6 +3911,10 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   font-weight: 700;
 }
 
+/* =========================================================================
+   ADMIN SYNC ACTIVITY CARDS: FLUID FLOW-DOWN & CIRCLE WAVE ANIMATION
+   ========================================================================= */
+
 .admin-sync-activity__groups {
   display: flex;
   flex: 1;
@@ -3920,6 +3924,34 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
+}
+
+/* Fluid flow-down slot */
+.card-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 360ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card-slot--entering {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.card-slot__inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.card-slot .admin-sync-file-card {
+  transform: translateY(0);
+  transition: transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card-slot--entering .admin-sync-file-card {
+  transform: translateY(-14px);
 }
 
 .admin-sync-file-card {
@@ -3932,6 +3964,8 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   max-width: none;
   gap: 12px;
   overflow: hidden;
+  clip-path: inset(0 round 10px);
+  isolation: isolate;
   padding: 9px 13px;
   border: 1px solid color-mix(in srgb, var(--sync-provider-accent) 20%, rgba(111, 137, 171, 0.14));
   border-radius: 10px;
@@ -4027,6 +4061,142 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   --sync-provider-surface: rgba(185, 28, 28, 0.08);
 }
 
+/* -------------------------------------------------------------------------
+   CIRCLE WAVE POP & GLOW ANIMATION (0.5x SLOW SPEED)
+   ------------------------------------------------------------------------- */
+.admin-sync-file-card--wave-circle {
+  position: relative;
+  animation: admin-sync-card-pop-wave 1700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Primary sharp circular ring expanding as a true circle to 100% card width */
+.admin-sync-file-card--wave-circle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  pointer-events: none;
+  z-index: 4;
+  border-radius: 50%;
+  border: 3px solid #22c55e;
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.95), inset 0 0 16px rgba(74, 222, 128, 0.6);
+  animation: admin-sync-circle-expand 1120ms cubic-bezier(0.22, 0.8, 0.3, 1) forwards;
+}
+
+/* Secondary outer echoing true circular ring with soft radial glow */
+.admin-sync-file-card--wave-circle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  pointer-events: none;
+  z-index: 4;
+  border-radius: 50%;
+  border: 2px solid rgba(134, 239, 172, 0.85);
+  background: radial-gradient(circle at center, rgba(34, 197, 94, 0.35) 0%, rgba(34, 197, 94, 0.12) 65%, transparent 100%);
+  animation: admin-sync-circle-expand 1120ms cubic-bezier(0.22, 0.8, 0.3, 1) 120ms forwards;
+}
+
+@keyframes admin-sync-circle-expand {
+  0% {
+    transform: translate(-50%, -50%) scale(0.01);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 0.9;
+  }
+  92% {
+    /* Pure 1:1 circle diameter reaches exactly 100% of card's full width */
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    /* Sweeps past the outer corners and dissolves */
+    transform: translate(-50%, -50%) scale(1.08);
+    opacity: 0;
+  }
+}
+
+@keyframes admin-sync-card-pop-wave {
+  0% {
+    border-color: color-mix(in srgb, var(--sync-provider-accent) 20%, rgba(111, 137, 171, 0.14));
+    box-shadow: inset 3px 0 0 var(--sync-provider-accent), 0 2px 6px rgba(15, 23, 42, 0.04);
+    background: linear-gradient(135deg, var(--sync-provider-surface), var(--admin-surface) 56%);
+  }
+  18% {
+    border-color: rgba(34, 197, 94, 0.5);
+    box-shadow: inset 0 0 0 1.5px rgba(34, 197, 94, 0.4), inset 0 0 14px rgba(34, 197, 94, 0.25), inset 4px 0 0 #16a34a;
+    background: linear-gradient(135deg, rgba(209, 250, 229, 0.7), rgba(236, 253, 245, 0.9));
+  }
+  45% {
+    border-color: #22c55e;
+    box-shadow: inset 0 0 0 2px #22c55e, inset 0 0 24px rgba(34, 197, 94, 0.42), inset 4px 0 0 #15803d;
+    background: linear-gradient(135deg, rgba(209, 250, 229, 0.88), rgba(236, 253, 245, 0.96));
+  }
+  62% {
+    border-color: #16a34a;
+    box-shadow: inset 0 0 0 2px #16a34a, inset 0 0 20px rgba(34, 197, 94, 0.38), inset 4px 0 0 #15803d;
+    background: linear-gradient(135deg, rgba(209, 250, 229, 0.82), rgba(236, 253, 245, 0.94));
+  }
+  80% {
+    border-color: rgba(34, 197, 94, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.25), inset 0 0 10px rgba(34, 197, 94, 0.15), inset 4px 0 0 #22c55e;
+    background: linear-gradient(135deg, rgba(209, 250, 229, 0.45), rgba(240, 253, 244, 0.8));
+  }
+  100% {
+    border-color: color-mix(in srgb, var(--sync-provider-accent) 20%, rgba(111, 137, 171, 0.14));
+    box-shadow: inset 3px 0 0 var(--sync-provider-accent), 0 2px 6px rgba(15, 23, 42, 0.04);
+    background: linear-gradient(135deg, var(--sync-provider-surface), var(--admin-surface) 56%);
+  }
+}
+
+.admin-sync-file-card--wave-circle .admin-sync-file-card__status {
+  animation: admin-sync-badge-pop 1800ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
+}
+
+@keyframes admin-sync-badge-pop {
+  0% { transform: scale(0.96); }
+  30% {
+    transform: scale(1.08);
+    background: #4ade80;
+    color: #052e16;
+  }
+  60% {
+    transform: scale(1.02);
+    background: rgba(187, 247, 208, 0.95);
+    color: #14532d;
+  }
+  80% {
+    transform: scale(1.01);
+    background: rgba(220, 252, 231, 0.95);
+    color: var(--admin-green);
+  }
+  100% {
+    transform: scale(1);
+    background: rgba(220, 252, 231, 0.82);
+    color: var(--admin-green);
+  }
+}
+
+.admin-sync-file-card--wave-circle .admin-sync-file-card__filename {
+  animation: admin-sync-filename-glow 1800ms ease both;
+}
+
+@keyframes admin-sync-filename-glow {
+  0% { color: var(--admin-text); }
+  35% { color: #064e3b; text-shadow: 0 0 6px rgba(34, 197, 94, 0.35); }
+  60% { color: #064e3b; text-shadow: 0 0 3px rgba(34, 197, 94, 0.2); }
+  85% { color: #166534; text-shadow: 0 0 1px rgba(34, 197, 94, 0.08); }
+  100% { color: var(--admin-text); text-shadow: none; }
+}
+
 @keyframes admin-sync-file-enter {
   from {
     opacity: 0;
@@ -4052,7 +4222,10 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
 @media (prefers-reduced-motion: reduce) {
   .admin-sync-activity,
   .admin-sync-file-card,
-  .admin-sync-file-card::after {
+  .admin-sync-file-card::before,
+  .admin-sync-file-card::after,
+  .card-slot,
+  .card-slot .admin-sync-file-card {
     transition: none;
     animation: none;
   }

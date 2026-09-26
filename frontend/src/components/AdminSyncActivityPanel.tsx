@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { AdminSyncJobActivity, ProviderDashboardStatus } from "../types";
 import { ProviderLogo } from "./ProviderLogo";
 
@@ -34,10 +35,52 @@ export function AdminSyncActivityPanel({
   providers,
   activityByProvider,
 }: AdminSyncActivityPanelProps): JSX.Element {
+  const [wavingIds, setWavingIds] = useState<ReadonlySet<string>>(new Set());
+  const prevStatusesRef = useRef<Map<string, AdminSyncJobActivity["status"]>>(new Map());
+
   const providerActivity = providers.flatMap((provider) => {
     const activity = activityByProvider[provider.provider] ?? [];
     return activity.length > 0 ? [{ provider, activity: [...activity].sort((left, right) => right.sequence - left.sequence) }] : [];
   });
+
+  useEffect(() => {
+    const currentStatuses = new Map<string, AdminSyncJobActivity["status"]>();
+    const newlyIndexed: string[] = [];
+
+    for (const { provider, activity } of providerActivity) {
+      for (const event of activity) {
+        const key = `${provider.provider}-${event.storage_file_id}`;
+        currentStatuses.set(key, event.status);
+
+        const prevStatus = prevStatusesRef.current.get(key);
+        if (event.status === "indexed" && prevStatus && prevStatus !== "indexed") {
+          newlyIndexed.push(key);
+        }
+      }
+    }
+
+    prevStatusesRef.current = currentStatuses;
+
+    if (newlyIndexed.length > 0) {
+      setWavingIds((prev) => {
+        const next = new Set(prev);
+        for (const id of newlyIndexed) next.add(id);
+        return next;
+      });
+
+      const timer = window.setTimeout(() => {
+        setWavingIds((prev) => {
+          const next = new Set(prev);
+          for (const id of newlyIndexed) next.delete(id);
+          return next;
+        });
+      }, 1800);
+
+      return () => {
+        window.clearTimeout(timer);
+      };
+    }
+  }, [providerActivity]);
 
   return (
     <section className="admin-sync-activity" aria-label="Sync activity" aria-live="polite" aria-atomic="false">
@@ -47,18 +90,22 @@ export function AdminSyncActivityPanel({
       <div className="admin-sync-activity__groups">
         {providerActivity.length === 0 ? <p>No ingestion activity yet.</p> : providerActivity.flatMap(({ provider, activity }) => activity.map((event) => {
           const providerClass = providerClassName(provider.provider);
+          const cardKey = `${provider.provider}-${event.storage_file_id}`;
+          const isWaving = wavingIds.has(cardKey);
+
           const cardClassName = [
             "admin-sync-file-card",
             "admin-sync-file-card--entering",
             `admin-sync-file-card--${providerClass}`,
             `admin-sync-file-card--${event.status}`,
             isActive(event.status) ? "admin-sync-file-card--active" : "",
+            isWaving ? "admin-sync-file-card--wave-circle" : "",
           ].filter(Boolean).join(" ");
 
           return (
             <article
               className={cardClassName}
-              key={`${provider.provider}-${event.storage_file_id}`}
+              key={cardKey}
               aria-label={`${event.filename}: ${statusLabel(event.status)}`}
             >
               <strong className="admin-sync-file-card__filename">{event.filename}</strong>
