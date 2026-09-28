@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdminSyncJobActivity, ProviderDashboardStatus } from "../types";
 import { ProviderLogo } from "./ProviderLogo";
 
@@ -36,12 +36,52 @@ export function AdminSyncActivityPanel({
   activityByProvider,
 }: AdminSyncActivityPanelProps): JSX.Element {
   const [wavingIds, setWavingIds] = useState<ReadonlySet<string>>(new Set());
+  const [enteringIds, setEnteringIds] = useState<ReadonlySet<string>>(new Set());
   const prevStatusesRef = useRef<Map<string, AdminSyncJobActivity["status"]>>(new Map());
+  const knownIdsRef = useRef<ReadonlySet<string>>(new Set());
 
-  const providerActivity = providers.flatMap((provider) => {
-    const activity = activityByProvider[provider.provider] ?? [];
-    return activity.length > 0 ? [{ provider, activity: [...activity].sort((left, right) => right.sequence - left.sequence) }] : [];
-  });
+  const providerActivity = useMemo(
+    () => providers.flatMap((provider) => {
+      const activity = activityByProvider[provider.provider] ?? [];
+      return activity.length > 0
+        ? [{ provider, activity: [...activity].sort((left, right) => right.sequence - left.sequence) }]
+        : [];
+    }),
+    [providers, activityByProvider],
+  );
+
+  const visibleIds = useMemo(
+    () => new Set(
+      providerActivity.flatMap(({ provider, activity }) =>
+        activity.map((event) => `${provider.provider}-${event.storage_file_id}`),
+      ),
+    ),
+    [providerActivity],
+  );
+
+  useEffect(() => {
+    const newlyVisibleIds = [...visibleIds].filter(
+      (id) => !knownIdsRef.current.has(id),
+    );
+    knownIdsRef.current = visibleIds;
+
+    if (newlyVisibleIds.length > 0) {
+      setEnteringIds((current) => new Set([...current, ...newlyVisibleIds]));
+    }
+  }, [visibleIds]);
+
+  useEffect(() => {
+    if (enteringIds.size === 0) return;
+
+    const timer = window.setTimeout(() => {
+      setEnteringIds(new Set());
+    }, 360);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [enteringIds]);
+
 
   useEffect(() => {
     const currentStatuses = new Map<string, AdminSyncJobActivity["status"]>();
@@ -92,13 +132,14 @@ export function AdminSyncActivityPanel({
           const providerClass = providerClassName(provider.provider);
           const cardKey = `${provider.provider}-${event.storage_file_id}`;
           const isWaving = wavingIds.has(cardKey);
+          const isEntering = enteringIds.has(cardKey);
 
           const cardClassName = [
             "admin-sync-file-card",
-            "admin-sync-file-card--entering",
+            isEntering ? "admin-sync-file-card--entering" : "",
             `admin-sync-file-card--${providerClass}`,
             `admin-sync-file-card--${event.status}`,
-            isActive(event.status) ? "admin-sync-file-card--active" : "",
+            isActive(event.status) ? `admin-sync-file-card--active-${event.status}` : "",
             isWaving ? "admin-sync-file-card--wave-circle" : "",
           ].filter(Boolean).join(" ");
 

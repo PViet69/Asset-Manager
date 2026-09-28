@@ -16,7 +16,10 @@ import {
   stopAdminSync,
   triggerAdminSync,
 } from "../api/client";
-import { connectSyncJobWs } from "../api/syncWebSocket";
+import {
+  connectSyncJobWs,
+  type SyncWsTerminalMessage,
+} from "../api/syncWebSocket";
 import type {
   AdminSyncJobActivity,
   ModelHealthStatus,
@@ -31,6 +34,15 @@ import { AdminSyncActivityPanel } from "./AdminSyncActivityPanel";
 import { ModelUnavailableDialog } from "./ModelUnavailableDialog";
 
 const SAFE_SYNC_ERROR = "Provider sync failed. Try again.";
+const SYNC_ACTIVITY_STAGGER_MS = 100;
+const SYNC_ACTIVITY_WAVE_MS = 100;
+const SYNC_ACTIVITY_STATUS_ORDER = {
+  preparing: 0,
+  indexing: 1,
+  indexed: 2,
+  failed: 3,
+  stopped: 3,
+} as const;
 const AdminLoginBackground = lazy(() =>
   import("./AdminLoginBackground").then(({ AdminLoginBackground: Background }) => ({
     default: Background,
@@ -396,6 +408,10 @@ export function AdminPage(): JSX.Element {
     }
     try {
       const queued = await triggerAdminSync(providerId);
+      setSyncActivityByProvider((current) => {
+        const { [providerId]: _, ...remaining } = current;
+        return remaining;
+      });
       lastJobEmbeddedDelta.current[queued.job_id] = 0;
       setSyncJobIdsByProvider((current) => ({ ...current, [providerId]: queued.job_id }));
       setSyncingProviders((current) => new Set(current).add(providerId));
@@ -444,12 +460,85 @@ export function AdminPage(): JSX.Element {
     const cleanups: (() => void)[] = [];
 
     for (const [providerId, jobId] of activeJobs) {
+      const fileLanes = new Map<string, number>();
+      const pendingActivities = new Map<AdminSyncJobActivity["status"], AdminSyncJobActivity[]>();
+      const activityTimerIds = new Set<number>();
+      let isWaveRunning = false;
+      let waveTimerId: number | undefined;
+      let pendingTerminal: SyncWsTerminalMessage | null = null;
+
+      const completeJob = (data: SyncWsTerminalMessage): void => {
+        delete lastJobEmbeddedDelta.current[jobId];
+        removeJob(providerId);
+        if (data.state === "FAILURE") {
+          addToast(SAFE_SYNC_ERROR, "error");
+        } else if (data.state === "REVOKED") {
+          addToast("Provider sync stopped.", "status");
+        }
+      };
+
+      const applyActivity = (activity: AdminSyncJobActivity): void => {
+        setSyncActivityByProvider((current) => ({
+          ...current,
+          [providerId]: mergeActivity(current[providerId] ?? [], activity),
+        }));
+        if (activity.status === "indexed" && activity.embedded_delta === 1) {
+          incrementProviderCoverage(providerId);
+          setDashboardEpoch((current) => current + 1);
+        }
+      };
+
+      const finishQueuedActivity = (): void => {
+        if (activityTimerIds.size === 0 && waveTimerId === undefined && pendingTerminal !== null) {
+          completeJob(pendingTerminal);
+        }
+      };
+
+      const flushActivityWaves = (): void => {
+        waveTimerId = undefined;
+        if (isWaveRunning) return;
+
+        const nextWave = [...pendingActivities.entries()]
+          .sort(([left], [right]) => SYNC_ACTIVITY_STATUS_ORDER[left] - SYNC_ACTIVITY_STATUS_ORDER[right])
+          .at(0);
+        if (nextWave === undefined) {
+          finishQueuedActivity();
+          return;
+        }
+
+        isWaveRunning = true;
+        const [status, activities] = nextWave;
+        pendingActivities.delete(status);
+        for (const activity of [...activities].sort(
+          (left, right) => (fileLanes.get(left.storage_file_id) ?? 0) - (fileLanes.get(right.storage_file_id) ?? 0),
+        )) {
+          const lane = fileLanes.get(activity.storage_file_id) ?? 0;
+          const timerId = window.setTimeout(() => {
+            activityTimerIds.delete(timerId);
+            applyActivity(activity);
+            if (activityTimerIds.size === 0) {
+              isWaveRunning = false;
+              flushActivityWaves();
+            }
+          }, (lane + 1) * SYNC_ACTIVITY_STAGGER_MS);
+          activityTimerIds.add(timerId);
+        }
+      };
+
+      const enqueueActivity = (activity: AdminSyncJobActivity): void => {
+        if (!fileLanes.has(activity.storage_file_id)) {
+          fileLanes.set(activity.storage_file_id, fileLanes.size);
+        }
+        const queued = pendingActivities.get(activity.status) ?? [];
+        pendingActivities.set(activity.status, [...queued, activity]);
+        if (!isWaveRunning && waveTimerId === undefined) {
+          waveTimerId = window.setTimeout(flushActivityWaves, SYNC_ACTIVITY_WAVE_MS);
+        }
+      };
+
       const cleanup = connectSyncJobWs(jobId, {
         onSnapshot(data) {
-          setSyncActivityByProvider((current) => ({
-            ...current,
-            [providerId]: [...data.activity],
-          }));
+          for (const activity of data.activity) enqueueActivity(activity);
           const previousDelta = lastJobEmbeddedDelta.current[jobId];
           if (previousDelta === undefined || previousDelta === -1) {
             lastJobEmbeddedDelta.current[jobId] = data.embedded_delta ?? 0;
@@ -457,31 +546,12 @@ export function AdminPage(): JSX.Element {
         },
 
         onActivity(activity) {
-          setSyncActivityByProvider((current) => ({
-            ...current,
-            [providerId]: mergeActivity(current[providerId] ?? [], activity),
-          }));
-          if (activity.status === "indexed" && activity.embedded_delta === 1) {
-            setDashboard((current) => ({
-              ...current,
-              providers: current.providers.map((provider) =>
-                provider.provider !== providerId || provider.embedded_count === null
-                  ? provider
-                  : { ...provider, embedded_count: provider.embedded_count + 1 },
-              ),
-            }));
-            setDashboardEpoch((current) => current + 1);
-          }
+          enqueueActivity(activity);
         },
 
         onTerminal(data) {
-          delete lastJobEmbeddedDelta.current[jobId];
-          removeJob(providerId);
-          if (data.state === "FAILURE") {
-            addToast(SAFE_SYNC_ERROR, "error");
-          } else if (data.state === "REVOKED") {
-            addToast("Provider sync stopped.", "status");
-          }
+          pendingTerminal = data;
+          finishQueuedActivity();
         },
 
         onError(detail) {
@@ -500,7 +570,12 @@ export function AdminPage(): JSX.Element {
           }
         },
       });
-      cleanups.push(cleanup);
+      cleanups.push(() => {
+        if (waveTimerId !== undefined) window.clearTimeout(waveTimerId);
+        for (const timerId of activityTimerIds) window.clearTimeout(timerId);
+        activityTimerIds.clear();
+        cleanup();
+      });
     }
 
     return () => {
