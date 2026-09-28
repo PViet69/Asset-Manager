@@ -298,3 +298,27 @@ def test_read_progress_discards_unsafe_activity_values() -> None:
 
     assert stored is not None
     assert stored["activity"] == ()
+
+
+@pytest.mark.unit
+def test_publish_event_broadcasts_json_to_redis_channel() -> None:
+    import json
+
+    redis_client = fakeredis.FakeRedis(decode_responses=True)
+    store = RedisSyncJobStore(redis_client, 86_400)
+    pubsub = redis_client.pubsub()
+    channel = RedisSyncJobStore.events_channel("job-test")
+    pubsub.subscribe(channel)
+
+    # Consume subscription confirmation
+    msg = pubsub.get_message(timeout=1.0)
+    assert msg is not None and msg["type"] == "subscribe"
+
+    payload = {"type": "activity", "activity": {"sequence": 1, "status": "indexed"}}
+    store.publish_event("job-test", payload)
+
+    message = pubsub.get_message(timeout=1.0)
+    assert message is not None
+    assert message["channel"] == channel
+    assert json.loads(message["data"]) == payload
+

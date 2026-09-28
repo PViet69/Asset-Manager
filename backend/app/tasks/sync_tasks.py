@@ -176,6 +176,9 @@ def sync_provider(self: Task, provider: str) -> SyncJobProgress:
             next_sequence += 1
             try:
                 store.append_activity(job_id, activity)
+                store.publish_event(
+                    job_id, {"type": "activity", "activity": activity}
+                )
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "Could not persist sync activity", extra={"job_id": job_id}
@@ -222,6 +225,7 @@ def sync_provider(self: Task, provider: str) -> SyncJobProgress:
             )
         )
         store.write_progress(job_id, terminal)
+        store.publish_event(job_id, {"type": "terminal", **terminal})
         return terminal
     except Exception as error:  # noqa: BLE001
         latest_progress = store.read_progress(job_id)
@@ -262,6 +266,7 @@ def sync_provider(self: Task, provider: str) -> SyncJobProgress:
             activity=activity,
         )
         store.write_progress(job_id, failure)
+        store.publish_event(job_id, {"type": "terminal", **failure})
         return failure
     finally:
         progress = store.read_progress(job_id)
