@@ -3987,14 +3987,22 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   animation: admin-sync-file-enter 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.admin-sync-file-card--active::after {
+.admin-sync-file-card--active-preparing::after,
+.admin-sync-file-card--active-indexing::after {
   position: absolute;
-  inset: 0 auto 0 -55%;
-  width: 45%;
+  inset: 0 auto 0 -100%;
+  width: 100%;
   content: "";
   pointer-events: none;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--sync-provider-accent) 14%, transparent), transparent);
-  animation: admin-sync-file-flow 2.4s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--sync-provider-accent) 22%, transparent), transparent);
+}
+
+.admin-sync-file-card--active-preparing::after {
+  animation: admin-sync-file-flow-preparing 2.4s ease-in-out infinite;
+}
+
+.admin-sync-file-card--active-indexing::after {
+  animation: admin-sync-file-flow-indexing 2.4s ease-in-out infinite;
 }
 
 .admin-sync-file-card__filename {
@@ -4209,7 +4217,12 @@ button.admin-tab-chip:hover:not(.admin-tab-chip--active) {
   }
 }
 
-@keyframes admin-sync-file-flow {
+@keyframes admin-sync-file-flow-preparing {
+  from { transform: translateX(0); }
+  to { transform: translateX(360%); }
+}
+
+@keyframes admin-sync-file-flow-indexing {
   from { transform: translateX(0); }
   to { transform: translateX(360%); }
 }
