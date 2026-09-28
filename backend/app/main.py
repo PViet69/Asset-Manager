@@ -11,6 +11,7 @@ from backend.app.admin_auth import AdminAuthConfig
 from backend.app.admin_dashboard.status_service import AdminDashboardStatusService
 from backend.app.api.dependencies import get_file_ingestion_service
 from backend.app.api.routes.admin.sync import router as admin_sync_router
+from backend.app.api.routes.admin.sync_ws import router as admin_sync_ws_router
 from backend.app.api.routes.auth import router as auth_router
 from backend.app.api.routes.file_embeddings import router as file_embeddings_router
 from backend.app.api.routes.health import (
@@ -175,6 +176,9 @@ def create_app(
         )
         application.state.sync_job_store = effective_sync_job_store
         application.state.sync_task_dispatcher = effective_sync_task_dispatcher
+        application.state.sync_events_redis_url = (
+            settings.CELERY_RESULT_BACKEND if settings is not None else None
+        )
         try:
             yield
         finally:
@@ -202,6 +206,7 @@ def create_app(
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(admin_sync_router)
+    app.include_router(admin_sync_ws_router)
 
     @app.middleware("http")
     async def protect_uploads(

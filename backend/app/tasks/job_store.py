@@ -125,6 +125,13 @@ class RedisSyncJobStore:
             self._provider_key(progress["provider"]), self._ttl_seconds
         )
 
+    def publish_event(self, job_id: str, event: dict) -> None:
+        """Publish a sync job event to the Redis Pub/Sub channel."""
+        self._redis_client.publish(
+            self.events_channel(job_id),
+            json.dumps(event),
+        )
+
     def append_activity(self, job_id: str, activity: SyncJobActivity) -> None:
         validated_activity = self._validated_activity(activity)
         if validated_activity is None:
@@ -271,3 +278,8 @@ class RedisSyncJobStore:
     @staticmethod
     def _cancel_key(job_id: str) -> str:
         return f"sync-job:{job_id}:cancel"
+
+    @staticmethod
+    def events_channel(job_id: str) -> str:
+        """Redis Pub/Sub channel for real-time sync job events."""
+        return f"sync-job:{job_id}:events"
