@@ -1,156 +1,234 @@
 import { useEffect, useRef, useState } from "react";
-import { ApiError, stopAdminSync, streamAdminSync } from "../../api/client";
+import { ApiError, stopAdminSync, triggerAdminSync } from "../../api/client";
+import { connectSyncJobWs } from "../../api/syncWebSocket";
+import type { AdminSyncJobActivity, SyncActivityEvent } from "../../types";
 import type { ControllerOptions } from "./admin.types";
 import {
   emptyActivity,
   reduceSyncEvent,
   type ProviderActivityState,
 } from "./syncActivity";
+
+const SAFE_SYNC_ERROR = "Provider sync failed. Try again.";
+
+function toEvent(provider: string, activity: AdminSyncJobActivity): SyncActivityEvent {
+  return {
+    sequence: activity.sequence,
+    provider,
+    filename: activity.filename,
+    status: activity.status,
+    detail: "",
+    terminal: false,
+  };
+}
+
+function fromSnapshot(
+  provider: string,
+  activities: readonly AdminSyncJobActivity[],
+): ProviderActivityState {
+  return [...activities]
+    .sort((a, b) => a.sequence - b.sequence)
+    .reduce(
+      (state, activity) => reduceSyncEvent(state, toEvent(provider, activity)),
+      { ...emptyActivity(), connection: "streaming" as const },
+    );
+}
+
 export function useProviderSync({
   enabled,
   onError,
   onComplete,
   onModelUnavailable,
+  onProgress,
+  onStatus,
 }: ControllerOptions & {
   onComplete(provider: string): Promise<void>;
   onModelUnavailable(): void;
+  onProgress(provider: string, delta: number): void;
+  onStatus(message: string): void;
 }) {
   const [activityByProvider, setActivity] = useState<
     Readonly<Record<string, ProviderActivityState>>
   >({});
-  const [syncingProviders, setSyncing] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
-  const [stoppingProviders, setStopping] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
-  const controllers = useRef(new Map<string, AbortController>());
-  const stopping = useRef(new Set<string>());
-  const callbacks = useRef({ onError, onComplete, onModelUnavailable });
-  callbacks.current = { onError, onComplete, onModelUnavailable };
+  const [syncJobIdsByProvider, setSyncJobIds] = useState<Readonly<Record<string, string>>>({});
+  const [syncingProviders, setSyncing] = useState<ReadonlySet<string>>(new Set());
+  const [stoppingProviders, setStopping] = useState<ReadonlySet<string>>(new Set());
+  const callbacks = useRef({ onError, onComplete, onModelUnavailable, onProgress, onStatus });
+  callbacks.current = { onError, onComplete, onModelUnavailable, onProgress, onStatus };
   const live = useRef(enabled);
   live.current = enabled;
+  const jobs = useRef<Readonly<Record<string, string>>>({});
+  jobs.current = syncJobIdsByProvider;
+  const starting = useRef(new Set<string>());
+  const stopping = useRef(new Set<string>());
+  const lastSequence = useRef(new Map<string, number>());
+  const lastEmbeddedDelta = useRef(new Map<string, number>());
+
   useEffect(() => {
     if (!enabled) {
-      controllers.current.forEach((c) => c.abort());
-      controllers.current.clear();
+      jobs.current = {};
+      starting.current.clear();
       stopping.current.clear();
+      lastSequence.current.clear();
+      lastEmbeddedDelta.current.clear();
+      setSyncJobIds({});
       setActivity({});
       setSyncing(new Set());
       setStopping(new Set());
     }
-    return () => {
-      controllers.current.forEach((c) => c.abort());
-      controllers.current.clear();
-    };
   }, [enabled]);
-  const owned = (id: string, c: AbortController) =>
-    live.current && controllers.current.get(id) === c && !c.signal.aborted;
-  async function start(id: string) {
-    if (!enabled || controllers.current.has(id)) return;
-    const c = new AbortController();
-    controllers.current.set(id, c);
-    setSyncing((s) => new Set(s).add(id));
-    setActivity((s) => ({
-      ...s,
-      [id]: { ...emptyActivity(), connection: "streaming" },
-    }));
-    let complete = false;
-    try {
-      await streamAdminSync(
-        id,
-        (event) => {
-          if (!owned(id, c)) return;
-          if (event.terminal) complete = true;
-          setActivity((s) => ({
-            ...s,
-            [id]: reduceSyncEvent(s[id] ?? emptyActivity(), event),
+
+  useEffect(() => {
+    if (!enabled) return;
+    const cleanups = Object.entries(syncJobIdsByProvider).map(([provider, jobId]) =>
+      connectSyncJobWs(jobId, {
+        onSnapshot(data) {
+          const events = [...data.activity].sort((a, b) => a.sequence - b.sequence);
+          const maxSequence = events.reduce((max, activity) => Math.max(max, activity.sequence), -1);
+          lastSequence.current.set(jobId, maxSequence);
+          setActivity((current) => ({
+            ...current,
+            [provider]: fromSnapshot(provider, events),
           }));
+          const cumulativeDelta = data.embedded_delta ?? 0;
+          const previous = lastEmbeddedDelta.current.get(jobId);
+          if (previous === undefined || previous === -1) {
+            lastEmbeddedDelta.current.set(jobId, cumulativeDelta);
+          } else {
+            const delta = Math.max(0, cumulativeDelta - previous);
+            lastEmbeddedDelta.current.set(jobId, cumulativeDelta);
+            if (delta > 0) callbacks.current.onProgress(provider, delta);
+          }
         },
-        c.signal,
-      );
-      if (owned(id, c)) {
-        setActivity((s) => ({
-          ...s,
-          [id]: {
-            ...(s[id] ?? emptyActivity()),
-            active: [],
-            connection: complete ? "finished" : "interrupted",
-          },
-        }));
-        await callbacks.current.onComplete(id);
-      }
-    } catch (e) {
-      if (owned(id, c)) {
-        setActivity((s) => ({
-          ...s,
-          [id]: {
-            ...(s[id] ?? emptyActivity()),
-            active: [],
-            connection: "interrupted",
-          },
-        }));
-        if (e instanceof ApiError && e.message === "Model not found")
-          callbacks.current.onModelUnavailable();
-        else callbacks.current.onError(e, "Provider sync failed. Try again.");
-        if (!(e instanceof ApiError && e.status === 401) && owned(id, c))
-          await callbacks.current.onComplete(id);
-      }
-    } finally {
-      if (controllers.current.get(id) === c) {
-        controllers.current.delete(id);
-        setSyncing((s) => new Set([...s].filter((p) => p !== id)));
-      }
-    }
-  }
-  async function stop(id: string) {
-    const c = controllers.current.get(id);
-    if (!enabled || !c || stopping.current.has(id)) return;
-    stopping.current.add(id);
-    setStopping((s) => new Set(s).add(id));
-    try {
-      await stopAdminSync(id);
-      if (owned(id, c)) {
-        controllers.current.delete(id);
-        c.abort();
-        setSyncing((s) => new Set([...s].filter((p) => p !== id)));
-        setActivity((s) => {
-          const current = s[id] ?? emptyActivity();
-          return {
-            ...s,
-            [id]: {
+        onActivity(activity) {
+          const previousSequence = lastSequence.current.get(jobId) ?? -1;
+          if (activity.sequence <= previousSequence) return;
+          lastSequence.current.set(jobId, activity.sequence);
+          setActivity((current) => ({
+            ...current,
+            [provider]: reduceSyncEvent(
+              current[provider] ?? emptyActivity(),
+              toEvent(provider, activity),
+            ),
+          }));
+          if (activity.status === "indexed" && activity.embedded_delta === 1) {
+            lastEmbeddedDelta.current.set(
+              jobId,
+              Math.max(0, lastEmbeddedDelta.current.get(jobId) ?? 0) + 1,
+            );
+            callbacks.current.onProgress(provider, 1);
+          }
+        },
+        onTerminal(data) {
+          const previous = lastEmbeddedDelta.current.get(jobId);
+          if (previous !== undefined && previous >= 0) {
+            const delta = Math.max(0, data.embedded_delta - previous);
+            if (delta > 0) callbacks.current.onProgress(provider, delta);
+          }
+          lastSequence.current.delete(jobId);
+          lastEmbeddedDelta.current.delete(jobId);
+          setSyncJobIds((current) => {
+            const { [provider]: _, ...remaining } = current;
+            jobs.current = remaining;
+            return remaining;
+          });
+          setSyncing((current) => new Set([...current].filter((id) => id !== provider)));
+          setActivity((current) => {
+            let state = current[provider] ?? emptyActivity();
+            for (const activity of data.activity) {
+              state = reduceSyncEvent(state, toEvent(provider, activity));
+            }
+            return {
               ...current,
-              active: [],
-              recent: [
-                ...current.active.map((e) => ({
-                  ...e,
-                  status: "stopped" as const,
-                })),
-                ...current.recent,
-              ].slice(0, 50),
-              connection: "stopped",
-            },
-          };
-        });
-        await callbacks.current.onComplete(id);
+              [provider]: {
+                ...state,
+                active: [],
+                connection: data.state === "REVOKED" ? "stopped" : "finished",
+              },
+            };
+          });
+          stopping.current.delete(provider);
+          setStopping((current) => new Set([...current].filter((id) => id !== provider)));
+          if (data.state === "FAILURE") callbacks.current.onError(new Error(SAFE_SYNC_ERROR), SAFE_SYNC_ERROR);
+          else if (data.state === "REVOKED") callbacks.current.onStatus("Provider sync stopped.");
+          void callbacks.current.onComplete(provider);
+        },
+        onError(detail) {
+          if (detail === "Job not found") {
+            lastSequence.current.delete(jobId);
+            lastEmbeddedDelta.current.delete(jobId);
+            setSyncJobIds((current) => {
+              const { [provider]: _, ...remaining } = current;
+              jobs.current = remaining;
+              return remaining;
+            });
+            setSyncing((current) => new Set([...current].filter((id) => id !== provider)));
+            callbacks.current.onStatus("Sync status expired. Refresh status to confirm results.");
+          }
+        },
+        onClose(code) {
+          if (code === 4404) {
+            lastSequence.current.delete(jobId);
+            lastEmbeddedDelta.current.delete(jobId);
+            setSyncJobIds((current) => {
+              const { [provider]: _, ...remaining } = current;
+              jobs.current = remaining;
+              return remaining;
+            });
+            setSyncing((current) => new Set([...current].filter((id) => id !== provider)));
+            callbacks.current.onStatus("Sync status expired. Refresh status to confirm results.");
+          }
+        },
+      }),
+    );
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [enabled, syncJobIdsByProvider]);
+
+  async function start(provider: string) {
+    if (!enabled || jobs.current[provider] || starting.current.has(provider)) return;
+    starting.current.add(provider);
+    setSyncing((current) => new Set(current).add(provider));
+    setActivity((current) => ({
+      ...current,
+      [provider]: { ...emptyActivity(), connection: "streaming" },
+    }));
+    try {
+      const queued = await triggerAdminSync(provider);
+      lastSequence.current.delete(queued.job_id);
+      lastEmbeddedDelta.current.set(queued.job_id, 0);
+      const next = { ...jobs.current, [provider]: queued.job_id };
+      jobs.current = next;
+      setSyncJobIds(next);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409 && error.jobId) {
+        lastSequence.current.delete(error.jobId);
+        lastEmbeddedDelta.current.set(error.jobId, -1);
+        const next = { ...jobs.current, [provider]: error.jobId };
+        jobs.current = next;
+        setSyncJobIds(next);
+      } else {
+        setSyncing((current) => new Set([...current].filter((id) => id !== provider)));
+        if (error instanceof ApiError && error.message === "Model not found")
+          callbacks.current.onModelUnavailable();
+        else callbacks.current.onError(error, SAFE_SYNC_ERROR);
       }
-    } catch (e) {
-      if (owned(id, c))
-        callbacks.current.onError(e, "Could not stop provider sync");
     } finally {
-      stopping.current.delete(id);
-      if (live.current)
-        setStopping((s) => new Set([...s].filter((p) => p !== id)));
+      starting.current.delete(provider);
     }
   }
-  return {
-    activityByProvider,
-    syncingProviders,
-    stoppingProviders,
-    connectionByProvider: Object.fromEntries(
-      Object.entries(activityByProvider).map(([id, s]) => [id, s.connection]),
-    ),
-    start,
-    stop,
-  };
+
+  async function stop(provider: string) {
+    if (!enabled || !jobs.current[provider] || stopping.current.has(provider)) return;
+    stopping.current.add(provider);
+    setStopping((current) => new Set(current).add(provider));
+    try {
+      await stopAdminSync(provider);
+    } catch (error) {
+      stopping.current.delete(provider);
+      setStopping((current) => new Set([...current].filter((id) => id !== provider)));
+      callbacks.current.onError(error, "Could not stop provider sync");
+    }
+  }
+
+  return { activityByProvider, syncingProviders, stoppingProviders, start, stop };
 }

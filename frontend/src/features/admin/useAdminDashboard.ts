@@ -160,6 +160,18 @@ export function useAdminDashboard({
       ),
     }));
   }
+  function addEmbeddedDelta(providerId: string, delta: number) {
+    if (delta <= 0) return;
+    providerRequests.current.set(providerId, ++sequence.current);
+    setDashboard((current) => ({
+      ...current,
+      providers: current.providers.map((provider) =>
+        provider.provider !== providerId || provider.embedded_count === null
+          ? provider
+          : { ...provider, embedded_count: provider.embedded_count + delta },
+      ),
+    }));
+  }
   useEffect(() => {
     if (enabled) void reload();
     else {
@@ -179,6 +191,7 @@ export function useAdminDashboard({
     reload,
     refreshProvider,
     updateProvider,
+    addEmbeddedDelta,
     notify,
     toasts,
   };

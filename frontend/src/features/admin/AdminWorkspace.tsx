@@ -49,6 +49,8 @@ export function AdminWorkspace(): JSX.Element {
     ...common,
     onComplete: () => dashboard.reload(),
     onModelUnavailable: () => setModelUnavailable(true),
+    onProgress: dashboard.addEmbeddedDelta,
+    onStatus: (message) => dashboard.notify(message, "status"),
   });
   useEffect(() => {
     document.title = "Admin Dashboard";
