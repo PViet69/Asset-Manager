@@ -7,7 +7,6 @@ import {
   discoverAdminTags,
   getAdminProviderItems,
   getAdminSession,
-  getAdminSyncJob,
   getAdminSyncStatus,
   getAdminTags,
   loginAdmin,
@@ -17,6 +16,7 @@ import {
   stopAdminSync,
   triggerAdminSync,
 } from "../api/client";
+import { connectSyncJobWs } from "../api/syncWebSocket";
 import type {
   AdminSyncJobActivity,
   ModelHealthStatus,
@@ -31,7 +31,6 @@ import { AdminSyncActivityPanel } from "./AdminSyncActivityPanel";
 import { ModelUnavailableDialog } from "./ModelUnavailableDialog";
 
 const SAFE_SYNC_ERROR = "Provider sync failed. Try again.";
-const SYNC_POLL_INTERVAL_MS = 3_000;
 const AdminLoginBackground = lazy(() =>
   import("./AdminLoginBackground").then(({ AdminLoginBackground: Background }) => ({
     default: Background,
@@ -104,7 +103,6 @@ export function AdminPage(): JSX.Element {
   const hasLoadedApprovedTags = useRef(false);
   const [toasts, setToasts] = useState<readonly Toast[]>([]);
   const [isModelUnavailableDialogOpen, setIsModelUnavailableDialogOpen] = useState(false);
-  const unavailableStatusJobs = useRef<ReadonlySet<string>>(new Set());
   const lastJobEmbeddedDelta = useRef<Record<string, number>>({});
 
   const addToast = useCallback((message: string, type: Toast["type"]): void => {
@@ -421,7 +419,6 @@ export function AdminPage(): JSX.Element {
     const activeJobs = Object.entries(syncJobIdsByProvider);
     if (!isAuthenticated || activeJobs.length === 0) return undefined;
 
-    let isDisposed = false;
     const removeJob = (providerId: string): void => {
       setSyncJobIdsByProvider((current) => {
         const { [providerId]: _, ...remaining } = current;
@@ -430,69 +427,84 @@ export function AdminPage(): JSX.Element {
       setSyncingProviders((current) => new Set([...current].filter((item) => item !== providerId)));
       setStoppingProviders((current) => new Set([...current].filter((item) => item !== providerId)));
     };
-    let timeoutId: number | undefined;
-    const poll = async (): Promise<void> => {
-      await Promise.all(activeJobs.map(async ([providerId, jobId]) => {
-        try {
-          const job = await getAdminSyncJob(jobId);
-          if (isDisposed) return;
-          setSyncActivityByProvider((current) => ({ ...current, [providerId]: job.activity }));
 
-          const currentCumulativeDelta = job.embedded_delta ?? 0;
+    const mergeActivity = (
+      existing: readonly AdminSyncJobActivity[],
+      incoming: AdminSyncJobActivity,
+    ): AdminSyncJobActivity[] => {
+      const idx = existing.findIndex(
+        (a) => a.storage_file_id === incoming.storage_file_id,
+      );
+      if (idx >= 0) {
+        return existing.map((a, i) => (i === idx ? incoming : a));
+      }
+      return [...existing, incoming];
+    };
+
+    const cleanups: (() => void)[] = [];
+
+    for (const [providerId, jobId] of activeJobs) {
+      const cleanup = connectSyncJobWs(jobId, {
+        onSnapshot(data) {
+          setSyncActivityByProvider((current) => ({
+            ...current,
+            [providerId]: [...data.activity],
+          }));
           const previousDelta = lastJobEmbeddedDelta.current[jobId];
-          let deltaToApply = 0;
           if (previousDelta === undefined || previousDelta === -1) {
-            lastJobEmbeddedDelta.current[jobId] = currentCumulativeDelta;
-          } else {
-            deltaToApply = Math.max(0, currentCumulativeDelta - previousDelta);
-            lastJobEmbeddedDelta.current[jobId] = currentCumulativeDelta;
+            lastJobEmbeddedDelta.current[jobId] = data.embedded_delta ?? 0;
           }
+        },
 
-          if (deltaToApply > 0) {
+        onActivity(activity) {
+          setSyncActivityByProvider((current) => ({
+            ...current,
+            [providerId]: mergeActivity(current[providerId] ?? [], activity),
+          }));
+          if (activity.status === "indexed" && activity.embedded_delta === 1) {
             setDashboard((current) => ({
               ...current,
               providers: current.providers.map((provider) =>
                 provider.provider !== providerId || provider.embedded_count === null
                   ? provider
-                  : { ...provider, embedded_count: provider.embedded_count + deltaToApply }
+                  : { ...provider, embedded_count: provider.embedded_count + 1 },
               ),
             }));
             setDashboardEpoch((current) => current + 1);
           }
+        },
 
-          if (!["SUCCESS", "FAILURE", "REVOKED"].includes(job.state)) return;
+        onTerminal(data) {
           delete lastJobEmbeddedDelta.current[jobId];
           removeJob(providerId);
-          if (job.state === "FAILURE") {
+          if (data.state === "FAILURE") {
             addToast(SAFE_SYNC_ERROR, "error");
-          } else if (job.state === "REVOKED") {
+          } else if (data.state === "REVOKED") {
             addToast("Provider sync stopped.", "status");
           }
-        } catch (caught) {
-          if (isDisposed) return;
-          if (caught instanceof ApiError && caught.status === 404) {
+        },
+
+        onError(detail) {
+          if (detail === "Job not found") {
             delete lastJobEmbeddedDelta.current[jobId];
             removeJob(providerId);
             addToast("Sync status expired. Refresh status to confirm results.", "status");
-            return;
           }
-          if (caught instanceof ApiError && caught.status === 401) {
-            clearSession();
-            return;
-          }
-          if (!unavailableStatusJobs.current.has(jobId)) {
-            unavailableStatusJobs.current = new Set([...unavailableStatusJobs.current, jobId]);
-            addToast("Sync status is temporarily unavailable; continuing to check.", "status");
-          }
-        }
-      }));
-      if (!isDisposed) timeoutId = window.setTimeout(() => void poll(), SYNC_POLL_INTERVAL_MS);
-    };
+        },
 
-    void poll();
+        onClose(code) {
+          if (code === 4404) {
+            delete lastJobEmbeddedDelta.current[jobId];
+            removeJob(providerId);
+            addToast("Sync status expired. Refresh status to confirm results.", "status");
+          }
+        },
+      });
+      cleanups.push(cleanup);
+    }
+
     return () => {
-      isDisposed = true;
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+      for (const cleanup of cleanups) cleanup();
     };
   }, [isAuthenticated, syncJobIdsByProvider]);
 

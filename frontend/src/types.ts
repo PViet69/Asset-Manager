@@ -127,6 +127,7 @@ export type AdminSyncJobActivity = {
   readonly storage_file_id: string;
   readonly filename: string;
   readonly status: AdminSyncJobActivityStatus;
+  readonly embedded_delta?: number;
 };
 
 export type AdminSyncJobStatusResponse = {
