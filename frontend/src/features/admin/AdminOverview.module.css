@@ -16,6 +16,10 @@
   color: var(--text-secondary, #626e7c);
   font-size: 13px;
 }
+.metrics article:nth-child(1) { background: var(--color-blue-soft); border-color: #c9d9f6; color: var(--color-blue-ink); }
+.metrics article:nth-child(2) { background: var(--color-teal-soft); border-color: #bfe2d7; color: var(--color-teal); }
+.metrics article:nth-child(3) { background: var(--color-amber-soft); border-color: #eed8ad; color: var(--color-amber); }
+.metrics article span { color: inherit; }
 .metrics strong {
   display: block;
   margin-top: 12px;

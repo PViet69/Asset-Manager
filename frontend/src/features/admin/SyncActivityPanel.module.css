@@ -1,12 +1,13 @@
 .panel {
-  background: var(--surface, #fff);
-  border: 1px solid var(--border, #e4e8ed);
+  background: #f7f4fd;
+  border: 1px solid #ded3f1;
   border-radius: 10px;
   padding: 24px;
   margin-top: 24px;
   min-width: 0;
 }
 .panel h2 {
+  color: var(--color-violet);
   font-size: 18px;
   margin: 0;
 }
@@ -53,6 +54,6 @@
   margin-top: 5px;
 }
 .icon {
-  color: var(--text-secondary, #626e7c);
+  color: var(--color-violet);
   font-size: 24px;
 }

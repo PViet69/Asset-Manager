@@ -16,7 +16,8 @@
     border-color 120ms ease;
 }
 .button:hover {
-  background: #f3f5f8;
+  background: var(--color-selection);
+  border-color: #bacbf0;
 }
 .button[data-disabled] {
   opacity: 0.52;
@@ -31,7 +32,8 @@
   border-color: var(--color-action);
 }
 .primary:hover {
-  background: #294db1;
+  background: var(--color-action-hover);
+  border-color: var(--color-action-hover);
 }
 .danger {
   color: #fff;

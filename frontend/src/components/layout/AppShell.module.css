@@ -6,7 +6,7 @@
 }
 .sidebar {
   border-right: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-sidebar);
   padding: 30px 18px;
 }
 .brand {
@@ -24,6 +24,12 @@
   color: var(--color-action);
   font-size: 24px;
 }
+.sidebar .brand { color: #f4f7ff; }
+.sidebar .mark { color: #8db0ff; }
+.sidebar .navigation a { color: #c3d2eb; }
+.sidebar .navigation a:hover { background: #223f68; color: #fff; }
+.sidebar .navigation a[aria-current] { color: #fff; background: #3559a4; box-shadow: inset 3px 0 #91bcff; }
+.sidebar a:focus-visible { outline-color: #adc8ff; }
 .navigation {
   display: grid;
   gap: 5px;

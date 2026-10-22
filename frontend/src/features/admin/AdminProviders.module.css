@@ -39,6 +39,9 @@
   font-size: 12px;
   color: var(--text-secondary, #626e7c);
 }
+.identity span[data-health] { display:inline-flex; padding:3px 8px; border-radius:5px; background:#eef1f7; color:var(--color-secondary); }
+.identity span[data-health="ok"] { background:var(--color-teal-soft); color:var(--color-teal); }
+.identity > svg { box-sizing:content-box; padding:9px; border-radius:10px; background:#eff4ff; }
 .counts {
   display: flex;
   gap: 24px;

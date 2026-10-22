@@ -34,7 +34,7 @@ export function AdminProviders({
                 <ProviderLogo provider={p.provider} aria-hidden="true" />
                 <div>
                   <h3>{p.display_name}</h3>
-                  <span>
+                  <span data-health={p.enabled ? p.health : "disabled"}>
                     {p.enabled
                       ? p.health === "ok"
                         ? "Connected"
