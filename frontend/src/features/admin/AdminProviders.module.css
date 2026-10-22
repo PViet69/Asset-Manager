@@ -1,0 +1,76 @@
+.panel {
+  margin-top: 24px;
+}
+.panel h2 {
+  font-size: 18px;
+  margin: 0 0 16px;
+}
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e4e8ed);
+  border-radius: 10px;
+}
+.row {
+  padding: 22px;
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.row + .row {
+  border-top: 1px solid var(--border, #e4e8ed);
+}
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 150px;
+  flex: 1;
+}
+.identity h3 {
+  font-size: 15px;
+  margin: 0 0 5px;
+  overflow-wrap: anywhere;
+}
+.identity span {
+  font-size: 12px;
+  color: var(--text-secondary, #626e7c);
+}
+.counts {
+  display: flex;
+  gap: 24px;
+  margin: 0;
+}
+.counts dt {
+  font-size: 11px;
+  color: var(--text-secondary, #626e7c);
+}
+.counts dd {
+  margin: 5px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 680px) {
+  .row {
+    gap: 18px;
+    padding: 18px;
+  }
+  .identity {
+    flex-basis: 100%;
+  }
+  .counts {
+    justify-content: space-between;
+    flex: 1;
+  }
+  .actions {
+    flex-basis: 100%;
+  }
+}

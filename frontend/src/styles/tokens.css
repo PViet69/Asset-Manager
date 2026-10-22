@@ -1,0 +1,13 @@
+:root {
+  color-scheme: light;
+  --color-canvas: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-text: #202731;
+  --color-secondary: #626e7c;
+  --color-border: #e4e8ed;
+  --color-action: #345cce;
+  --color-selection: #edf2ff;
+  --focus-ring: #9eaff0;
+  --radius-control: 6px;
+  --radius-panel: 8px;
+}

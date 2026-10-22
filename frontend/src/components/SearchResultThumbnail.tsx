@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import styles from "./SearchResultThumbnail.module.css";
+
 import { fetchThumbnail } from "../api/client";
 
 type SearchResultThumbnailProps = {
@@ -40,11 +42,14 @@ export function SearchResultThumbnail({
     let createdUrl: string | null = null;
     void fetchThumbnail(thumbnailUrl)
       .then((blob) => {
-        if (!isCurrent || !blob.type.startsWith("image/") || blob.size === 0) return;
+        if (!isCurrent || !blob.type.startsWith("image/") || blob.size === 0)
+          return;
         createdUrl = URL.createObjectURL(blob);
         setObjectUrl(createdUrl);
       })
-      .catch(() => setObjectUrl(null));
+      .catch(() => {
+        if (isCurrent) setObjectUrl(null);
+      });
     return () => {
       isCurrent = false;
       if (createdUrl) URL.revokeObjectURL(createdUrl);
@@ -54,7 +59,7 @@ export function SearchResultThumbnail({
   if (objectUrl) {
     return (
       <img
-        className="result-thumbnail result-thumbnail--image"
+        className={styles.image}
         src={objectUrl}
         alt={`Thumbnail for ${filename}`}
       />
@@ -64,7 +69,7 @@ export function SearchResultThumbnail({
   return (
     <span
       ref={containerRef}
-      className="result-thumbnail result-thumbnail--fallback"
+      className={styles.fallback}
       aria-label="File thumbnail unavailable"
     >
       📄

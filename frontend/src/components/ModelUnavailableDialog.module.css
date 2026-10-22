@@ -1,0 +1,8 @@
+.message {
+  color: var(--color-secondary);
+  margin: 0 0 24px;
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}

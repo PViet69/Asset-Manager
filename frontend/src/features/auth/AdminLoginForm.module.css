@@ -1,0 +1,26 @@
+.panel {
+  max-width: 420px;
+  margin: clamp(32px, 10vh, 110px) auto;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e4e8ed);
+  border-radius: 12px;
+  padding: 32px;
+}
+.panel h1 {
+  margin: 12px 0;
+  font-size: 28px;
+}
+.panel p {
+  color: var(--text-secondary, #626e7c);
+  line-height: 1.6;
+}
+.panel form {
+  display: grid;
+  gap: 20px;
+  margin-top: 28px;
+}
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}

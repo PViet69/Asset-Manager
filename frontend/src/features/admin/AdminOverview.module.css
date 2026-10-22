@@ -1,0 +1,39 @@
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+.metrics article {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e4e8ed);
+  padding: 24px;
+  border-radius: 10px;
+  min-width: 0;
+}
+.metrics span {
+  display: block;
+  color: var(--text-secondary, #626e7c);
+  font-size: 13px;
+}
+.metrics strong {
+  display: block;
+  margin-top: 12px;
+  font-size: clamp(18px, 3vw, 30px);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 540px) {
+  .metrics {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .metrics article {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+  }
+  .metrics strong {
+    margin: 0;
+  }
+}

@@ -1,0 +1,37 @@
+.panel {
+  padding: 24px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e4e8ed);
+  border-radius: 10px;
+  margin-top: 24px;
+}
+.panel h2 {
+  font-size: 18px;
+  margin-top: 0;
+}
+.panel p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary, #626e7c);
+}
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 20px 0;
+  font-size: 13px;
+}
+.category {
+  border-top: 1px solid var(--border, #e4e8ed);
+}
+.category h3 {
+  font-size: 14px;
+  margin: 6px 0;
+}
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px 0 20px;
+}
