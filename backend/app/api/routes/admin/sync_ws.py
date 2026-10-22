@@ -49,9 +49,7 @@ async def sync_job_ws(websocket: WebSocket, job_id: str) -> None:
     """Stream real-time sync activity events over WebSocket."""
     config: AdminAuthConfig = websocket.app.state.admin_auth_config
     token = websocket.cookies.get("admin_session")
-    username = (
-        get_session_username(config, token, datetime.now(UTC)) if token else None
-    )
+    username = get_session_username(config, token, datetime.now(UTC))
     if username is None:
         await websocket.close(code=4401, reason="Authentication required")
         return
@@ -78,15 +76,11 @@ async def sync_job_ws(websocket: WebSocket, job_id: str) -> None:
 
         progress = await asyncio.to_thread(store.read_progress, job_id)
         if progress is None:
-            await websocket.send_json(
-                {"type": "error", "detail": "Job not found"}
-            )
+            await websocket.send_json({"type": "error", "detail": "Job not found"})
             await websocket.close(code=4404)
             return
 
-        await websocket.send_json(
-            {"type": "snapshot", "job_id": job_id, **progress}
-        )
+        await websocket.send_json({"type": "snapshot", "job_id": job_id, **progress})
 
         if progress["state"] in {"SUCCESS", "FAILURE", "REVOKED"}:
             await websocket.close(code=1000)

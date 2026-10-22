@@ -92,7 +92,7 @@ def require_admin_access(request: Request) -> None:
     if config.disabled:
         return
     token = request.cookies.get("admin_session")
-    username = get_session_username(config, token, datetime.now(UTC)) if token else None
+    username = get_session_username(config, token, datetime.now(UTC))
     if username is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

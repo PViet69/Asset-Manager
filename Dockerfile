@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update \
     && apt-get install --no-install-recommends -y libmagic1 \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir uv
+    && pip install --no-cache-dir "uv==0.11.24"
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./

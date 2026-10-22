@@ -14,6 +14,7 @@ def test_celery_app_includes_provider_sync_task_module() -> None:
     application = create_celery_app(Settings())
 
     assert "backend.app.tasks.sync_tasks" in application.conf.include
+    assert "backend.app.tasks.sync_tasks.sync_provider" in application.tasks
 
 
 @pytest.mark.unit

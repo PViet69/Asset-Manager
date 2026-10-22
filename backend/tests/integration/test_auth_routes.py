@@ -1,5 +1,6 @@
 """Integration tests for single-admin authentication routes."""
 
+from dataclasses import replace
 from unittest.mock import Mock
 
 import pytest
@@ -118,3 +119,26 @@ def test_logout_clears_admin_session_cookie() -> None:
     assert logout.status_code == 200
     assert logout.json() == {"status": "ok"}
     assert restored.status_code == 401
+
+
+@pytest.mark.integration
+def test_disabled_auth_restores_admin_without_cookie() -> None:
+    with _client() as client:
+        config = client.app.state.admin_auth_config
+        client.app.state.admin_auth_config = replace(config, disabled=True)
+        response = client.get("/auth/me")
+
+    assert response.status_code == 200
+    assert response.json() == {"username": "admin"}
+
+
+@pytest.mark.integration
+def test_disabled_auth_keeps_origin_check() -> None:
+    with _client() as client:
+        config = client.app.state.admin_auth_config
+        client.app.state.admin_auth_config = replace(config, disabled=True)
+        response = client.post(
+            "/admin/sync/dropbox", headers={"Origin": "https://attacker.example.test"}
+        )
+
+    assert response.status_code == 403

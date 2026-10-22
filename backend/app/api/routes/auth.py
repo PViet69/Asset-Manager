@@ -64,7 +64,7 @@ def current_admin(request: Request) -> AdminAccountResponse:
     config = request.app.state.admin_auth_config
     if config.disabled:
         return AdminAccountResponse(username=config.username, auth_required=False)
-    token = request.cookies[ADMIN_SESSION_COOKIE]
+    token = request.cookies.get(ADMIN_SESSION_COOKIE)
     username = get_session_username(config, token, datetime.now(UTC))
     assert username is not None
     return AdminAccountResponse(username=username)

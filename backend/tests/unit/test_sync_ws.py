@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from unittest.mock import Mock
 
@@ -38,6 +39,17 @@ def test_sync_ws_rejects_unauthenticated_connection() -> None:
     with pytest.raises(Exception):
         with client.websocket_connect("/admin/sync-jobs/job-1/ws"):
             pass
+
+
+@pytest.mark.unit
+def test_sync_ws_accepts_without_cookie_when_auth_disabled() -> None:
+    app = _app_with_store()
+    app.state.admin_auth_config = replace(app.state.admin_auth_config, disabled=True)
+    with TestClient(app).websocket_connect("/admin/sync-jobs/job-1/ws") as ws:
+        assert ws.receive_json() == {
+            "type": "error",
+            "detail": "Sync service unavailable",
+        }
 
 
 @pytest.mark.unit

@@ -49,10 +49,14 @@ def create_admin_session(config: AdminAuthConfig, now: datetime) -> str:
 
 
 def get_session_username(
-    config: AdminAuthConfig, token: str, now: datetime
+    config: AdminAuthConfig, token: str | None, now: datetime
 ) -> str | None:
     """Return configured username from valid signed session."""
     del now
+    if config.disabled:
+        return config.username
+    if not token:
+        return None
     try:
         payload = _serializer(config).loads(token)
     except BadSignature:

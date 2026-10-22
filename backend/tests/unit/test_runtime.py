@@ -36,3 +36,23 @@ def test_build_runtime_dependencies_reuses_single_qdrant_store(
 
     assert dependencies.health_dependencies.qdrant_store is qdrant
     assert dependencies.provider_registry.get(StorageProvider.DROPBOX) is not None
+
+
+@pytest.mark.unit
+def test_build_runtime_dependencies_shares_asset_description_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = make_settings()
+    description_client = Mock()
+    monkeypatch.setattr(
+        runtime,
+        "InstructorAssetDescriptionClient",
+        lambda **_: description_client,
+    )
+
+    dependencies = runtime.build_runtime_dependencies(settings)
+
+    assert dependencies.health_dependencies.description_client is description_client
+    assert (
+        dependencies.ingestion_service._asset_description_client is description_client
+    )
