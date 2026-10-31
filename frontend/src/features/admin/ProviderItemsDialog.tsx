@@ -1,3 +1,4 @@
+import { Spinner } from "../../components/ui/Spinner";
 import type { ProviderDashboardStatus } from "../../types";
 import { Dialog } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
@@ -26,7 +27,7 @@ export function ProviderItemsDialog({
         <div className={styles.content}>
           {model.openProvider &&
           model.loadingProviders.has(model.openProvider) ? (
-            <p role="status">Loading embedded items…</p>
+            <Spinner label="Loading embedded items" />
           ) : (
             <ul className={styles.list}>
               {(model.itemsByProvider[model.openProvider ?? ""] ?? []).map(
@@ -81,7 +82,7 @@ export function ProviderItemsDialog({
               onPress={() => void model.confirmDelete()}
               isDisabled={deleting}
             >
-              {deleting ? "Removing" : "Remove source"}
+              {deleting ? <Spinner label="Removing source" small /> : "Remove source"}
             </Button>
           </div>
         </Dialog>

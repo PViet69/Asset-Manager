@@ -97,12 +97,14 @@ export type AdminDashboardStatusResponse = {
   providers: ProviderDashboardStatus[];
   embedding_model: ModelHealthStatus;
   description_model: ModelHealthStatus;
+  video_model?: ModelHealthStatus | null;
 };
 
 export type AdminProviderRefreshResponse = {
   provider: ProviderDashboardStatus;
   embedding_model: ModelHealthStatus;
   description_model: ModelHealthStatus;
+  video_model?: ModelHealthStatus | null;
 };
 
 export type SyncActivityEvent = {

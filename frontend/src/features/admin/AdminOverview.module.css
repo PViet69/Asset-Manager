@@ -1,8 +1,9 @@
+.actions { display:flex; justify-content:flex-end; margin-top:20px; }
 .metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
-  margin: 24px 0;
+  margin: 16px 0 24px;
 }
 .metrics article {
   background: var(--surface, #fff);

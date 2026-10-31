@@ -1,10 +1,17 @@
 .workspace {
+  height: 100%;
+  min-height: 0;
   min-width: 0;
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
   padding: 36px 40px 56px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
+.tabs { display:flex; flex:1; flex-direction:column; min-height:0; }
+.tabPanel { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; overflow-anchor:none; }
 .header {
   display: flex;
   align-items: center;
@@ -24,20 +31,6 @@
   font-weight: 600;
   margin: 0;
   letter-spacing: -0.03em;
-}
-.settings {
-  margin-top: 24px;
-  padding: 24px;
-  background: var(--surface, #fff);
-  border: 1px solid var(--border, #e4e8ed);
-  border-radius: 10px;
-}
-.settings h2 {
-  font-size: 18px;
-}
-.settings p {
-  color: var(--text-secondary, #626e7c);
-  font-size: 13px;
 }
 .notifications {
   position: fixed;

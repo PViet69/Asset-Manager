@@ -53,3 +53,14 @@ test("provider loading transitions to the real empty state", () => {
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(screen.getByText(/No storage providers/)).toBeInTheDocument();
 });
+test("fully indexed providers block sync but keep stop available for active work", () => {
+  const controls = { refreshingProviders: new Set<string>(), syncingProviders: new Set<string>(), stoppingProviders: new Set<string>(), onBrowse: () => {}, onRefresh: () => {}, onStart: () => {}, onStop: () => {} };
+  const full = { ...dashboard, providers: [{ ...dashboard.providers[0]!, detected_count: 5, embedded_count: 5 }] };
+  const { rerender } = render(<AdminProviders dashboard={full} controls={controls} />);
+  expect(screen.getByRole("button", { name: "Sync Drive" })).toBeDisabled();
+  expect(screen.getByText("Up to date")).toBeInTheDocument();
+  rerender(<AdminProviders dashboard={dashboard} controls={controls} />);
+  expect(screen.getByRole("button", { name: "Sync Drive" })).toBeEnabled();
+  rerender(<AdminProviders dashboard={full} controls={{...controls, syncingProviders: new Set(["drive"])}} />);
+  expect(screen.getByRole("button", {name: "Stop syncing Drive"})).toBeEnabled();
+});

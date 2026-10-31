@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 import styles from "./AppShell.module.css";
@@ -11,6 +11,9 @@ export function AppShell({
   children: ReactNode;
 }): JSX.Element {
   const [isOpen, setOpen] = useState(false);
+  useEffect(() => {
+    if (activeArea === "admin") window.scrollTo(0, 0);
+  }, [activeArea]);
   const links = (
     <>
       <a href="/" aria-current={activeArea === "search" ? "page" : undefined}>
@@ -25,12 +28,10 @@ export function AppShell({
     </>
   );
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} data-area={activeArea}>
       <aside className={styles.sidebar}>
         <a className={styles.brand} href="/">
-          <span className={styles.mark} aria-hidden="true">
-            ▦
-          </span>
+          <img className={styles.mark} src="/favicon.svg" alt="" />
           Asset Manager
         </a>
         <nav aria-label="Main navigation" className={styles.navigation}>
@@ -39,6 +40,7 @@ export function AppShell({
       </aside>
       <header className={styles.mobileHeader}>
         <a className={styles.brand} href="/">
+          <img className={styles.mark} src="/favicon.svg" alt="" />
           Asset Manager
         </a>
         <Button onPress={() => setOpen(true)} aria-label="Open navigation">

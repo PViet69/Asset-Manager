@@ -1,3 +1,4 @@
+import { Spinner } from "../../components/ui/Spinner";
 import { useEffect, useState } from "react";
 import { ApiError } from "../../api/client";
 import { AppShell } from "../../components/layout/AppShell";
@@ -77,7 +78,7 @@ export function AdminWorkspace(): JSX.Element {
     <AppShell activeArea="admin">
       <main className={styles.workspace}>
         {session.status === "checking" ? (
-          <p role="status">Checking admin session…</p>
+          <Spinner label="Checking admin session" />
         ) : !enabled ? (
           <AdminLoginForm session={session} />
         ) : (
@@ -89,7 +90,7 @@ export function AdminWorkspace(): JSX.Element {
               </div>
               {session.authRequired && <Button onPress={() => void session.logout()}>Sign out</Button>}
             </header>
-            <Tabs defaultSelectedKey="overview">
+            <Tabs defaultSelectedKey="overview" className={styles.tabs}>
               <TabList aria-label="Admin sections">
                 {[
                   "Overview",
@@ -103,45 +104,35 @@ export function AdminWorkspace(): JSX.Element {
                   </Tab>
                 ))}
               </TabList>
-              <TabPanel id="overview">
+              <TabPanel id="overview" className={styles.tabPanel}>
                 <AdminOverview
                   dashboard={dashboard.dashboard}
                   isLoading={dashboard.isLoading}
+                  onRefresh={() => void dashboard.reload()}
                 />
                 {providers}
                 {activity}
               </TabPanel>
-              <TabPanel id="providers">
+              <TabPanel id="providers" className={styles.tabPanel}>
                 {providers}
                 {activity}
               </TabPanel>
-              <TabPanel id="models">
+              <TabPanel id="models" className={styles.tabPanel}>
                 <AdminModelHealth
                   embeddingModel={dashboard.dashboard.embeddingModel}
                   descriptionModel={dashboard.dashboard.descriptionModel}
+                  videoModel={dashboard.dashboard.videoModel}
                   isLoading={dashboard.isLoading}
                 />
               </TabPanel>
-              <TabPanel id="activity">
+              <TabPanel id="activity" className={styles.tabPanel}>
                 <SyncActivityPanel
                   providers={dashboard.dashboard.providers}
                   activity={sync.activityByProvider}
                   history
                 />
               </TabPanel>
-              <TabPanel id="settings">
-                <section className={styles.settings}>
-                  <h2>Workspace settings</h2>
-                  <p>Refresh provider and model status for this session.</p>
-                  <Button
-                    onPress={() => void dashboard.reload()}
-                    isDisabled={dashboard.isLoading}
-                  >
-                    {dashboard.isLoading
-                      ? "Refreshing status…"
-                      : "Refresh status"}
-                  </Button>
-                </section>
+              <TabPanel id="settings" className={styles.tabPanel}>
                 <ApprovedTagsPanel model={tags} />
               </TabPanel>
             </Tabs>

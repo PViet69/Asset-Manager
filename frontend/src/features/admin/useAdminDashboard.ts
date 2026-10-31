@@ -26,6 +26,7 @@ export function useAdminDashboard({
     new Set(),
   );
   const [toasts, setToasts] = useState<readonly Toast[]>([]);
+  const toastTimers = useRef(new Map<string, number>());
   const scope = useRequestScope(enabled);
   const callbacks = useRef(onUnauthorized);
   callbacks.current = onUnauthorized;
@@ -35,11 +36,22 @@ export function useAdminDashboard({
   const providerRequests = useRef(new Map<string, number>());
   const refreshing = useRef(new Set<string>());
 
+  useEffect(() => () => {
+    for (const timer of toastTimers.current.values()) window.clearTimeout(timer);
+    toastTimers.current.clear();
+  }, []);
+
   const notify = useCallback((message: string, type: Toast["type"]) => {
+    const id = crypto.randomUUID();
     setToasts((current) => [
       ...current.slice(-4),
-      { id: crypto.randomUUID(), message, type },
+      { id, message, type },
     ]);
+    const timer = window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+      toastTimers.current.delete(id);
+    }, type === "error" ? 7000 : 4000);
+    toastTimers.current.set(id, timer);
   }, []);
   function fail(caught: unknown, fallback: string) {
     if (caught instanceof ApiError && caught.status === 401)
@@ -82,6 +94,7 @@ export function useAdminDashboard({
             latestModelRequest.current === ticket
               ? response.embedding_model
               : current.embeddingModel,
+          videoModel: latestModelRequest.current === ticket ? response.video_model ?? null : current.videoModel,
           descriptionModel:
             latestModelRequest.current === ticket
               ? response.description_model
@@ -120,6 +133,7 @@ export function useAdminDashboard({
             latestModelRequest.current === ticket
               ? response.embedding_model
               : current.embeddingModel,
+          videoModel: latestModelRequest.current === ticket ? response.video_model ?? null : current.videoModel,
           descriptionModel:
             latestModelRequest.current === ticket
               ? response.description_model

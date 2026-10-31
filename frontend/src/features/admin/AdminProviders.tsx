@@ -1,7 +1,12 @@
+import { Spinner } from "../../components/ui/Spinner";
 import { Button } from "../../components/ui/Button";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import type { DashboardState } from "./admin.types";
 import styles from "./AdminProviders.module.css";
+function isUpToDate(provider: DashboardState["providers"][number]): boolean {
+  return provider.detected_count !== null && provider.embedded_count !== null && provider.embedded_count >= provider.detected_count;
+}
+
 type Controls = {
   refreshingProviders: ReadonlySet<string>;
   syncingProviders: ReadonlySet<string>;
@@ -97,10 +102,10 @@ export function AdminProviders({
                   onPress={() => controls.onRefresh(p.provider)}
                   isDisabled={controls.refreshingProviders.has(p.provider)}
                   aria-label={`Refresh ${p.display_name}`}
+                  data-refreshing={controls.refreshingProviders.has(p.provider)}
                 >
-                  {controls.refreshingProviders.has(p.provider)
-                    ? "Refreshing…"
-                    : "Refresh"}
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17" /></svg>
+                  <span className={styles.srOnly}>{controls.refreshingProviders.has(p.provider) ? "Refreshing…" : "Refresh"}</span>
                 </Button>
                 {controls.syncingProviders.has(p.provider) ? (
                   <Button
@@ -110,17 +115,17 @@ export function AdminProviders({
                     aria-label={`Stop syncing ${p.display_name}`}
                   >
                     {controls.stoppingProviders.has(p.provider)
-                      ? "Stopping…"
+                      ? <Spinner label="Stopping sync" small />
                       : "Stop sync"}
                   </Button>
                 ) : (
                   <Button
                     variant="primary"
                     onPress={() => controls.onStart(p.provider)}
-                    isDisabled={!p.enabled}
+                    isDisabled={!p.enabled || isUpToDate(p)}
                     aria-label={`Sync ${p.display_name}`}
                   >
-                    Sync
+                    {isUpToDate(p) ? "Up to date" : "Sync"}
                   </Button>
                 )}
               </div>
