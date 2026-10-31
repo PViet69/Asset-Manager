@@ -77,3 +77,19 @@
     flex-basis: 100%;
   }
 }
+.skeleton {
+  display: block;
+  background: #e4ebf5;
+  border-radius: 5px;
+  animation: provider-pulse 1.6s ease-in-out infinite;
+}
+.identity .logoSkeleton { width: 42px; height: 42px; flex-shrink: 0; padding: 0; }
+.skeletonIdentity, .skeletonMetric { display: grid; gap: 9px; }
+.identity .nameSkeleton { width: 120px; height: 16px; }
+.identity .badgeSkeleton { width: 76px; height: 20px; }
+.labelSkeleton { width: 48px; height: 10px; }
+.valueSkeleton { width: 30px; height: 16px; }
+.buttonSkeleton { width: 82px; height: 36px; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@keyframes provider-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

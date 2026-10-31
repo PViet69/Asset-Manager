@@ -65,7 +65,7 @@ export function AdminWorkspace(): JSX.Element {
     onStop: (id: string) => void sync.stop(id),
   };
   const providers = (
-    <AdminProviders dashboard={dashboard.dashboard} controls={controls} />
+    <AdminProviders dashboard={dashboard.dashboard} controls={controls} isLoading={dashboard.isLoading} />
   );
   const activity = (
     <SyncActivityPanel

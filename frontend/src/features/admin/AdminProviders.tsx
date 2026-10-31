@@ -14,14 +14,39 @@ type Controls = {
 export function AdminProviders({
   dashboard,
   controls,
+  isLoading = false,
 }: {
   dashboard: DashboardState;
   controls: Controls;
+  isLoading?: boolean;
 }): JSX.Element {
   return (
-    <section aria-label="Storage providers" className={styles.panel}>
+    <section aria-label="Storage providers" aria-busy={isLoading} className={styles.panel}>
       <h2>Storage providers</h2>
-      {dashboard.providers.length === 0 ? (
+      {isLoading && dashboard.providers.length === 0 ? (
+        <>
+          <span role="status" className={styles.srOnly}>Loading storage providers…</span>
+          <div className={styles.list} aria-hidden="true">
+            {[0, 1].map((row) => (
+              <div className={styles.row} key={row}>
+                <div className={styles.identity}>
+                  <span className={`${styles.skeleton} ${styles.logoSkeleton}`} />
+                  <div className={styles.skeletonIdentity}>
+                    <span className={`${styles.skeleton} ${styles.nameSkeleton}`} />
+                    <span className={`${styles.skeleton} ${styles.badgeSkeleton}`} />
+                  </div>
+                </div>
+                <div className={styles.counts}>
+                  {[0, 1, 2].map((count) => <div className={styles.skeletonMetric} key={count}><span className={`${styles.skeleton} ${styles.labelSkeleton}`} /><span className={`${styles.skeleton} ${styles.valueSkeleton}`} /></div>)}
+                </div>
+                <div className={styles.actions}>
+                  {[0, 1, 2].map((action) => <span className={`${styles.skeleton} ${styles.buttonSkeleton}`} key={action} />)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : dashboard.providers.length === 0 ? (
         <p>
           No storage providers are available. Refresh status in Settings to try
           again.
