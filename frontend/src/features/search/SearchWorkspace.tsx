@@ -13,6 +13,7 @@ export function SearchWorkspace(props: SearchPanelProps = {}) {
   return (
     <section className={styles.workspace} aria-label="Asset search">
       <Tabs
+      className={styles.tabs}
         selectedKey={search.mode}
         onSelectionChange={(key) => search.setMode(key as SearchMode)}
       >
@@ -68,7 +69,7 @@ export function SearchWorkspace(props: SearchPanelProps = {}) {
           />
         </form>
         {(["semantic", "filename"] as const).map((mode) => (
-          <TabPanel key={mode} id={mode}>
+          <TabPanel key={mode} id={mode} className={styles.resultsPanel}>
             {search.state.kind === "result" && (
               <div className={styles.resultsHeader}>
                 <h2>

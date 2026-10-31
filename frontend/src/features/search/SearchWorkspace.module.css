@@ -1,9 +1,16 @@
 .workspace {
+  display:flex;
+  flex-direction:column;
+  flex:1;
+  min-height:0;
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
   min-width: 0;
 }
+.tabs { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+.tabs > :not(.resultsPanel) { flex-shrink:0; }
+.resultsPanel { flex:1; min-height:0; overflow-y:auto; overscroll-behavior-y:contain; padding:3px; }
 .form {
   display: flex;
   gap: 12px;

@@ -84,3 +84,26 @@ test("Escape closes provider select before filter dialog", async () => {
     expect(screen.getByRole("button", { name: "Filters" })).toHaveFocus(),
   );
 });
+test("searching tags preserves selected tags hidden by the query", async () => {
+  const { user, onApply } = setup({ provider: "", tags: ["subject:laptop"] });
+  await user.click(screen.getByRole("button", { name: "Filters (1)" }));
+  await user.type(screen.getByRole("searchbox", { name: "Find tags" }), "missing");
+  expect(screen.queryByRole("checkbox", { name: "laptop" })).not.toBeInTheDocument();
+  expect(screen.getByText(/No tags match/)).toBeInTheDocument();
+  expect(screen.getByText("1 selected")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  expect(onApply).toHaveBeenCalledWith({ provider: "", tags: ["subject:laptop"] });
+});
+test("tag pages keep selections when navigating without scrolling", async () => {
+  const user = userEvent.setup();
+  const apply = vi.fn();
+  render(<SearchFiltersDialog value={{ provider: "", tags: [] }} providers={[]} groups={[{category:"Subjects", tags:Array.from({length:7}, (_,i)=>`subject:tag${i}`)}]} onApply={apply} />);
+  await user.click(screen.getByRole("button", {name:"Filters"}));
+  expect(screen.getAllByRole("checkbox")).toHaveLength(6);
+  await user.click(screen.getByRole("checkbox", {name:"tag0"}));
+  await user.click(screen.getByRole("button", {name:"Next"}));
+  expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+  await user.click(screen.getByRole("checkbox", {name:"tag6"}));
+  await user.click(screen.getByRole("button", {name:"Apply"}));
+  expect(apply).toHaveBeenCalledWith({provider:"",tags:["subject:tag0","subject:tag6"]});
+});

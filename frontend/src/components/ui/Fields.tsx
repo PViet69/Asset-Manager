@@ -59,7 +59,7 @@ export function SelectField({
 }: {
   label: string;
   value: string;
-  options: readonly { id: string; label: string }[];
+  options: readonly { id: string; label: string; icon?: ReactNode }[];
   onChange(value: string): void;
   isDisabled?: boolean;
 }): JSX.Element {
@@ -72,7 +72,7 @@ export function SelectField({
       className={styles.select}
     >
       <AriaButton className={styles.selectTrigger}>
-        <SelectValue />⌄
+        <SelectValue className={styles.optionContent} />
       </AriaButton>
       <Popover className={styles.popover}>
         <ListBox aria-label={label} className={styles.list}>
@@ -83,6 +83,7 @@ export function SelectField({
               textValue={option.label}
               className={styles.option}
             >
+              {option.icon}
               {option.label}
             </ListBoxItem>
           ))}

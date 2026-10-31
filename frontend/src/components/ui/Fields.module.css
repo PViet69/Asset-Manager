@@ -52,11 +52,16 @@
   outline: none;
 }
 .option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 10px;
   border-radius: 4px;
   cursor: pointer;
   outline: none;
 }
+.optionContent { display: inline-flex; align-items: center; gap: 8px; }
+.option svg, .optionContent svg { flex-shrink: 0; }
 .option[data-focused],
 .option[data-selected] {
   background: var(--color-selection);

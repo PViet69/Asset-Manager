@@ -1,3 +1,4 @@
+import { Spinner } from "../../components/ui/Spinner";
 import type { VectorSearchItem } from "../../types";
 import type { SearchState } from "./search.types";
 import { SearchResultCard } from "./SearchResultCard";
@@ -22,8 +23,8 @@ export function SearchResults({
     );
   if (state.kind === "submitting")
     return (
-      <div className={styles.message} role="status" aria-busy="true">
-        Searching...
+      <div className={styles.message} aria-busy="true">
+        <Spinner label="Searching assets" />
       </div>
     );
   if (state.kind === "error")
