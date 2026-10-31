@@ -57,11 +57,7 @@ export function SyncActivityPanel({
       className={styles.panel}
     >
       <h2>{history ? "Session activity" : "Indexing now"}</h2>
-      <p className={styles.caption}>
-        {history
-          ? "Recent events from this session."
-          : "Latest reported file status. Provider sync can be stopped from its provider row."}
-      </p>
+      {history && <p className={styles.caption}>Recent events from this session.</p>}
       {!history && (
         <>
           <p role="status">
