@@ -22,9 +22,9 @@
   padding: 0 10px;
   height: 44px;
 }
-.search[data-focus-within] {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+.search:focus-within {
+  border-color: var(--color-action);
+  box-shadow: 0 0 0 2px var(--color-selection);
 }
 .searchIcon {
   font-size: 26px;
@@ -43,6 +43,9 @@
 }
 .input::-webkit-search-cancel-button {
   display: none;
+}
+.input:focus-visible {
+  outline: none;
 }
 .srOnly {
   position: absolute;
