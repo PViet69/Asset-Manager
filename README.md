@@ -17,6 +17,39 @@ provider video sync ─▶ download to RAM ─▶ Google Gen AI Files API ─▶
 
 ## Local development
 
+### Docker with live updates
+
+With Docker Compose 2.32.0 or newer and a configured `.env`, run once per
+development session from the repository root:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build --watch
+```
+
+Open `http://127.0.0.1:5173` (or your configured `FRONTEND_PORT`). Keep this
+command running while editing. Compose Watch syncs React/CSS files into Vite,
+which updates the browser automatically. Python changes sync into the backend
+and Uvicorn reloads it. Dependency manifests, lockfiles, and Dockerfiles trigger
+image rebuilds automatically. Qdrant keeps its existing named volume.
+
+The development frontend proxies API requests to `http://app:8000` inside Docker.
+Use the exact browser origin configured in `ADMIN_ALLOWED_ORIGIN` for admin
+mutations; `localhost` and `127.0.0.1` are different origins.
+
+Changes to `.env` require recreating the backend so its environment is reloaded;
+stop the watch session and rerun the command with `--force-recreate`. Backend
+reloads interrupt active requests, including indexing streams. Source changes
+made while Watch is stopped are synchronized when it starts again.
+
+To return to the nginx production build, stop the watch session and run:
+
+```bash
+docker compose up -d --build
+```
+
+The development override is opt-in; the production Dockerfiles and default
+Compose configuration remain unchanged.
+
 Prerequisites:
 
 - Python 3.11 or newer
