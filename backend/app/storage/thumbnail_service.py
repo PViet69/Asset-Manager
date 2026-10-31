@@ -1,4 +1,4 @@
-"""Validated retrieval of indexed provider image thumbnails."""
+"""Validated retrieval of still thumbnails for indexed provider media."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from backend.app.storage.client import (
     StorageThumbnailNotFound,
     StorageThumbnailUnavailable,
     Thumbnail,
+    SUPPORTED_VIDEO_MIME_TYPES,
 )
 from backend.app.storage.thumbnail_cache import ThumbnailCache
 
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
     from backend.app.storage.registry import ProviderRegistry
 
 SUPPORTED_THUMBNAIL_MIME_TYPES: frozenset[str] = frozenset(
-    {"image/png", "image/jpeg", "image/webp"}
+    {"image/png", "image/jpeg", "image/webp"} | SUPPORTED_VIDEO_MIME_TYPES
 )
 
 
@@ -39,7 +40,7 @@ class UnsupportedThumbnailSource(Exception):
     """Raised when indexed source cannot have a thumbnail."""
 
     def __init__(self) -> None:
-        super().__init__("Thumbnail source is not a supported image")
+        super().__init__("Thumbnail source is not supported media")
 
 
 class ThumbnailProviderDisabled(Exception):

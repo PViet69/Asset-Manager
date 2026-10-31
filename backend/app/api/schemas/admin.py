@@ -85,6 +85,7 @@ class AdminDashboardStatusResponse(BaseModel):
     providers: list[ProviderDashboardStatus]
     embedding_model: ModelHealthStatus
     description_model: ModelHealthStatus
+    video_model: ModelHealthStatus | None = None
 
 
 class AdminProviderRefreshResponse(BaseModel):
@@ -95,6 +96,7 @@ class AdminProviderRefreshResponse(BaseModel):
     provider: ProviderDashboardStatus
     embedding_model: ModelHealthStatus
     description_model: ModelHealthStatus
+    video_model: ModelHealthStatus | None = None
 
 
 class SyncActivityEvent(BaseModel):

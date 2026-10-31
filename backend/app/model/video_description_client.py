@@ -48,6 +48,14 @@ class VideoModelDescriptionClient:
         """Return configured video-model identity."""
         return self._model_name
 
+    def check_health(self) -> str:
+        """Check model access without uploading media or generating content."""
+        try:
+            self._client.models.get(model=self._model_name)
+            return "ok"
+        except Exception:  # noqa: BLE001
+            return "unavailable"
+
     def describe(self, content: bytes, mime_type: str) -> ImageDescription:
         """Upload, describe, and delete a temporary provider video."""
         if mime_type not in SUPPORTED_VIDEO_MIME_TYPES:
