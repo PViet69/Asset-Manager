@@ -26,6 +26,7 @@ class AdminAuthConfig:
     password_hash: str
     session_secret: str
     allowed_origin: str
+    disabled: bool = False
 
 
 def verify_admin_credentials(

@@ -11,6 +11,7 @@ export function useAdminSession() {
   >("checking");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setSubmitting] = useState(false);
+  const [authRequired, setAuthRequired] = useState(true);
   const epoch = useRef(0);
   const expire = useCallback(() => {
     epoch.current++;
@@ -22,8 +23,9 @@ export function useAdminSession() {
   useEffect(() => {
     const id = ++epoch.current;
     getAdminSession().then(
-      () => {
+      (account) => {
         if (epoch.current === id) {
+          setAuthRequired(account.auth_required !== false);
           setStatus("authenticated");
           if (["/admin", "/admin/login"].includes(window.location.pathname))
             window.history.replaceState({}, "", "/admin/dashboard");
@@ -71,6 +73,7 @@ export function useAdminSession() {
   }
   return {
     status,
+    authRequired,
     error,
     isSubmitting,
     login,

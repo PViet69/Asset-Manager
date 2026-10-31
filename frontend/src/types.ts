@@ -128,7 +128,7 @@ export type SyncTerminalEvent = {
 
 export type SyncEvent = SyncActivityEvent | SyncTerminalEvent;
 
-export type AdminAccount = { username: string };
+export type AdminAccount = { username: string; auth_required?: boolean };
 
 export type AdminSyncStatusResponse = { providers: ProviderSyncStatus[] };
 

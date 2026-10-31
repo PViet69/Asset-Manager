@@ -9,6 +9,7 @@ test("native form submits username and password and indicates submission", async
   const login = vi.fn().mockResolvedValue(undefined);
   const session = {
     status: "anonymous" as const,
+    authRequired: true,
     error: null,
     isSubmitting: false,
     login,
@@ -24,3 +25,4 @@ test("native form submits username and password and indicates submission", async
   rerender(<AdminLoginForm session={{ ...session, isSubmitting: true }} />);
   expect(screen.getByRole("button", { name: "Signing in…" })).toBeDisabled();
 });
+// Session authentication remains available when temporary open access is disabled.

@@ -261,3 +261,11 @@ cd frontend && npm run build   # tsc + vite build, output in frontend/dist
 | `PROXY_TARGET` | `http://localhost:8000` | Dev-only: Vite dev-server proxy target. Never bundled into the app. |
 
 Note: `/v1/search` additionally requires the backend `SEARCH_THRESHOLD` to be configured; the UI surfaces the backend's 503 error as a banner when it is not.
+### Temporary admin access without sign-in
+
+Set `ADMIN_AUTH_DISABLED=true` in the backend `.env` and restart the backend to
+allow admin access without a session. This also exposes admin mutation endpoints
+to anyone who can reach the service; browser origin checks remain enabled.
+The frontend reads this mode from `/auth/me` and hides Sign out. Restore
+`ADMIN_AUTH_DISABLED=false` and restart the backend to require sign-in again.
+

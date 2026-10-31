@@ -87,7 +87,7 @@ export function AdminWorkspace(): JSX.Element {
                 <p>ADMINISTRATION</p>
                 <h1>Workspace overview</h1>
               </div>
-              <Button onPress={() => void session.logout()}>Sign out</Button>
+              {session.authRequired && <Button onPress={() => void session.logout()}>Sign out</Button>}
             </header>
             <Tabs defaultSelectedKey="overview">
               <TabList aria-label="Admin sections">

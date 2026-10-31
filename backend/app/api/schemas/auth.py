@@ -18,3 +18,4 @@ class AdminAccountResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     username: str
+    auth_required: bool = True

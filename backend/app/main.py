@@ -75,6 +75,7 @@ def create_app(
                 password_hash=auth_settings.ADMIN_PASSWORD_HASH,
                 session_secret=auth_settings.ADMIN_SESSION_SECRET,
                 allowed_origin=str(auth_settings.ADMIN_ALLOWED_ORIGIN).rstrip("/"),
+                disabled=auth_settings.ADMIN_AUTH_DISABLED,
             )
 
         if effective_service is None:

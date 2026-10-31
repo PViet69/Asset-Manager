@@ -24,6 +24,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post(
     "/login",
     response_model=AdminAccountResponse,
+    response_model_exclude_defaults=True,
     status_code=status.HTTP_200_OK,
     dependencies=[
         Depends(require_admin_origin),
@@ -54,12 +55,15 @@ def login(
 @router.get(
     "/me",
     response_model=AdminAccountResponse,
+    response_model_exclude_defaults=True,
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(require_admin_access)],
 )
 def current_admin(request: Request) -> AdminAccountResponse:
     """Return current authenticated administrator identity."""
     config = request.app.state.admin_auth_config
+    if config.disabled:
+        return AdminAccountResponse(username=config.username, auth_required=False)
     token = request.cookies[ADMIN_SESSION_COOKIE]
     username = get_session_username(config, token, datetime.now(UTC))
     assert username is not None
