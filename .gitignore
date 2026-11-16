@@ -24,6 +24,9 @@ htmlcov/
 # Local codebase index
 .codebase-memory/
 
+# Local design preview server sessions
+.superpowers/
+
 # Qdrant (local dev)
 qdrant_data/
 

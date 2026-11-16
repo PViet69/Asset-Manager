@@ -36,6 +36,7 @@ class AdminAuthSettings(BaseSettings):
     ADMIN_PASSWORD_HASH: NonBlankSetting
     ADMIN_SESSION_SECRET: NonBlankSetting
     ADMIN_ALLOWED_ORIGIN: AnyHttpUrl
+    ADMIN_AUTH_DISABLED: bool = False
 
     @model_validator(mode="after")
     def _validate_admin_allowed_origin(self) -> "AdminAuthSettings":

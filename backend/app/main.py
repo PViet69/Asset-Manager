@@ -67,6 +67,7 @@ def create_app(
         effective_provider_registry = provider_registry
         effective_tag_settings_store = tag_settings_store
 
+        video_model_client = None
         settings = Settings() if effective_service is None else None
         if effective_admin_auth_config is None:
             auth_settings = AdminAuthSettings()
@@ -75,6 +76,7 @@ def create_app(
                 password_hash=auth_settings.ADMIN_PASSWORD_HASH,
                 session_secret=auth_settings.ADMIN_SESSION_SECRET,
                 allowed_origin=str(auth_settings.ADMIN_ALLOWED_ORIGIN).rstrip("/"),
+                disabled=auth_settings.ADMIN_AUTH_DISABLED,
             )
 
         if effective_service is None:
@@ -146,6 +148,7 @@ def create_app(
             qdrant_store=effective_health_dependencies.qdrant_store,
             embedding_client=effective_health_dependencies.model_client,
             description_client=effective_health_dependencies.description_client,
+            video_client=video_model_client,
         )
         try:
             yield

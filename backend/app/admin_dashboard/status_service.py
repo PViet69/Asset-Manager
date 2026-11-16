@@ -56,6 +56,7 @@ class AdminDashboardStatusService:
     qdrant_store: QdrantStore
     embedding_client: ModelClient
     description_client: AssetDescriptionClient
+    video_client: _ModelHealthClient | None = None
     _cache: _StatusCache = field(default_factory=_StatusCache, init=False)
 
     async def get_status(self) -> AdminDashboardStatusResponse:
@@ -69,14 +70,16 @@ class AdminDashboardStatusService:
             for entry in self.registry.providers
         )
         providers = await asyncio.gather(*provider_tasks)
-        embedding_model, description_model = await asyncio.gather(
+        embedding_model, description_model, video_model = await asyncio.gather(
             self._model_health(self.embedding_client),
             self._model_health(self.description_client),
+            self._video_health(),
         )
         status = AdminDashboardStatusResponse(
             providers=list(providers),
             embedding_model=embedding_model,
             description_model=description_model,
+            video_model=video_model,
         )
         self._cache.set(status)
         return status
@@ -87,16 +90,23 @@ class AdminDashboardStatusService:
         entry = self.registry.get(provider)
         if entry is None:
             raise KeyError(provider)
-        provider_status, embedding_model, description_model = await asyncio.gather(
+        provider_status, embedding_model, description_model, video_model = await asyncio.gather(
             self._provider_status(entry, force_health=True),
             self._model_health(self.embedding_client),
             self._model_health(self.description_client),
+            self._video_health(),
         )
         return AdminProviderRefreshResponse(
             provider=provider_status,
             embedding_model=embedding_model,
             description_model=description_model,
+            video_model=video_model,
         )
+
+    async def _video_health(self) -> ModelHealthStatus:
+        if self.video_client is None:
+            return ModelHealthStatus(name="Not configured", health="disabled")
+        return await self._model_health(self.video_client)
 
     async def _provider_status(
         self, entry: ProviderSync, *, force_health: bool

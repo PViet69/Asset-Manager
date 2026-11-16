@@ -1,0 +1,31 @@
+.grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr));
+  gap: 20px;
+}
+.grid > li {
+  min-width: 0;
+}
+.message {
+  padding: 72px 24px;
+  text-align: center;
+  color: var(--color-secondary);
+}
+.message h2 {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+.message p {
+  font-size: 14px;
+}
+.error {
+  padding: 18px;
+  color: #a42e32;
+  border: 1px solid #ebc6c8;
+  background: #fff6f6;
+  border-radius: 8px;
+}

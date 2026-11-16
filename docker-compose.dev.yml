@@ -1,0 +1,65 @@
+# Explicit development override: production continues to use docker-compose.yml.
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports: !override
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:5173"
+    environment:
+      PROXY_TARGET: http://app:8000
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend/src
+          target: /app/src
+          initial_sync: true
+        - action: sync
+          path: ./frontend/public
+          target: /app/public
+          initial_sync: true
+        - action: sync
+          path: ./frontend/index.html
+          target: /app/index.html
+          initial_sync: true
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/package-lock.json
+        - action: rebuild
+          path: ./frontend/vite.config.ts
+        - action: rebuild
+          path: ./frontend/tsconfig.json
+        - action: rebuild
+          path: ./frontend/tsconfig.node.json
+        - action: rebuild
+          path: ./frontend/Dockerfile.dev
+
+  app:
+    command:
+      - .venv/bin/uvicorn
+      - backend.app.main:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/backend
+    develop:
+      watch:
+        - action: sync
+          path: ./backend
+          target: /app/backend
+          initial_sync: true
+          ignore:
+            - __pycache__/
+            - "*.pyc"
+            - tests/
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: rebuild
+          path: ./uv.lock
+        - action: rebuild
+          path: ./Dockerfile

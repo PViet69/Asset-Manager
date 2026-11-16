@@ -58,3 +58,12 @@ def test_describe_rejects_unsupported_video_mime_type() -> None:
 
     with pytest.raises(ModelEndpointError, match="Unsupported video format"):
         client.describe(b"video-bytes", "video/x-msvideo")
+def test_video_health_checks_model_access_without_generation() -> None:
+    sdk = Mock()
+    client = VideoModelDescriptionClient.from_client(sdk, "gemini-video")
+    assert client.check_health() == "ok"
+    sdk.models.get.assert_called_once_with(model="gemini-video")
+    sdk.models.generate_content.assert_not_called()
+    sdk.files.upload.assert_not_called()
+    sdk.models.get.side_effect = RuntimeError("unavailable")
+    assert client.check_health() == "unavailable"

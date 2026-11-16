@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   // Dev-only: where API routes proxy to. Deliberately not VITE_-prefixed
   // so it never leaks into the client bundle.
-  const proxyTarget = env.PROXY_TARGET ?? "http://localhost:8000";
+  const proxyTarget = process.env.PROXY_TARGET ?? env.PROXY_TARGET ?? "http://localhost:8000";
   return {
     plugins: [react()],
     test: {

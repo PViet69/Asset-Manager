@@ -120,3 +120,15 @@ def test_thumbnail_service_maps_provider_not_found_to_source_not_found() -> None
         ThumbnailService(_registry(client), ingestion).get_thumbnail(
             StorageProvider.DROPBOX, "id:photo"
         )
+@pytest.mark.parametrize("mime", ["video/mp4", "video/quicktime", "video/webm"])
+def test_video_sources_use_still_provider_thumbnails(mime: str) -> None:
+    ingestion = Mock(spec=FileIngestionService)
+    ingestion.find_indexed_thumbnail_source.return_value = IndexedThumbnailSource(
+        StorageProvider.DROPBOX, "id:video", mime
+    )
+    client = Mock()
+    client.get_thumbnail.return_value = Thumbnail(b"poster", "image/jpeg")
+    service = ThumbnailService(_registry(client), ingestion)
+    assert service.get_thumbnail(StorageProvider.DROPBOX, "id:video") == Thumbnail(b"poster", "image/jpeg")
+    client.get_thumbnail.assert_called_once_with("id:video")
+    assert FileIngestionService._thumbnail_url("dropbox", "id:video", mime) == "/v1/storage/dropbox/id:video/thumbnail"

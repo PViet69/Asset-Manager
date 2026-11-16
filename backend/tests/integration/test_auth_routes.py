@@ -13,6 +13,22 @@ from backend.app.main import create_app
 TEST_ORIGIN = "https://admin.example.test"
 
 
+def test_disabled_auth_allows_admin_without_cookie_but_keeps_origin_check() -> None:
+    app = create_app(
+        service=Mock(spec=FileIngestionService),
+        admin_auth_config=AdminAuthConfig(
+            username="admin", password_hash="unused", session_secret="unused",
+            allowed_origin=TEST_ORIGIN, disabled=True,
+        ),
+    )
+    with TestClient(app, base_url="https://testserver") as client:
+        response = client.get("/auth/me")
+        assert response.status_code == 200
+        assert response.json() == {"username": "admin", "auth_required": False}
+        assert "set-cookie" not in response.headers
+        assert client.post("/auth/logout", headers={"Origin": "https://other.test"}).status_code == 403
+
+
 def _client() -> TestClient:
     app = create_app(
         service=Mock(spec=FileIngestionService),

@@ -1,0 +1,65 @@
+.card {
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  min-width: 0;
+}
+.preview {
+  height: 184px;
+  background: #e6edf7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.body {
+  padding: 18px;
+}
+.name {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+.name a {
+  color: var(--color-text);
+  text-decoration: none;
+}
+.name a:hover {
+  color: var(--color-action);
+  text-decoration: underline;
+}
+.name a:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 3px;
+}
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  align-items: center;
+  color: var(--color-secondary);
+  font-size: 11px;
+}
+.meta button {
+  padding: 2px 0;
+  font-size: 11px;
+  text-transform: capitalize;
+  min-height: 24px;
+}
+.meta span {
+  overflow-wrap: anywhere;
+}
+.snippet {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-secondary);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 12px 0 0;
+}

@@ -1,0 +1,57 @@
+.workspace {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 36px 40px 56px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tabs { display:flex; flex:1; flex-direction:column; min-height:0; }
+.tabPanel { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; overflow-anchor:none; }
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+.header p {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--text-secondary, #626e7c);
+  margin: 0 0 10px;
+}
+.header h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.03em;
+}
+.notifications {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  max-width: min(380px, calc(100vw - 40px));
+  z-index: 100;
+}
+.notifications p {
+  padding: 14px 18px;
+  border: 1px solid var(--border, #e4e8ed);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  box-shadow: 0 4px 24px #20273112;
+  font-size: 13px;
+}
+@media (max-width: 680px) {
+  .workspace {
+    padding: 24px 16px 40px;
+  }
+  .header h1 {
+    font-size: 23px;
+  }
+}

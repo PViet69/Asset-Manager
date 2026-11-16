@@ -1,0 +1,31 @@
+.tabs {
+  min-width: 0;
+}
+.list {
+  display: flex;
+  gap: 22px;
+  max-width: 100%;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-border);
+}
+.tab {
+  flex-shrink: 0;
+  padding: 0 0 11px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-secondary);
+  cursor: pointer;
+}
+.tab[data-selected] {
+  color: var(--color-text);
+  border-color: var(--color-action);
+  font-weight: 600;
+}
+.tab[data-focus-visible] {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.panel {
+  outline: none;
+}

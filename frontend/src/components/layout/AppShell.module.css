@@ -1,0 +1,81 @@
+.shell {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  min-height: 100dvh;
+  background: var(--color-canvas);
+}
+.sidebar {
+  border-right: 1px solid var(--color-border);
+  background: var(--color-sidebar);
+  padding: 30px 18px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--color-text);
+  text-decoration: none;
+  line-height: 1.3;
+}
+.mark {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: block;
+}
+.sidebar .brand { color: #f4f7ff; }
+.sidebar .mark { color: #8db0ff; }
+.sidebar .navigation a { color: #c3d2eb; }
+.sidebar .navigation a:hover { background: #223f68; color: #fff; }
+.sidebar .navigation a[aria-current] { color: #fff; background: #3559a4; box-shadow: inset 3px 0 #91bcff; }
+.sidebar a:focus-visible { outline-color: #adc8ff; }
+.navigation {
+  display: grid;
+  gap: 5px;
+  margin: 30px 0;
+}
+.navigation a {
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: var(--color-secondary);
+  text-decoration: none;
+}
+.navigation a[aria-current] {
+  color: var(--color-action);
+  background: var(--color-selection);
+  font-weight: 600;
+}
+.content {
+  min-width: 0;
+}
+.mobileHeader {
+  display: none;
+}
+@media (max-width: 700px) {
+  .shell {
+    display: block;
+  }
+  .sidebar {
+    display: none;
+  }
+  .mobileHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    background: white;
+    border-bottom: 1px solid var(--color-border);
+  }
+}
+.shell[data-area="search"] { height:100dvh; min-height:0; overflow:hidden; }
+.shell[data-area="search"] .content { min-height:0; overflow:hidden; }
+.shell[data-area="admin"] { position:fixed; inset:0; height:100dvh; min-height:0; overflow:clip; }
+.shell[data-area="admin"] .content { min-height:0; overflow:hidden; }
+:global(html):has(.shell[data-area="admin"]), :global(body):has(.shell[data-area="admin"]) { overflow:hidden; overscroll-behavior:none; }
+@media(max-width:700px) {
+  .shell[data-area="search"] { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+  .shell[data-area="admin"] { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+}

@@ -24,7 +24,7 @@ test("shows Asset Manager title on public search route", () => {
   render(<App />);
 
   // Assert
-  expect(screen.getByRole("heading", { name: "Asset Manager" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Find your next asset." })).toBeInTheDocument();
   expect(document.title).toBe("Asset Manager");
 });
 

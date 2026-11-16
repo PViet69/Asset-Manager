@@ -1,0 +1,59 @@
+.panel {
+  background: #f7f4fd;
+  border: 1px solid #ded3f1;
+  border-radius: 10px;
+  padding: 24px;
+  margin-top: 24px;
+  min-width: 0;
+}
+.panel h2 {
+  color: var(--color-violet);
+  font-size: 18px;
+  margin: 0;
+}
+.panel h3 {
+  font-size: 14px;
+  margin-top: 24px;
+}
+.caption,
+.panel p {
+  font-size: 13px;
+  color: var(--text-secondary, #626e7c);
+  line-height: 1.6;
+}
+.list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border, #e4e8ed);
+  font-size: 12px;
+}
+.row > svg {
+  flex-shrink: 0;
+}
+.name {
+  min-width: 0;
+  flex: 1;
+}
+.name strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.name span {
+  display: block;
+  color: var(--text-secondary, #626e7c);
+  margin-top: 5px;
+}
+.icon {
+  color: var(--color-violet);
+  font-size: 24px;
+}

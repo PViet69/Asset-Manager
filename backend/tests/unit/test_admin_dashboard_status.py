@@ -183,3 +183,16 @@ async def test_refresh_rechecks_only_selected_provider_health_and_counts() -> No
     assert response.provider.health == "ok"
     assert response.provider.detected_count == 1
     assert client.list_count == 1
+@pytest.mark.asyncio
+async def test_status_includes_separate_video_model_and_refresh_health() -> None:
+    service = AdminDashboardStatusService(
+        registry=ProviderRegistry(()),
+        qdrant_store=_Qdrant([]),
+        embedding_client=_Model("embed", "ok"),
+        description_client=_Model("deepseek", "ok"),
+        video_client=_Model("gemini", "unavailable"),
+    )
+    response = await service.get_status()
+    assert response.description_model.name == "deepseek"
+    assert response.video_model.name == "gemini"
+    assert response.video_model.health == "unavailable"

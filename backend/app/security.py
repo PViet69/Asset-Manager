@@ -89,6 +89,8 @@ def require_admin_login_rate_limit(request: Request) -> None:
 def require_admin_access(request: Request) -> None:
     """Require valid signed admin session cookie."""
     config: AdminAuthConfig = request.app.state.admin_auth_config
+    if config.disabled:
+        return
     token = request.cookies.get("admin_session")
     username = get_session_username(config, token, datetime.now(UTC)) if token else None
     if username is None:
