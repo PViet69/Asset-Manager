@@ -129,7 +129,7 @@ def test_disabled_auth_restores_admin_without_cookie() -> None:
         response = client.get("/auth/me")
 
     assert response.status_code == 200
-    assert response.json() == {"username": "admin"}
+    assert response.json() == {"username": "admin", "auth_required": False}
 
 
 @pytest.mark.integration

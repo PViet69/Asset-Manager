@@ -48,7 +48,7 @@ test("loading empty and error states are distinct", () => {
   const { rerender } = render(
     <SearchResults state={{ kind: "submitting" }} items={[]} />,
   );
-  expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByRole("progressbar", { name: "Searching assets" })).toBeInTheDocument();
   rerender(<SearchResults state={{ kind: "result", items: [] }} items={[]} />);
   expect(screen.getByText("No matching assets found")).toBeInTheDocument();
   rerender(

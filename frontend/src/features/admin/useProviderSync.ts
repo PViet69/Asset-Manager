@@ -28,7 +28,7 @@ function fromSnapshot(
 ): ProviderActivityState {
   return [...activities]
     .sort((a, b) => a.sequence - b.sequence)
-    .reduce(
+    .reduce<ProviderActivityState>(
       (state, activity) => reduceSyncEvent(state, toEvent(provider, activity)),
       { ...emptyActivity(), connection: "streaming" as const },
     );
@@ -80,9 +80,11 @@ export function useProviderSync({
 
   useEffect(() => {
     if (!enabled) return;
+    let active = true;
     const cleanups = Object.entries(syncJobIdsByProvider).map(([provider, jobId]) =>
       connectSyncJobWs(jobId, {
         onSnapshot(data) {
+          if (!active || !live.current || jobs.current[provider] !== jobId) return;
           const events = [...data.activity].sort((a, b) => a.sequence - b.sequence);
           const maxSequence = events.reduce((max, activity) => Math.max(max, activity.sequence), -1);
           lastSequence.current.set(jobId, maxSequence);
@@ -101,6 +103,7 @@ export function useProviderSync({
           }
         },
         onActivity(activity) {
+          if (!active || !live.current || jobs.current[provider] !== jobId) return;
           const previousSequence = lastSequence.current.get(jobId) ?? -1;
           if (activity.sequence <= previousSequence) return;
           lastSequence.current.set(jobId, activity.sequence);
@@ -120,6 +123,7 @@ export function useProviderSync({
           }
         },
         onTerminal(data) {
+          if (!active || !live.current || jobs.current[provider] !== jobId) return;
           const previous = lastEmbeddedDelta.current.get(jobId);
           if (previous !== undefined && previous >= 0) {
             const delta = Math.max(0, data.embedded_delta - previous);
@@ -154,6 +158,7 @@ export function useProviderSync({
           void callbacks.current.onComplete(provider);
         },
         onError(detail) {
+          if (!active || !live.current || jobs.current[provider] !== jobId) return;
           if (detail === "Job not found") {
             lastSequence.current.delete(jobId);
             lastEmbeddedDelta.current.delete(jobId);
@@ -167,6 +172,7 @@ export function useProviderSync({
           }
         },
         onClose(code) {
+          if (!active || !live.current || jobs.current[provider] !== jobId) return;
           if (code === 4404) {
             lastSequence.current.delete(jobId);
             lastEmbeddedDelta.current.delete(jobId);
@@ -181,7 +187,10 @@ export function useProviderSync({
         },
       }),
     );
-    return () => cleanups.forEach((cleanup) => cleanup());
+    return () => {
+      active = false;
+      cleanups.forEach((cleanup) => cleanup());
+    };
   }, [enabled, syncJobIdsByProvider]);
 
   async function start(provider: string) {

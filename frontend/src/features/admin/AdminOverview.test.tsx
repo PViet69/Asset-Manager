@@ -19,7 +19,7 @@ const dashboard = {
   descriptionModel: null,
 };
 test("null counts show unavailable rather than zero or fabricated percentages", () => {
-  render(<AdminOverview dashboard={dashboard} isLoading={false} />);
+  render(<AdminOverview dashboard={dashboard} isLoading={false} onRefresh={() => {}} />);
   expect(screen.getAllByText("Unavailable")).toHaveLength(2);
   expect(screen.getByText("5")).toBeInTheDocument();
   expect(screen.queryByText("0%")).not.toBeInTheDocument();

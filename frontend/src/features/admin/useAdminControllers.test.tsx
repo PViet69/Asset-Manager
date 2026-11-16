@@ -1,8 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import * as api from "../../api/client";
-import type { SyncEvent } from "../../types";
+import { connectSyncJobWs, type SyncWsCallbacks } from "../../api/syncWebSocket";
 import { useProviderSync } from "./useProviderSync";
 import { useAdminDashboard } from "./useAdminDashboard";
 import { useProviderItems } from "./useProviderItems";
@@ -17,11 +17,19 @@ vi.mock("../../api/client", () => ({
   },
   getAdminSyncStatus: vi.fn(),
   refreshAdminProvider: vi.fn(),
-  streamAdminSync: vi.fn(),
+  triggerAdminSync: vi.fn(),
   stopAdminSync: vi.fn(),
   getAdminProviderItems: vi.fn(),
   deleteAdminQdrantPoint: vi.fn(),
 }));
+vi.mock("../../api/syncWebSocket", () => ({ connectSyncJobWs: vi.fn() }));
+let socket: SyncWsCallbacks;
+const disconnect = vi.fn();
+beforeEach(() => {
+  vi.mocked(api.triggerAdminSync).mockResolvedValue({ job_id: "job", provider: "drive", state: "PENDING" });
+  vi.mocked(connectSyncJobWs).mockImplementation((_id, callbacks) => { socket = callbacks; return disconnect; });
+});
+const terminal = (state: "FAILURE" | "REVOKED") => ({ type: "terminal" as const, state, embedded_delta: 0, upserted: 0, deleted: 0, unchanged: 0, failed: 0, cancellation_requested: state === "REVOKED", activity: [] });
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
@@ -30,15 +38,10 @@ const common = {
   onError: vi.fn(),
   onComplete: vi.fn().mockResolvedValue(undefined),
   onModelUnavailable: vi.fn(),
+  onProgress: vi.fn(),
+  onStatus: vi.fn(),
 };
 test("disable aborts active stream and ignores late events from a replaced controller", async () => {
-  let emit!: (e: SyncEvent) => void;
-  let signal!: AbortSignal;
-  vi.mocked(api.streamAdminSync).mockImplementation(async (_id, cb, s) => {
-    emit = cb;
-    signal = s!;
-    await new Promise(() => {});
-  });
   const { result, rerender } = renderHook(
     ({ enabled }) => useProviderSync({ ...common, enabled }),
     { initialProps: { enabled: true } },
@@ -47,25 +50,18 @@ test("disable aborts active stream and ignores late events from a replaced contr
     void result.current.start("drive");
   });
   rerender({ enabled: false });
-  expect(signal.aborted).toBe(true);
+  expect(disconnect).toHaveBeenCalled();
   await act(async () =>
-    emit({
+    socket.onActivity({
       sequence: 1,
-      provider: "drive",
+      storage_file_id: "file",
       filename: "late.jpg",
       status: "indexing",
-      detail: "",
-      terminal: false,
     }),
   );
   expect(result.current.activityByProvider).toEqual({});
 });
 test("unmount aborts streams", async () => {
-  let signal!: AbortSignal;
-  vi.mocked(api.streamAdminSync).mockImplementation(async (_id, _cb, s) => {
-    signal = s!;
-    await new Promise(() => {});
-  });
   const { result, unmount } = renderHook(() =>
     useProviderSync({ ...common, enabled: true }),
   );
@@ -73,7 +69,7 @@ test("unmount aborts streams", async () => {
     void result.current.start("drive");
   });
   unmount();
-  expect(signal.aborted).toBe(true);
+  expect(disconnect).toHaveBeenCalled();
 });
 test("late provider items response after logout is ignored", async () => {
   let resolve!: (r: {
@@ -122,15 +118,7 @@ test("delete failure retains item and pending confirmation", async () => {
   expect(result.current.pendingDeletion?.item.point_id).toBe("point");
   expect(onError).toHaveBeenCalled();
 });
-test("stop failure retains live work and interrupted connection clears it", async () => {
-  let emit!: (e: SyncEvent) => void;
-  let reject!: (e: Error) => void;
-  vi.mocked(api.streamAdminSync).mockImplementation(async (_id, cb) => {
-    emit = cb;
-    await new Promise<void>((_r, j) => {
-      reject = j;
-    });
-  });
+test("stop failure retains live work until the job terminates", async () => {
   vi.mocked(api.stopAdminSync).mockRejectedValue(new Error("Cannot stop"));
   const { result } = renderHook(() =>
     useProviderSync({ ...common, enabled: true }),
@@ -139,22 +127,20 @@ test("stop failure retains live work and interrupted connection clears it", asyn
     void result.current.start("drive");
   });
   await act(async () =>
-    emit({
+    socket.onActivity({
       sequence: 1,
-      provider: "drive",
+      storage_file_id: "file",
       filename: "live.mp4",
       status: "indexing",
-      detail: "",
-      terminal: false,
     }),
   );
   await act(async () => result.current.stop("drive"));
   expect(result.current.syncingProviders.has("drive")).toBe(true);
   expect(result.current.activityByProvider.drive?.active).toHaveLength(1);
-  await act(async () => reject(new Error("Disconnected")));
+  await act(async () => socket.onTerminal(terminal("REVOKED")));
   await waitFor(() =>
     expect(result.current.activityByProvider.drive?.connection).toBe(
-      "interrupted",
+      "stopped",
     ),
   );
   expect(result.current.activityByProvider.drive?.active).toHaveLength(0);
@@ -179,26 +165,19 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
-test("partial non-auth stream failure reloads authoritative status and preserves interruption", async () => {
+test("failed job reloads authoritative status and preserves indexed activity", async () => {
   const complete = vi.fn().mockResolvedValue(undefined);
-  vi.mocked(api.streamAdminSync).mockImplementation(async (id, emit) => {
-    emit({
-      sequence: 1,
-      provider: id,
-      filename: "indexed.jpg",
-      status: "indexed",
-      detail: "",
-      terminal: false,
-    });
-    throw new Error("Disconnected after indexing");
-  });
   const { result } = renderHook(() =>
     useProviderSync({ ...common, onComplete: complete, enabled: true }),
   );
   await act(async () => result.current.start("drive"));
+  await act(async () => {
+    socket.onActivity({ sequence: 1, storage_file_id: "file", filename: "indexed.jpg", status: "indexed" });
+    socket.onTerminal(terminal("FAILURE"));
+  });
   expect(complete).toHaveBeenCalledWith("drive");
   expect(result.current.activityByProvider.drive?.connection).toBe(
-    "interrupted",
+    "finished",
   );
   expect(result.current.activityByProvider.drive?.recent[0]?.filename).toBe(
     "indexed.jpg",
@@ -315,9 +294,9 @@ test("parallel provider refreshes retain both providers newest independent count
   ).toEqual([19, 8]);
   expect(result.current.dashboard.embeddingModel?.name).toBe("newest");
 });
-test("unauthorized stream failure expires without requesting protected status again", async () => {
+test("unauthorized queue request expires without requesting protected status again", async () => {
   const complete = vi.fn();
-  vi.mocked(api.streamAdminSync).mockRejectedValue(
+  vi.mocked(api.triggerAdminSync).mockRejectedValue(
     new api.ApiError(401, "Session expired"),
   );
   const { result } = renderHook(() =>

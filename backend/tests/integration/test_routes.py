@@ -582,7 +582,7 @@ def test_default_tag_settings_store_uses_application_settings(
             return_value=Mock(),
         ),
     ):
-        with TestClient(create_app()):
+        with TestClient(create_app(sync_job_store=Mock(), sync_task_dispatcher=Mock())):
             pass
 
     factory.assert_called_once_with(settings)
