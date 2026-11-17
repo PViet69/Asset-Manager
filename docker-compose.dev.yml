@@ -1,5 +1,23 @@
 # Explicit development override: production continues to use docker-compose.yml.
 services:
+  celery-worker:
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./backend
+          target: /app/backend
+          initial_sync: true
+          ignore:
+            - __pycache__/
+            - "*.pyc"
+            - tests/
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: rebuild
+          path: ./uv.lock
+        - action: rebuild
+          path: ./Dockerfile
+
   frontend:
     build:
       context: ./frontend
