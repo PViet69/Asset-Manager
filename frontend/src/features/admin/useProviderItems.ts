@@ -10,7 +10,7 @@ export function useProviderItems({
   enabled,
   onError,
   onDeleted,
-}: ControllerOptions & { onDeleted(provider: string): void }) {
+}: ControllerOptions & { onDeleted(provider: string, deleted: number): void }) {
   const [itemsByProvider, setItems] = useState<
     Readonly<Record<string, readonly QdrantItem[] | null>>
   >({});
@@ -62,7 +62,7 @@ export function useProviderItems({
     const { providerId, item } = pendingDeletion;
     setDeleting((s) => new Set(s).add(providerId));
     try {
-      await deleteAdminQdrantPoint(item.point_id);
+      const response = await deleteAdminQdrantPoint(item.point_id);
       if (scope.current(id)) {
         setItems((s) => ({
           ...s,
@@ -71,7 +71,7 @@ export function useProviderItems({
           ),
         }));
         setPending(null);
-        onDeleted(providerId);
+        onDeleted(providerId, response.deleted);
       }
     } catch (e) {
       if (scope.current(id)) {

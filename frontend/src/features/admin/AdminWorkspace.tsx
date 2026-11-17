@@ -39,8 +39,8 @@ export function AdminWorkspace(): JSX.Element {
   const common = { enabled, onError };
   const items = useProviderItems({
     ...common,
-    onDeleted: () => {
-      void dashboard.reload();
+    onDeleted: (provider, deleted) => {
+      dashboard.addEmbeddedDelta(provider, -deleted);
       dashboard.notify("Embedded item deleted.", "status");
     },
   });

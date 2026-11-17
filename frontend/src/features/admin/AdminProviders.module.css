@@ -42,3 +42,8 @@
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
 
 @media (prefers-reduced-motion: reduce) { .actions > button[data-refreshing="true"] svg { animation: none; } }
+
+.row { position: relative; }
+.cardContent { display: grid; gap: inherit; min-width: 0; }
+.cardContent[data-refreshing="true"] { visibility: hidden; }
+.refreshSkeleton { position: absolute; inset: 0; padding: inherit; display: grid; gap: inherit; grid-template-rows: auto 1fr auto; }

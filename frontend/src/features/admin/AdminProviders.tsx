@@ -16,6 +16,24 @@ type Controls = {
   onStart(id: string): void;
   onStop(id: string): void;
 };
+function ProviderSkeleton(): JSX.Element {
+  return <>
+                <div className={styles.identity}>
+                  <span className={`${styles.skeleton} ${styles.logoSkeleton}`} />
+                  <div className={styles.skeletonIdentity}>
+                    <span className={`${styles.skeleton} ${styles.nameSkeleton}`} />
+                    <span className={`${styles.skeleton} ${styles.badgeSkeleton}`} />
+                  </div>
+                </div>
+                <div className={styles.counts}>
+                  {[0, 1, 2].map((count) => <div className={styles.skeletonMetric} key={count}><span className={`${styles.skeleton} ${styles.labelSkeleton}`} /><span className={`${styles.skeleton} ${styles.valueSkeleton}`} /></div>)}
+                </div>
+                <div className={styles.actions}>
+                  {[0, 1, 2].map((action) => <span className={`${styles.skeleton} ${styles.buttonSkeleton}`} key={action} />)}
+                </div>
+  </>;
+}
+
 export function AdminProviders({
   dashboard,
   controls,
@@ -34,19 +52,7 @@ export function AdminProviders({
           <div className={styles.list} aria-hidden="true">
             {[0, 1].map((row) => (
               <div className={styles.row} key={row}>
-                <div className={styles.identity}>
-                  <span className={`${styles.skeleton} ${styles.logoSkeleton}`} />
-                  <div className={styles.skeletonIdentity}>
-                    <span className={`${styles.skeleton} ${styles.nameSkeleton}`} />
-                    <span className={`${styles.skeleton} ${styles.badgeSkeleton}`} />
-                  </div>
-                </div>
-                <div className={styles.counts}>
-                  {[0, 1, 2].map((count) => <div className={styles.skeletonMetric} key={count}><span className={`${styles.skeleton} ${styles.labelSkeleton}`} /><span className={`${styles.skeleton} ${styles.valueSkeleton}`} /></div>)}
-                </div>
-                <div className={styles.actions}>
-                  {[0, 1, 2].map((action) => <span className={`${styles.skeleton} ${styles.buttonSkeleton}`} key={action} />)}
-                </div>
+                <ProviderSkeleton />
               </div>
             ))}
           </div>
@@ -59,7 +65,12 @@ export function AdminProviders({
       ) : (
         <ul className={styles.list}>
           {dashboard.providers.map((p) => (
-            <li key={p.provider} className={styles.row}>
+            <li key={p.provider} className={styles.row} aria-busy={controls.refreshingProviders.has(p.provider)}>
+              {controls.refreshingProviders.has(p.provider) && <>
+                <span role="status" className={styles.srOnly}>Refreshing {p.display_name}…</span>
+                <div className={styles.refreshSkeleton} aria-hidden="true"><ProviderSkeleton /></div>
+              </>}
+              <div className={styles.cardContent} data-refreshing={controls.refreshingProviders.has(p.provider)}>
               <div className={styles.identity}>
                 <ProviderLogo provider={p.provider} aria-hidden="true" />
                 <div>
@@ -128,6 +139,7 @@ export function AdminProviders({
                     {isUpToDate(p) ? "Up to date" : "Sync"}
                   </Button>
                 )}
+              </div>
               </div>
             </li>
           ))}

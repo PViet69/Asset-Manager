@@ -305,3 +305,38 @@ test("unauthorized queue request expires without requesting protected status aga
   await act(async () => result.current.start("drive"));
   expect(complete).not.toHaveBeenCalled();
 });
+
+test.each(["SUCCESS", "FAILURE", "REVOKED"] as const)("terminal %s snapshot clears stopping and reloads counts", async (state) => {
+  vi.mocked(api.stopAdminSync).mockResolvedValue({ provider: "drive", status: "stopping" });
+  const { result } = renderHook(() => useProviderSync({ ...common, enabled: true }));
+  await act(async () => result.current.start("drive"));
+  await act(async () => result.current.stop("drive"));
+  expect(result.current.stoppingProviders.has("drive")).toBe(true);
+  await act(async () => socket.onSnapshot({
+    type: "snapshot", job_id: "job", provider: "drive", state, attempt: 1,
+    phase: null, detail: null, embedded_delta: 1, upserted: 1, deleted: 0,
+    unchanged: 0, failed: 0, cancellation_requested: state === "REVOKED", activity: [],
+  }));
+  expect(result.current.syncingProviders.has("drive")).toBe(false);
+  expect(result.current.stoppingProviders.has("drive")).toBe(false);
+  expect(common.onComplete).toHaveBeenCalledWith("drive");
+  expect(result.current.activityByProvider.drive?.connection).toBe(state === "REVOKED" ? "stopped" : "finished");
+});
+
+test("rapid deletions accumulate locally and an older reload cannot restore the count", async () => {
+  vi.mocked(api.getAdminSyncStatus).mockResolvedValueOnce(status(10));
+  const { result } = renderHook(() => useAdminDashboard({ enabled: true, onUnauthorized: vi.fn() }));
+  await waitFor(() => expect(result.current.dashboard.providers[0]?.embedded_count).toBe(10));
+  const older = deferred<ReturnType<typeof status>>();
+  vi.mocked(api.getAdminSyncStatus).mockReturnValueOnce(older.promise);
+  let reload!: Promise<void>;
+  act(() => { reload = result.current.reload(); });
+  act(() => {
+    result.current.addEmbeddedDelta("drive", -1);
+    result.current.addEmbeddedDelta("drive", -1);
+  });
+  expect(result.current.dashboard.providers[0]?.embedded_count).toBe(8);
+  await act(async () => { older.resolve(status(10)); await reload; });
+  expect(result.current.dashboard.providers[0]?.embedded_count).toBe(8);
+  expect(api.refreshAdminProvider).not.toHaveBeenCalled();
+});

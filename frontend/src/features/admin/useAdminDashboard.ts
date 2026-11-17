@@ -161,14 +161,14 @@ export function useAdminDashboard({
     }));
   }
   function addEmbeddedDelta(providerId: string, delta: number) {
-    if (delta <= 0) return;
+    if (delta === 0) return;
     providerRequests.current.set(providerId, ++sequence.current);
     setDashboard((current) => ({
       ...current,
       providers: current.providers.map((provider) =>
         provider.provider !== providerId || provider.embedded_count === null
           ? provider
-          : { ...provider, embedded_count: provider.embedded_count + delta },
+          : { ...provider, embedded_count: Math.max(0, provider.embedded_count + delta) },
       ),
     }));
   }

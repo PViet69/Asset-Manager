@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, stopAdminSync, triggerAdminSync } from "../../api/client";
-import { connectSyncJobWs } from "../../api/syncWebSocket";
+import { connectSyncJobWs, type SyncWsTerminalMessage } from "../../api/syncWebSocket";
 import type { AdminSyncJobActivity, SyncActivityEvent } from "../../types";
 import type { ControllerOptions } from "./admin.types";
 import {
@@ -81,10 +81,49 @@ export function useProviderSync({
   useEffect(() => {
     if (!enabled) return;
     let active = true;
+    function finish(provider: string, jobId: string, data: SyncWsTerminalMessage) {
+      if (!active || !live.current || jobs.current[provider] !== jobId) return;
+      const previous = lastEmbeddedDelta.current.get(jobId);
+      if (previous !== undefined && previous >= 0) {
+        const delta = Math.max(0, data.embedded_delta - previous);
+        if (delta > 0) callbacks.current.onProgress(provider, delta);
+      }
+      lastSequence.current.delete(jobId);
+      lastEmbeddedDelta.current.delete(jobId);
+      setSyncJobIds((current) => {
+        const { [provider]: _, ...remaining } = current;
+        jobs.current = remaining;
+        return remaining;
+      });
+      setSyncing((current) => new Set([...current].filter((id) => id !== provider)));
+      setActivity((current) => {
+        let state = current[provider] ?? emptyActivity();
+        for (const activity of data.activity) {
+          state = reduceSyncEvent(state, toEvent(provider, activity));
+        }
+        return {
+          ...current,
+          [provider]: {
+            ...state,
+            active: [],
+            connection: data.state === "REVOKED" ? "stopped" : "finished",
+          },
+        };
+      });
+      stopping.current.delete(provider);
+      setStopping((current) => new Set([...current].filter((id) => id !== provider)));
+      if (data.state === "FAILURE") callbacks.current.onError(new Error(SAFE_SYNC_ERROR), SAFE_SYNC_ERROR);
+      else if (data.state === "REVOKED") callbacks.current.onStatus("Provider sync stopped.");
+      void callbacks.current.onComplete(provider);
+    }
     const cleanups = Object.entries(syncJobIdsByProvider).map(([provider, jobId]) =>
       connectSyncJobWs(jobId, {
         onSnapshot(data) {
           if (!active || !live.current || jobs.current[provider] !== jobId) return;
+          if (data.state === "SUCCESS" || data.state === "FAILURE" || data.state === "REVOKED") {
+            finish(provider, jobId, { ...data, type: "terminal", state: data.state, embedded_delta: data.embedded_delta ?? 0 });
+            return;
+          }
           const events = [...data.activity].sort((a, b) => a.sequence - b.sequence);
           const maxSequence = events.reduce((max, activity) => Math.max(max, activity.sequence), -1);
           lastSequence.current.set(jobId, maxSequence);
@@ -122,41 +161,7 @@ export function useProviderSync({
             callbacks.current.onProgress(provider, 1);
           }
         },
-        onTerminal(data) {
-          if (!active || !live.current || jobs.current[provider] !== jobId) return;
-          const previous = lastEmbeddedDelta.current.get(jobId);
-          if (previous !== undefined && previous >= 0) {
-            const delta = Math.max(0, data.embedded_delta - previous);
-            if (delta > 0) callbacks.current.onProgress(provider, delta);
-          }
-          lastSequence.current.delete(jobId);
-          lastEmbeddedDelta.current.delete(jobId);
-          setSyncJobIds((current) => {
-            const { [provider]: _, ...remaining } = current;
-            jobs.current = remaining;
-            return remaining;
-          });
-          setSyncing((current) => new Set([...current].filter((id) => id !== provider)));
-          setActivity((current) => {
-            let state = current[provider] ?? emptyActivity();
-            for (const activity of data.activity) {
-              state = reduceSyncEvent(state, toEvent(provider, activity));
-            }
-            return {
-              ...current,
-              [provider]: {
-                ...state,
-                active: [],
-                connection: data.state === "REVOKED" ? "stopped" : "finished",
-              },
-            };
-          });
-          stopping.current.delete(provider);
-          setStopping((current) => new Set([...current].filter((id) => id !== provider)));
-          if (data.state === "FAILURE") callbacks.current.onError(new Error(SAFE_SYNC_ERROR), SAFE_SYNC_ERROR);
-          else if (data.state === "REVOKED") callbacks.current.onStatus("Provider sync stopped.");
-          void callbacks.current.onComplete(provider);
-        },
+        onTerminal(data) { finish(provider, jobId, data); },
         onError(detail) {
           if (!active || !live.current || jobs.current[provider] !== jobId) return;
           if (detail === "Job not found") {

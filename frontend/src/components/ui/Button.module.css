@@ -15,15 +15,17 @@
     background-color 120ms ease,
     border-color 120ms ease;
 }
-.button:hover {
+.button[data-hovered]:not([data-disabled]) {
   background: var(--color-selection);
   border-color: #bacbf0;
 }
 .button[data-disabled] {
-  opacity: 0.52;
+  background: #edf1f7;
+  border-color: #dce4ef;
+  color: #65758b;
   cursor: not-allowed;
 }
-.button[data-pressed] {
+.button[data-pressed]:not([data-disabled]) {
   transform: translateY(1px);
 }
 .primary {
@@ -31,7 +33,7 @@
   background: var(--color-action);
   border-color: var(--color-action);
 }
-.primary:hover {
+.primary[data-hovered]:not([data-disabled]) {
   background: var(--color-action-hover);
   border-color: var(--color-action-hover);
 }
@@ -39,6 +41,10 @@
   color: #fff;
   background: #b42336;
   border-color: #b42336;
+}
+.danger[data-hovered]:not([data-disabled]) {
+  background: #921c2c;
+  border-color: #921c2c;
 }
 .quiet {
   border-color: transparent;
