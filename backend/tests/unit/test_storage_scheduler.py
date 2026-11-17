@@ -178,9 +178,8 @@ async def test_scheduler_stops_before_next_file_when_external_cancellation_is_re
         ingestion,
         _Qdrant([], []),
     )  # type: ignore[arg-type]
-    checks = iter([False, True])
-
-    result = await scheduler.tick_once(should_cancel=lambda: next(checks))
+    # Request cancellation once indexing has actually started.
+    result = await scheduler.tick_once(should_cancel=lambda: bool(ingestion.uploads))
 
     assert result.upserted == 1
     assert [item.storage_file_id for item in ingestion.uploads] == ["first"]
@@ -332,3 +331,56 @@ async def test_scheduler_processes_files_concurrently() -> None:
 
     assert result.upserted == 4
     assert max_active_seen >= 3
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_external_stop_finishes_active_files_without_starting_more() -> None:
+    cancelled = threading.Event()
+    barrier = threading.Barrier(2)
+    ingestion = _Ingestion([])
+    original_process = ingestion.process_files
+
+    def process(files: tuple[FileUpload, ...]) -> FileEmbeddingResponse:
+        barrier.wait(timeout=5)
+        cancelled.set()
+        return original_process(files)
+
+    ingestion.process_files = process
+    client = _Client([_file(f"id_{i}") for i in range(5)])
+    scheduler = StorageSyncScheduler(
+        StorageProvider.DROPBOX, client, "/root", ingestion, _Qdrant([], []),
+        concurrency=2,
+    )  # type: ignore[arg-type]
+    with patch("backend.app.storage.scheduler.time.sleep"):
+        result = await scheduler.tick_once(should_cancel=cancelled.is_set)
+
+    assert result.upserted == 2
+    assert set(client.download_calls) == {"id_0", "id_1"}
+    assert {upload.storage_file_id for upload in ingestion.uploads} == {"id_0", "id_1"}
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("concurrency", [1, 2])
+async def test_external_stop_during_preparing_skips_indexing(concurrency: int) -> None:
+    cancelled = threading.Event()
+    client = _Client([_file("id")])
+    ingestion = _Ingestion([])
+    original_download = client.download
+
+    def download(storage_file_id: str) -> DownloadedStorageFile:
+        cancelled.set()
+        return original_download(storage_file_id)
+
+    client.download = download
+    scheduler = StorageSyncScheduler(
+        StorageProvider.DROPBOX, client, "/root", ingestion, _Qdrant([], []),
+        concurrency=concurrency,
+    )  # type: ignore[arg-type]
+    with patch("backend.app.storage.scheduler.time.sleep"):
+        result = await scheduler.tick_once(should_cancel=cancelled.is_set)
+
+    assert result.upserted == 0
+    assert ingestion.uploads == []
+    assert any(trace.step == "sync_cancel" for trace in result.traces)

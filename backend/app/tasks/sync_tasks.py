@@ -139,6 +139,7 @@ def sync_provider(self: Task, provider: str) -> SyncJobProgress:
             cancellation_requested=True,
         )
         store.write_progress(job_id, revoked)
+        store.publish_event(job_id, {"type": "terminal", **revoked})
         store.release_provider_job(provider, job_id)
         return revoked
 

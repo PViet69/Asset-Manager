@@ -170,6 +170,7 @@ class StorageSyncScheduler:
                     trace,
                     cancel_event,
                     embedded_delta=int(is_new),
+                    should_cancel=is_cancelled,
                 ):
                     upserted += 1
                 if is_cancelled():
@@ -187,6 +188,7 @@ class StorageSyncScheduler:
                     trace,
                     cancel_event,
                     embedded_delta=int(is_new),
+                    should_cancel=is_cancelled,
                 )
 
             with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
@@ -254,6 +256,7 @@ class StorageSyncScheduler:
         cancel_event: Any | None = None,
         max_retries: int = 2,
         embedded_delta: int = 0,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> int:
         with self._active_files_lock:
             self._active_files_count += 1
@@ -269,7 +272,9 @@ class StorageSyncScheduler:
                 return 0
             downloaded = self._client.download(file.storage_file_id)
             time.sleep(1)
-            if cancel_event is not None and cancel_event.is_set():
+            if (cancel_event is not None and cancel_event.is_set()) or (
+                should_cancel is not None and should_cancel()
+            ):
                 trace("sync_cancel", "ok", "Sync operation stopped by user", file)
                 return 0
 

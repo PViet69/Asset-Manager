@@ -45,6 +45,7 @@ def test_sync_task_marks_running_cancelled_job_revoked_and_releases_lock() -> No
     with patch("backend.app.tasks.sync_tasks.build_job_store", return_value=store):
         result = sync_provider.run("dropbox")
 
+    store.publish_event.assert_called_once_with(ANY, {"type": "terminal", **result})
     assert result["state"] == "REVOKED"
     store.release_provider_job.assert_called_once_with("dropbox", ANY)
 

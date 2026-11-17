@@ -271,6 +271,9 @@ async def stop_sync(provider: str, request: Request) -> AdminSyncStopResponse:
             "activity": progress["activity"],
         }
         await asyncio.to_thread(store.write_progress, job_id, revoked_progress)
+        await asyncio.to_thread(
+            store.publish_event, job_id, {"type": "terminal", **revoked_progress}
+        )
         await asyncio.to_thread(store.release_provider_job, provider, job_id)
     return AdminSyncStopResponse(status="stopping", provider=provider)
 
